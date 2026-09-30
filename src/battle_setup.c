@@ -35,6 +35,7 @@
 #include "gym_leader_rematch.h"
 #include "coop/identity.h"
 #include "coop/battle_consent.h"
+#include "coop/battle_items.h"
 #include "coop/battle_runtime.h"
 #include "coop/friendly_battle.h"
 #include "coop/trainer_rewards.h"
@@ -523,6 +524,9 @@ static void CB2_EndCoopTrainerBattle(void)
     if (!completed)
         memcpy(gParties[B_TRAINER_0], sCoopBattlePlan.original_local,
                sizeof(sCoopBattlePlan.original_local));
+    /* Bag items follow the party: a completed battle keeps what its item
+     * turns used (like damage), any other end hands the items back. */
+    CoopBattleItems_Settle(completed);
     memcpy(gParties[B_TRAINER_2], sCoopOriginalPeerParty,
            sizeof(sCoopOriginalPeerParty));
     gPartiesCount[B_TRAINER_0] = sCoopOriginalLocalPartyCount;
@@ -695,6 +699,7 @@ bool8 BattleSetup_StartCoopTrainerBattle(void)
     }
 
     CoopTrainerRewards_Begin();
+    CoopBattleItems_Begin();
     sCoopBattleEntryActive = TRUE;
     LockPlayerFieldControls();
     FreezeObjectEvents();

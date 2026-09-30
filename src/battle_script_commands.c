@@ -75,6 +75,7 @@
 #include "test/battle.h"
 #include "follower_npc.h"
 #include "load_save.h"
+#include "coop/battle_items.h"
 #include "coop/net_bridge.h"
 
 // Helper for accessing command arguments and advancing gBattlescriptCurrInstr.
@@ -11830,7 +11831,13 @@ void BS_JumpIfCantLoseItem(void)
 void BS_GetBattlerSide(void)
 {
     NATIVE_ARGS(u8 battler);
-    gBattleCommunication[0] = GetBattlerSide(GetBattlerForBattleScript(cmd->battler));
+    enum BattlerId battler = GetBattlerForBattleScript(cmd->battler);
+
+    gBattleCommunication[0] = GetBattlerSide(battler);
+    // Only the item-use message reads this: a co-op partner's item is
+    // announced with the partner's name, not as "You used".
+    if (CoopBattleItems_IsBagOpen() && GetBattlerPosition(battler) == B_POSITION_PLAYER_RIGHT)
+        gBattleCommunication[0] = B_SIDE_OPPONENT;
     gBattlescriptCurrInstr = cmd->nextInstr;
 }
 
@@ -11989,10 +11996,12 @@ void BS_ItemRestoreHP(void)
         if (hp == 0 && IsOnPlayerSide(gBattlerAttacker) && gBattleResults.numRevivesUsed < 255)
             gBattleResults.numRevivesUsed++;
 
-        // Check if the recipient is an active battler.
+        // Check if the recipient is an active battler. In a multi battle the
+        // partner's party index points into the partner's own party.
         if (gBattleStruct->itemPartyIndex[gBattlerAttacker] == gBattlerPartyIndexes[gBattlerAttacker])
             battler = gBattlerAttacker;
-        else if (IsDoubleBattle() && gBattleStruct->itemPartyIndex[gBattlerAttacker] == gBattlerPartyIndexes[BATTLE_PARTNER(gBattlerAttacker)])
+        else if (IsDoubleBattle() && gBattleStruct->itemPartyIndex[gBattlerAttacker] == gBattlerPartyIndexes[BATTLE_PARTNER(gBattlerAttacker)]
+              && BattlersShareParty(gBattlerAttacker, BATTLE_PARTNER(gBattlerAttacker)))
             battler = BATTLE_PARTNER(gBattlerAttacker);
 
         // Get amount to heal.
@@ -12029,8 +12038,10 @@ void BS_ItemRestoreHP(void)
             SetMonData(&party[gBattleStruct->itemPartyIndex[gBattlerAttacker]], MON_DATA_HP, &hp);
 
             enum BattlerId partner = BATTLE_PARTNER(gBattlerAttacker);
-            // Absent battlers on the field need to be replaced
-            if (IsDoubleBattle() && (gAbsentBattlerFlags & (1u << partner)))
+            // Absent battlers on the field need to be replaced (never with a
+            // Pokemon from another trainer's party)
+            if (IsDoubleBattle() && (gAbsentBattlerFlags & (1u << partner))
+             && BattlersShareParty(gBattlerAttacker, partner))
             {
                 gAbsentBattlerFlags &= ~(1u << partner);
                 gBattleCommunication[MULTIUSE_STATE] = TRUE;
@@ -12056,7 +12067,8 @@ void BS_ItemCureStatus(void)
         targetBattler = gBattlerAttacker;
     }
     else if (IsDoubleBattle()
-     && gBattleStruct->itemPartyIndex[gBattlerAttacker] == gBattlerPartyIndexes[BATTLE_PARTNER(gBattlerAttacker)])
+     && gBattleStruct->itemPartyIndex[gBattlerAttacker] == gBattlerPartyIndexes[BATTLE_PARTNER(gBattlerAttacker)]
+     && BattlersShareParty(gBattlerAttacker, BATTLE_PARTNER(gBattlerAttacker)))
     {
         statusChanged = ItemHealMonVolatile(BATTLE_PARTNER(gBattlerAttacker), gLastUsedItem);
         targetBattler = BATTLE_PARTNER(gBattlerAttacker);
@@ -12099,7 +12111,8 @@ void BS_ItemIncreaseStat(void)
         SET_STATCHANGER(statId, stages, FALSE);
     } // else EFFECT_ITEM_INCREASE_ALL_STATS or EFFECT_ITEM_SET_FOCUS_ENERGY
 
-    if (gBattlerPartyIndexes[gBattlerAttacker] != gBattleStruct->itemPartyIndex[gBattlerAttacker])
+    if (gBattlerPartyIndexes[gBattlerAttacker] != gBattleStruct->itemPartyIndex[gBattlerAttacker]
+     && BattlersShareParty(gBattlerAttacker, BATTLE_PARTNER(gBattlerAttacker)))
         gBattlerAttacker = BATTLE_PARTNER(gBattlerAttacker);
 
     gBattlescriptCurrInstr = cmd->nextInstr;
@@ -12130,7 +12143,8 @@ void BS_ItemRestorePP(void)
     if (gBattleStruct->itemPartyIndex[gBattlerAttacker] == gBattlerPartyIndexes[gBattlerAttacker])
         battler = gBattlerAttacker;
     else if (IsDoubleBattle()
-                && gBattleStruct->itemPartyIndex[gBattlerAttacker] == gBattlerPartyIndexes[BATTLE_PARTNER(gBattlerAttacker)])
+                && gBattleStruct->itemPartyIndex[gBattlerAttacker] == gBattlerPartyIndexes[BATTLE_PARTNER(gBattlerAttacker)]
+                && BattlersShareParty(gBattlerAttacker, BATTLE_PARTNER(gBattlerAttacker)))
         battler = BATTLE_PARTNER(gBattlerAttacker);
 
     // Heal PP!

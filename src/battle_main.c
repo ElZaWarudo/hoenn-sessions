@@ -1,6 +1,7 @@
 #include "global.h"
 #include "battle_caps.h"
 #include "battle.h"
+#include "coop/battle_items.h"
 #include "coop/battle_runtime.h"
 #include "coop/net_bridge.h"
 #include "coop/trainer_rewards.h"
@@ -4506,8 +4507,17 @@ static void TrySubmitCoopPlayerAction(void)
     case B_ACTION_NOTHING_FAINTED:
         action.kind = COOP_BATTLE_ACTION_NO_ACTION;
         break;
+    case B_ACTION_USE_ITEM:
+        /* Nothing was applied or taken from the bag yet: both ROMs run the
+         * item when the turn resolves. */
+        if (!CoopBattleItems_MakeAction(battler, &action))
+        {
+            CoopBattleRuntime_FailEngine();
+            return;
+        }
+        break;
     default:
-        /* Bag, run and other actions require a shared action contract. */
+        /* Run and other actions require a shared action contract. */
         CoopBattleRuntime_FailEngine();
         return;
     }
@@ -4906,10 +4916,12 @@ static void HandleTurnActionSelectionState(void)
                  && gBattleResources->bufferB[battler][1] != B_ACTION_USE_MOVE
                  && gBattleResources->bufferB[battler][1] != B_ACTION_SWITCH
                  && gBattleResources->bufferB[battler][1] != B_ACTION_NOTHING_FAINTED
-                 /* Friendly: Run asks to forfeit; the bag is refused below. */
+                 /* The bag becomes an item action in a trainer battle and is
+                  * refused below in a friendly one. Friendly: Run asks to
+                  * forfeit. */
+                 && gBattleResources->bufferB[battler][1] != B_ACTION_USE_ITEM
                  && !(CoopBattleRuntime_IsFriendlyEngine()
-                   && (gBattleResources->bufferB[battler][1] == B_ACTION_RUN
-                    || gBattleResources->bufferB[battler][1] == B_ACTION_USE_ITEM)))
+                   && gBattleResources->bufferB[battler][1] == B_ACTION_RUN))
                 {
                     CoopBattleRuntime_FailEngine();
                     return;
@@ -5770,8 +5782,13 @@ static void SetActionsAndBattlersTurnOrder(void)
             u32 quickClawRandom[MAX_BATTLERS_COUNT] = {0};
             u32 quickDrawRandom[MAX_BATTLERS_COUNT] = {0};
 
-            for (battler = 0; battler < gBattlersCount; battler++)
+            /* Items and switches act in list order, and the move list
+             * draws Quick Claw/Draw rolls in list order: a co-op trainer
+             * battle lists battlers by the canonical ID both ROMs share
+             * (the identity everywhere else). */
+            for (enum BattlerId canonical = 0; canonical < gBattlersCount; canonical++)
             {
+                battler = CoopBattleRuntime_CanonicalBattler(canonical);
                 if (gChosenActionByBattler[battler] == B_ACTION_USE_ITEM
                   || gChosenActionByBattler[battler] == B_ACTION_SWITCH
                   || gChosenActionByBattler[battler] == B_ACTION_THROW_BALL)
@@ -5781,8 +5798,9 @@ static void SetActionsAndBattlersTurnOrder(void)
                     turnOrderId++;
                 }
             }
-            for (battler = 0; battler < gBattlersCount; battler++)
+            for (enum BattlerId canonical = 0; canonical < gBattlersCount; canonical++)
             {
+                battler = CoopBattleRuntime_CanonicalBattler(canonical);
                 if (gChosenActionByBattler[battler] != B_ACTION_USE_ITEM
                   && gChosenActionByBattler[battler] != B_ACTION_SWITCH
                   && gChosenActionByBattler[battler] != B_ACTION_THROW_BALL)
@@ -5824,6 +5842,14 @@ static void SetActionsAndBattlersTurnOrder(void)
     gBattleMainFunc = CheckChangingTurnOrderEffects;
     gBattleStruct->quickClawBattlerId = 0;
 }
+
+#if TESTING
+/* Co-op tests order a staged turn's actions exactly as the engine does. */
+void CoopBattle_TestSetTurnOrder(void)
+{
+    SetActionsAndBattlersTurnOrder();
+}
+#endif
 
 static void TurnValuesCleanUp(bool8 var0)
 {

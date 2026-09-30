@@ -34,6 +34,7 @@
 #include "constants/party_menu.h"
 #include "constants/trainers.h"
 #include "test/battle.h"
+#include "coop/battle_items.h"
 #include "coop/battle_runtime.h"
 
 static void PlayerPartnerHandleDrawTrainerPic(enum BattlerId battler);
@@ -41,6 +42,7 @@ static void PlayerPartnerHandleTrainerSlide(enum BattlerId battler);
 static void PlayerPartnerHandleTrainerSlideBack(enum BattlerId battler);
 static void PlayerPartnerHandleChooseAction(enum BattlerId battler);
 static void PlayerPartnerHandleChooseMove(enum BattlerId battler);
+static void PlayerPartnerHandleChooseItem(enum BattlerId battler);
 static void PlayerPartnerHandleChoosePokemon(enum BattlerId battler);
 static void PlayerPartnerHandleIntroTrainerBallThrow(enum BattlerId battler);
 static void PlayerPartnerHandleDrawPartyStatusSummary(enum BattlerId battler);
@@ -70,7 +72,7 @@ static void (*const sPlayerPartnerBufferCommands[CONTROLLER_CMDS_COUNT])(enum Ba
     [CONTROLLER_CHOOSEACTION]             = PlayerPartnerHandleChooseAction,
     [CONTROLLER_YESNOBOX]                 = BtlController_Empty,
     [CONTROLLER_CHOOSEMOVE]               = PlayerPartnerHandleChooseMove,
-    [CONTROLLER_OPENBAG]                  = BtlController_Empty,
+    [CONTROLLER_OPENBAG]                  = PlayerPartnerHandleChooseItem,
     [CONTROLLER_CHOOSEPOKEMON]            = PlayerPartnerHandleChoosePokemon,
     [CONTROLLER_23]                       = BtlController_Empty,
     [CONTROLLER_HEALTHBARUPDATE]          = BtlController_HandleHealthBarUpdate,
@@ -282,6 +284,8 @@ static void PlayerPartnerHandleChooseAction(enum BattlerId battler)
             chosen = B_ACTION_SWITCH;
         else if (action.kind == COOP_BATTLE_ACTION_NO_ACTION)
             chosen = B_ACTION_NOTHING_FAINTED;
+        else if (action.kind == COOP_BATTLE_ACTION_ITEM)
+            chosen = B_ACTION_USE_ITEM;
         else
             return;
         BtlController_EmitTwoReturnValues(battler, B_COMM_TO_ENGINE, chosen, 0);
@@ -342,6 +346,28 @@ static void PlayerPartnerHandleChooseMove(enum BattlerId battler)
         BtlController_EmitTwoReturnValues(battler, B_COMM_TO_ENGINE, B_ACTION_EXEC_SCRIPT, (chosenMoveIndex) | (gBattlerTarget << 8));
     }
 
+    BtlController_Complete(battler);
+}
+
+/* The peer's bag item: the same item, party slot and move slot its own ROM
+ * bound for its battler. This ROM's bag is never touched. */
+static void PlayerPartnerHandleChooseItem(enum BattlerId battler)
+{
+    struct CoopBattleAction action;
+
+    if (!CoopBattleRuntime_IsEngineActive())
+    {
+        BtlController_Complete(battler);
+        return;
+    }
+    if (!CoopBattleRuntime_PollPeerAction(&action))
+        return;
+    if (!CoopBattleItems_BindAction(battler, &action))
+    {
+        CoopBattleRuntime_FailEngine();
+        return;
+    }
+    BtlController_EmitOneReturnValue(battler, B_COMM_TO_ENGINE, action.item);
     BtlController_Complete(battler);
 }
 

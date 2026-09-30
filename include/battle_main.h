@@ -101,6 +101,9 @@ bool32 CoopFriendly_ResolveChoosePokemon(enum BattlerId battler, u8 localChoice,
 void CoopFriendly_FinishChoosePokemon(void);
 bool32 CoopFriendly_GetPeerSwitch(enum BattlerId battler, u8 *partyIndex);
 bool32 CoopFriendly_GetPeerAction(enum BattlerId battler, struct CoopBattleAction *action);
+#if TESTING
+void CoopBattle_TestSetTurnOrder(void);
+#endif
 u8 IsRunningFromBattleImpossible(enum BattlerId battler);
 void SwitchTwoBattlersInParty(enum BattlerId battler, enum BattlerId battler2);
 void SwitchPartyOrder(enum BattlerId battler);

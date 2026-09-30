@@ -39,6 +39,7 @@ static void RecordedPartnerHandleTrainerSlide(enum BattlerId battler);
 static void RecordedPartnerHandleTrainerSlideBack(enum BattlerId battler);
 static void RecordedPartnerHandleChooseAction(enum BattlerId battler);
 static void RecordedPartnerHandleChooseMove(enum BattlerId battler);
+static void RecordedPartnerHandleChooseItem(enum BattlerId battler);
 static void RecordedPartnerHandleChoosePokemon(enum BattlerId battler);
 static void RecordedPartnerHandleIntroTrainerBallThrow(enum BattlerId battler);
 static void RecordedPartnerHandleDrawPartyStatusSummary(enum BattlerId battler);
@@ -67,7 +68,7 @@ static void (*const sRecordedPartnerBufferCommands[CONTROLLER_CMDS_COUNT])(enum 
     [CONTROLLER_CHOOSEACTION]             = RecordedPartnerHandleChooseAction,
     [CONTROLLER_YESNOBOX]                 = BtlController_Empty,
     [CONTROLLER_CHOOSEMOVE]               = RecordedPartnerHandleChooseMove,
-    [CONTROLLER_OPENBAG]                  = BtlController_Empty,
+    [CONTROLLER_OPENBAG]                  = RecordedPartnerHandleChooseItem,
     [CONTROLLER_CHOOSEPOKEMON]            = RecordedPartnerHandleChoosePokemon,
     [CONTROLLER_23]                       = BtlController_Empty,
     [CONTROLLER_HEALTHBARUPDATE]          = BtlController_HandleHealthBarUpdate,
@@ -260,6 +261,19 @@ static void RecordedPartnerHandleTrainerSlideBack(enum BattlerId battler)
 static void RecordedPartnerHandleChooseAction(enum BattlerId battler)
 {
     BtlController_EmitTwoReturnValues(battler, B_COMM_TO_ENGINE, RecordedBattle_GetBattlerAction(RECORDED_ACTION_TYPE, battler), 0);
+    BtlController_Complete(battler);
+}
+
+// The recorded partner's bag item, like the recorded player's (a multi
+// battle partner can use an item on its own party).
+static void RecordedPartnerHandleChooseItem(enum BattlerId battler)
+{
+    u8 byte1 = RecordedBattle_GetBattlerAction(RECORDED_ITEM_ID, battler);
+    u8 byte2 = RecordedBattle_GetBattlerAction(RECORDED_ITEM_ID, battler);
+    gBattleStruct->chosenItem[battler] = (byte1 << 8) | byte2;
+    gBattleStruct->itemPartyIndex[battler] = RecordedBattle_GetBattlerAction(RECORDED_ITEM_TARGET, battler);
+    gBattleStruct->itemMoveIndex[battler] = RecordedBattle_GetBattlerAction(RECORDED_ITEM_MOVE, battler);
+    BtlController_EmitOneReturnValue(battler, B_COMM_TO_ENGINE, gBattleStruct->chosenItem[battler]);
     BtlController_Complete(battler);
 }
 

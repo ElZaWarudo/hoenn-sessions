@@ -48,6 +48,7 @@
 #include "constants/items.h"
 #include "constants/songs.h"
 #include "coop/net_bridge.h"
+#include "coop/battle_items.h"
 #include "coop/group_travel.h"
 
 // Flight Call function
@@ -1428,7 +1429,13 @@ void ItemUseInBattle_BagMenu(u8 taskId)
     else
     {
         PlaySE(SE_SELECT);
-        if (!GetItemImportance(gSpecialVar_ItemId) && !(B_TRY_CATCH_TRAINER_BALL >= GEN_4 && (GetItemBattleUsage(gSpecialVar_ItemId) == EFFECT_ITEM_THROW_BALL) && (gBattleTypeFlags & BATTLE_TYPE_TRAINER)))
+        if (CoopBattleItems_IsBagOpen())
+        {
+            // Co-op trainer battle: the item stays in the bag until its
+            // turn runs on both ROMs.
+            CoopBattleItems_ChooseTarget(&GetBattlerParty(gBattlerInMenuId)[gBattlerPartyIndexes[gBattlerInMenuId]]);
+        }
+        else if (!GetItemImportance(gSpecialVar_ItemId) && !(B_TRY_CATCH_TRAINER_BALL >= GEN_4 && (GetItemBattleUsage(gSpecialVar_ItemId) == EFFECT_ITEM_THROW_BALL) && (gBattleTypeFlags & BATTLE_TYPE_TRAINER)))
             RemoveUsedItem();
         ScheduleBgCopyTilemapToVram(2);
         if (CurrentBattlePyramidLocation() == PYRAMID_LOCATION_NONE)

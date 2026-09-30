@@ -33,6 +33,7 @@
 #include "battle_message.h"
 #include "battle_ai_record.h"
 #include "battle_ai_util.h"
+#include "coop/battle_items.h"
 #include "coop/battle_runtime.h"
 #include "coop/trainer_rewards.h"
 #include "event_data.h"
@@ -530,10 +531,16 @@ void HandleAction_UseItem(void)
     ClearVariousBattlerFlags(gBattlerAttacker);
 
     gLastUsedItem = gBattleResources->bufferB[gBattlerAttacker][1] | (gBattleResources->bufferB[gBattlerAttacker][2] << 8);
+    /* The X item friendship bonus reads the local map section, which the
+     * two co-op ROMs need not share. */
     if (X_ITEM_FRIENDSHIP_INCREASE > 0
         && GetItemEffectType(gLastUsedItem) == ITEM_EFFECT_X_ITEM
-        && !ShouldSkipFriendshipChange())
+        && !ShouldSkipFriendshipChange()
+        && !CoopBattleRuntime_IsEngineActive())
         UpdateFriendshipFromXItem(gBattlerAttacker);
+    /* Co-op trainer battle: the item leaves the acting player's bag now,
+     * once, as the resolved turn runs it on both ROMs. */
+    CoopBattleItems_OnItemUsed(gBattlerAttacker, gLastUsedItem);
 
     gBattlescriptCurrInstr = gBattlescriptsForUsingItem[GetItemBattleUsage(gLastUsedItem) - 1];
     gCurrentActionFuncId = B_ACTION_EXEC_SCRIPT;

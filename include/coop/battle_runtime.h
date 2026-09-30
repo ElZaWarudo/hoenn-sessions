@@ -22,7 +22,8 @@ bool8 CoopBattleRuntime_RequestAbort(u8 reason);
 
 /* Canonical action bytes are independent of the local battler numbering.
  * Targets are BattlerPosition values, with the two player positions ordered
- * by manifest member slot. This deliberately excludes bag/run actions. */
+ * by manifest member slot. Run exists only as a friendly forfeit; the bag
+ * only as a co-op trainer battle item action. */
 enum CoopBattleActionKind
 {
     COOP_BATTLE_ACTION_MOVE = 1,
@@ -32,14 +33,24 @@ enum CoopBattleActionKind
     COOP_BATTLE_ACTION_AUTO_MOVE = 5,
     /* Friendly battles only: the member gives up (Run). */
     COOP_BATTLE_ACTION_FORFEIT = 6,
+    /* Co-op trainer battles only: a bag item on one of the member's own
+     * staged Pokemon. Wire: kind, item (u16 LE), then the party slot in the
+     * low nibble and, for a one-move PP item, the move slot in bits 4-5. */
+    COOP_BATTLE_ACTION_ITEM = 7,
 };
 
+/* For COOP_BATTLE_ACTION_ITEM, index is the member's own staged party slot
+ * and target the move slot (0 unless a one-move PP item). */
 struct CoopBattleAction
 {
     u8 kind;
     u8 index;
     u8 target;
+    u16 item;
 };
+
+/* The battle usages a co-op trainer battle item action may carry. */
+bool8 CoopBattleRuntime_IsSharedBattleItem(u16 item);
 
 /* An inert staging result. Battle setup must own any later party swap and
  * restoration; preparing this value never changes the saved player party.

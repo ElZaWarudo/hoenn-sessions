@@ -337,7 +337,65 @@ Known gaps:
 - Determinism of the full engine across two real ROMs (mirrored draw,
   every move effect in doubles) is verified by unit tests on one ROM with
   both member views, not yet by two real players.
-- Items cannot be used in friendly battles (Bag is refused).
+- Items cannot be used in friendly battles (Bag is refused; see C2 for co-op
+  trainer battles).
 - The launcher's generated `dist/bridge_manifest.json`, the Android asset
   manifest and `bridge/generated_addresses.lua` need regenerating for
   protocol 5.
+
+### C2: Bag in co-op trainer battles
+
+Co-op trainer battles open the Bag; friendly battles keep refusing it (the
+selection script, `CoopBattleItems_IsBagOpen()` is FALSE, and an item action
+in a friendly bundle or submission is rejected).
+
+- Action (no game-protocol bump): `COOP_BATTLE_ACTION_ITEM = 7` in the same
+  4-byte action: kind, item ID (u16 LE), then the acting member's own staged
+  party slot (0-2) in the low nibble and, for a one-move PP item (Ether), the
+  move slot in bits 4-5. Only restore-HP, cure-status, heal-and-cure, X items,
+  Dire Hit, Guard Spec, revive and PP items decode; balls, escape items, the
+  Poke Flute, the e-Reader berry and items without a battle use never do. The
+  server, sidecar and launcher treat actions as opaque bytes and need no
+  change.
+- Choosing an item applies and removes nothing. The party menu records the
+  chosen Pokemon; when the choice is confirmed the ROM resolves its slot in
+  its own party and sends the action. On the resolved turn both ROMs run the
+  vanilla `HandleAction_UseItem` and item battle script with the same
+  battler, item, party slot and move slot (the partner controller replays
+  the peer's item into its `OPENBAG` step). Items, switches and ball throws
+  are listed in canonical battler order, and the move list draws its Quick
+  Claw/Draw rolls in that order, so both ROMs order them identically.
+- The X item friendship bonus is skipped while the engine runs (it reads the
+  local map section). Multi-battle item scripts now only treat the partner
+  battler as the target when both battlers share a party (vanilla compared
+  party indexes from two different parties, and a Revive could send the
+  revived Pokemon into the partner's empty position). The peer's item is
+  announced as the partner's, not as "You used".
+- Bag: the acting ROM removes the item (if consumed: not flutes or key
+  items) when `HandleAction_UseItem` runs it, once, and records it (six item
+  kinds per battle; a seventh kind is refused at selection). A completed
+  battle keeps the removals, as its party keeps HP/PP/status like damage; an
+  abort, desync or no contest restores the pre-battle party and returns the
+  recorded items. The partner's ROM never touches its own Bag.
+- Refused at selection, before anything is sent, with a message: the items
+  above, a target in the partner's party (a Revive on its fainted Pokemon
+  too), and everything the vanilla trainer-battle Bag refuses (no-bag var,
+  Sky Drop, embargo, "won't have any effect").
+
+- Trainer digest: a two-view test showed that the co-op trainer digest was
+  not canonical (it hashed each ROM's own position byte for the members, the
+  trainer-indexed party state and the battler-indexed arrays in local order),
+  so identical states hashed differently on the two ROMs. It now hashes the
+  members' canonical positions, party state in member order, battler arrays,
+  absent flags and fainted hit markers in canonical battler order, and leaves
+  out `moveTarget` (battler IDs; an unset 0 names a different member on each
+  ROM). Battler references inside volatiles, Future Sight/Wish and the
+  Z-Move/Dynamax structs are still hashed as stored.
+- Tests: the recorded partner controller (test runner) now replays a
+  partner's bag item like the recorded player's.
+
+Known gaps: the item effects are checked by unit tests of both member views
+(the effect commands and the digest) and by multi battles with the acting
+member in either seat, not yet by two real ROMs; the Bag UI refusals are not
+driven by a test; the peer's item message names the partner as the in-game
+partner trainer.
