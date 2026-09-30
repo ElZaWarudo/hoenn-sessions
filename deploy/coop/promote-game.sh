@@ -16,7 +16,7 @@ marker="$root/current"
 mkdir -p "$root"
 
 verify() {
-  local dir="$1" freshness="${2:-fresh}"
+  local dir="$1" expected_id="$2" freshness="${3:-fresh}"
   [ -d "$dir" ] && [ ! -L "$dir" ] || return 1
   local files
   files="$(find "$dir" -type f -printf '%P\n' | LC_ALL=C sort)"
@@ -29,7 +29,7 @@ verify() {
     "$COOP_RELEASE_TOOL" verify-game --envelope "$dir/release-envelope.json" \
       --key-id "$COOP_RELEASE_KEY_ID" --public-key-hex "$COOP_RELEASE_PUBLIC_KEY_HEX" >/dev/null
   fi
-  python3 - "$dir" "$RELEASE_ID" <<'PY'
+  python3 - "$dir" "$expected_id" <<'PY'
 import base64, hashlib, json, pathlib, stat, sys
 root = pathlib.Path(sys.argv[1])
 envelope_path = root/'release-envelope.json'
@@ -54,15 +54,15 @@ if [ -e "$marker" ] || [ -L "$marker" ]; then
   [ -f "$marker" ] && [ ! -L "$marker" ] && [ "$(wc -c < "$marker")" -le 129 ] || exit 1
   current="$(cat "$marker")"
   [[ "$current" =~ ^[a-zA-Z0-9._-]{1,128}$ && "$current" != . && "$current" != .. ]] || exit 1
-  current_sequence="$(verify "$root/$current" old)"
+  current_sequence="$(verify "$root/$current" "$current" old)"
 else
   current_sequence=0
 fi
 
 if [ -d "$release" ]; then
-  sequence="$(verify "$release")"
+  sequence="$(verify "$release" "$RELEASE_ID")"
   if [ -d "$staging" ]; then
-    [ "$(verify "$staging")" = "$sequence" ] || exit 1
+    [ "$(verify "$staging" "$RELEASE_ID")" = "$sequence" ] || exit 1
     cmp -s -- "$staging/game.gba" "$release/game.gba" || exit 1
     cmp -s -- "$staging/bridge_manifest.json" "$release/bridge_manifest.json" || exit 1
     # Reruns re-sign with a new validity window. Both envelopes are verified;
@@ -80,7 +80,7 @@ if descriptor(sys.argv[1]) != descriptor(sys.argv[2]):
 PY
   fi
 else
-  sequence="$(verify "$staging")"
+  sequence="$(verify "$staging" "$RELEASE_ID")"
 fi
 if [ "$sequence" -lt "$current_sequence" ] || { [ "$sequence" -eq "$current_sequence" ] && [ "${current:-}" != "$RELEASE_ID" ]; }; then
   echo 'error: game sequence rollback rejected' >&2

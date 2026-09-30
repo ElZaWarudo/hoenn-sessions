@@ -328,6 +328,14 @@ rm -f -- "$ROOT/game-staging/$FULL_C/game.gba" \
   "$ROOT/game-staging/$FULL_C/release-envelope.json"
 rmdir -- "$ROOT/game-staging/$FULL_C"
 
+# A new release must verify the installed game's own signed identity before
+# checking the incoming release and advancing the marker.
+make_game_staging "$ROOT" "$FULL_D" 6 "$NOW"
+out="$(bash "$PROMOTE_GAME" "$FULL_D" 2>&1)"; status=$?
+[ "$status" -eq 0 ] && [ "$(cat "$ROOT/game/current")" = "$FULL_D" ] && \
+  [ -d "$ROOT/game/$FULL_C" ] && [ ! -d "$ROOT/game-staging/$FULL_D" ]
+report $? "new game release promotes over a different current release" "$out"
+
 bash -n "$PROMOTE_GAME"; status=$?
 [ "$status" -eq 0 ] && grep -q 'bash -n deploy/coop/promote-game.sh' "$WORKFLOW"
 report $? "workflow syntax checks game promotion script"
