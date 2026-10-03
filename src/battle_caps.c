@@ -6,6 +6,9 @@
 #include "battle_gimmick.h"
 #include "battle_util.h"
 #include "config_changes.h"
+#if ROM_WORLD == 2
+#include "constants/cormoria_event_ids.h"
+#endif
 #include "constants/johto_content.h"
 #include "event_data.h"
 #include "region_map.h"
@@ -45,6 +48,12 @@ u32 GetBadgeBattleLevelCap(void)
         JOHTO_FLAG_BADGE01_GET, JOHTO_FLAG_BADGE02_GET, JOHTO_FLAG_BADGE03_GET, JOHTO_FLAG_BADGE04_GET,
         JOHTO_FLAG_BADGE05_GET, JOHTO_FLAG_BADGE06_GET, JOHTO_FLAG_BADGE07_GET, JOHTO_FLAG_BADGE08_GET,
     };
+#if ROM_WORLD == 2
+    static const u16 cormoriaBadges[] = {
+        Cormoria_FLAG_BADGE01_GET, Cormoria_FLAG_BADGE02_GET, Cormoria_FLAG_BADGE03_GET, Cormoria_FLAG_BADGE04_GET,
+        Cormoria_FLAG_BADGE05_GET, Cormoria_FLAG_BADGE06_GET, Cormoria_FLAG_BADGE07_GET, Cormoria_FLAG_BADGE08_GET,
+    };
+#endif
     u32 badges = 0;
     enum Region region = GetCurrentRegion();
     bool32 laterKanto = region == REGION_KANTO
@@ -60,6 +69,10 @@ u32 GetBadgeBattleLevelCap(void)
             badges += FlagGet(kantoLeaders[i]);
         else if (region == REGION_JOHTO)
             badges += FlagGet(johtoBadges[i]);
+#if ROM_WORLD == 2
+        else if (region == REGION_CORMORIA)
+            badges += FlagGet(cormoriaBadges[i]);
+#endif
         else
             badges += HasTrainerBeenFought(hoennLeaders[i]);
     }
@@ -68,6 +81,10 @@ u32 GetBadgeBattleLevelCap(void)
         champion = FlagGet(FLAG_KANTO_MASTERY_CHAMPION) || VarGet(VAR_MAP_SCENE_PALLET_TOWN_OAK) >= 2;
     else if (region == REGION_JOHTO)
         champion = FlagGet(JOHTO_FLAG_IS_CHAMPION);
+#if ROM_WORLD == 2
+    else if (region == REGION_CORMORIA)
+        champion = FlagGet(Cormoria_FLAG_IS_CHAMPION);
+#endif
     else
         champion = FlagGet(FLAG_IS_CHAMPION);
     if (badges == NUM_BADGES && champion)

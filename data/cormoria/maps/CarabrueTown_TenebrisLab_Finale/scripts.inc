@@ -21,6 +21,7 @@ Cormoria_CarabrueTown_TenebrisLab_Finale_MapScripts_MAP_SCRIPT_ON_FRAME_TABLE:
 Cormoria_CarabrueTown_TenebrisLab_PostFinale::
 # 16 "data//maps/CarabrueTown_TenebrisLab_Finale/scripts.pory"
 	setvar VAR_TEMP_1, 1
+	goto_if_set Cormoria_FLAG_POST_FINALE_CUTSCENE, Cormoria_CarabrueTown_TenebrisLab_PostFinale_WaterfallRetry
 # 18 "data//maps/CarabrueTown_TenebrisLab_Finale/scripts.pory"
 	setrespawn Cormoria_HEAL_LOCATION_CARABRUE_TOWN
 # 19 "data//maps/CarabrueTown_TenebrisLab_Finale/scripts.pory"
@@ -154,7 +155,10 @@ Cormoria_CarabrueTown_TenebrisLab_PostFinale::
 # 104 "data//maps/CarabrueTown_TenebrisLab_Finale/scripts.pory"
 	msgbox_delay Cormoria_CarabrueTown_TenebrisLab_PostFinale_Text_2, Cormoria_CarabrueTown_TenebrisLab_PostFinale_Text_18
 # 105 "data//maps/CarabrueTown_TenebrisLab_Finale/scripts.pory"
+	checkitem ITEM_HM07
+	goto_if_eq VAR_RESULT, TRUE, Cormoria_CarabrueTown_TenebrisLab_PostFinale_WaterfallAlreadyOwned
 	giveitem ITEM_HM07
+Cormoria_CarabrueTown_TenebrisLab_PostFinale_WaterfallAlreadyOwned::
 # 106 "data//maps/CarabrueTown_TenebrisLab_Finale/scripts.pory"
 	msgbox_delay Cormoria_CarabrueTown_TenebrisLab_PostFinale_Text_2, Cormoria_CarabrueTown_TenebrisLab_PostFinale_Text_19
 # 108 "data//maps/CarabrueTown_TenebrisLab_Finale/scripts.pory"
@@ -425,3 +429,21 @@ Cormoria_TenebrisLab_Finale_Gardevoir_Text_0:
 # 149 "data//maps/CarabrueTown_TenebrisLab_Finale/scripts.pory"
 	.string "Gardevoir regards you intently...\p"
 	.string "Did it smile?$"
+
+Cormoria_CarabrueTown_TenebrisLab_PostFinale_WaterfallRetry::
+	checkitem ITEM_HM07
+	goto_if_eq VAR_RESULT, TRUE, Cormoria_CarabrueTown_TenebrisLab_PostFinale_WaterfallDone
+	lockall
+	giveitem ITEM_HM07
+	goto_if_eq VAR_RESULT, FALSE, Cormoria_CarabrueTown_TenebrisLab_PostFinale_WaterfallBagFull
+	releaseall
+	end
+Cormoria_CarabrueTown_TenebrisLab_PostFinale_WaterfallBagFull::
+	msgbox Cormoria_CarabrueTown_TenebrisLab_PostFinale_WaterfallBagFull_Text_0, MSGBOX_DEFAULT
+	releaseall
+	end
+Cormoria_CarabrueTown_TenebrisLab_PostFinale_WaterfallDone::
+	return
+Cormoria_CarabrueTown_TenebrisLab_PostFinale_WaterfallBagFull_Text_0:
+	.string "The Bag is full. Make room for\n"
+	.string "Waterfall, then return here.$"

@@ -13,6 +13,8 @@ u32 GetHealLocationIndexByMap(u16 mapGroup, u16 mapNum);
 u32 GetHealLocationIndexByWarpData(struct WarpData *warp);
 const struct HealLocation *GetHealLocationByMap(u16 mapGroup, u16 mapNum);
 const struct HealLocation *GetHealLocation(u32 index);
+// Script tokens may name a regional location; native lookup indices do not.
+u8 ResolveScriptHealLocation(u16 scriptId);
 bool32 IsLastHealLocationPlayerHouse();
 void SetWhiteoutRespawnWarpAndHealerNPC(struct WarpData * warp);
 u32 GetHealNpcLocalId(u32 healLocationId);

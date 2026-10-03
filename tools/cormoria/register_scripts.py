@@ -30,6 +30,15 @@ GACHA_TOKEN_SETTLEMENT = "data/maps/GalecrestCity_GameCorner/scripts.inc"
 RIVETSHORE_HARBOR = "data/maps/RivetshoreCity_Harbor/scripts.inc"
 CHAMPIONSHIP_R5 = "data/maps/Championship_R5/scripts.inc"
 PELLUCA_SAFARI = "data/maps/PellucaCity/scripts.inc"
+GALECREST_CITY = "data/maps/GalecrestCity/scripts.inc"
+WINTERLILY_HOLLOW = "data/maps/WinterlilyHollow/scripts.inc"
+SILVERSUN_GYM = "data/maps/SilversunCityGym/scripts.inc"
+SILVERSUN_CITY = "data/maps/SilversunCity/scripts.inc"
+CARABRUE_FINALE = "data/maps/CarabrueTown_TenebrisLab_Finale/scripts.inc"
+GALECREST_ACADEMY = "data/maps/GalecrestCity_DetectiveAcademy/scripts.inc"
+GASTREE_GYM = "data/maps/GastreeGym/scripts.inc"
+CARABRUE_HOME_2F = "data/maps/CarabrueTown_Home2F/scripts.inc"
+CARABRUE_TENEBRIS_LAB = "data/maps/CarabrueTown_TenebrisLab/scripts.inc"
 INGAME_TRADE_SCRIPTS = {
     "data/maps/CeramBaseCamp_Main/scripts.inc",
     "data/maps/PellucaCityRestaurant/scripts.inc",
@@ -139,6 +148,564 @@ def _adapt_gacha_token_settlement(text: str) -> tuple[str, int]:
         transformed += 1
 
     return "".join(lines), transformed
+
+
+def _adapt_gastree_item_rewards(text: str) -> str:
+    """Keep Gastree's one-time gifts available when the Bag is full."""
+    leader_failure = "Cormoria_GastreeGym_LeaderBattle_RareShardItemFull"
+    leader_retry = "Cormoria_GastreeGym_LeaderBattle_RareShardRetry"
+    leader_received = "Cormoria_FLAG_GASTREEGYM_LEADER_RARE_SHARD_RECEIVED"
+    leader_failure_text = f"{leader_failure}_Text_0"
+    failure = "Cormoria_GastreeGym_Red_ItemFull"
+    if any(label in text for label in (
+            leader_failure, leader_retry, leader_received, leader_failure_text, failure)):
+        raise ScriptRegistrationError("Gastree reward overlay drift")
+
+    leader_gift = (
+        '# 77 "data//maps/GastreeGym/scripts.pory"\n'
+        "\tgiveitem ITEM_RARE_SHARD\n"
+        '# 78 "data//maps/GastreeGym/scripts.pory"\n'
+        "\tspeakername Cormoria_GastreeGym_LeaderBattle_Text_1\n"
+    )
+    if text.count(leader_gift) != 1 or text.count("\tgiveitem ITEM_RARE_SHARD\n") != 1:
+        raise ScriptRegistrationError("Gastree leader reward flow drift")
+    text = text.replace(
+        leader_gift,
+        '# 77 "data//maps/GastreeGym/scripts.pory"\n'
+        "\tgiveitem ITEM_RARE_SHARD\n"
+        f"\tgoto_if_eq VAR_RESULT, FALSE, {leader_failure}\n"
+        f"\tsetflag {leader_received}\n"
+        '# 78 "data//maps/GastreeGym/scripts.pory"\n'
+        "\tspeakername Cormoria_GastreeGym_LeaderBattle_Text_1\n",
+        1,
+    )
+
+    leader_repeat = (
+        "Cormoria_GastreeGym_LeaderBattle_2:\n"
+        '# 24 "data//maps/GastreeGym/scripts.pory"\n'
+        "\tmsgbox Cormoria_GastreeGym_LeaderBattle_Text_0, MSGBOX_NPC\n"
+        "\tgoto Cormoria_GastreeGym_LeaderBattle_1\n"
+    )
+    if text.count(leader_repeat) != 1:
+        raise ScriptRegistrationError("Gastree leader retry gate drift")
+    text = text.replace(
+        leader_repeat,
+        "Cormoria_GastreeGym_LeaderBattle_2:\n"
+        '# 24 "data//maps/GastreeGym/scripts.pory"\n'
+        "\tmsgbox Cormoria_GastreeGym_LeaderBattle_Text_0, MSGBOX_NPC\n"
+        f"\tgoto_if_set {leader_received}, Cormoria_GastreeGym_LeaderBattle_1\n"
+        f"\tgoto {leader_retry}\n",
+        1,
+    )
+
+    for item, suffix in (
+        ("ITEM_FRESH_WATER",
+         '# 123 "data//maps/GastreeGym/scripts.pory"\n'
+         "\tmsgbox Cormoria_GastreeGym_Red_Text_4\n"
+         '# 124 "data//maps/GastreeGym/scripts.pory"\n'
+         "\tsetflag Cormoria_FLAG_GASTREEGYM_SPENSER_WATER\n"
+         '# 125 "data//maps/GastreeGym/scripts.pory"\n'
+         "\tclearflag Cormoria_FLAG_HIDE_ROUTE3_UNDERPASS_GYM\n"),
+        ("VAR_0x8006",
+         '# 147 "data//maps/GastreeGym/scripts.pory"\n'
+         "\tsetflag Cormoria_FLAG_GASTREEGYM_SPENSER_REWARD\n"
+         '# 148 "data//maps/GastreeGym/scripts.pory"\n'
+         "\tgoto Cormoria_GastreeGym_Red_Reward_End\n"),
+    ):
+        gift = f"\tgiveitem {item}\n"
+        flow = gift + suffix
+        if text.count(gift) != 1 or text.count(flow) != 1:
+            raise ScriptRegistrationError(f"Gastree {item} reward flow drift")
+        text = text.replace(flow, gift + f"\tgoto_if_eq VAR_RESULT, FALSE, {failure}\n" + suffix, 1)
+
+    exit_anchor = (
+        "Cormoria_GastreeGym_Red_Reward_End::\n"
+        '# 155 "data//maps/GastreeGym/scripts.pory"\n'
+        "\tmsgbox Cormoria_GastreeGym_Red_Reward_End_Text_0, MSGBOX_NPC\n"
+        "\tend\n"
+    )
+    if text.count(exit_anchor) != 1:
+        raise ScriptRegistrationError("Gastree reward exit drift")
+    text = text.replace(exit_anchor, exit_anchor + f"\n{failure}::\n\treleaseall\n\tend\n", 1)
+    text += (
+        f"\n{leader_retry}::\n"
+        "\tcheckitemspace ITEM_RARE_SHARD, 1\n"
+        f"\tgoto_if_eq VAR_RESULT, FALSE, {leader_failure}\n"
+        "\tgiveitem ITEM_RARE_SHARD\n"
+        f"\tgoto_if_eq VAR_RESULT, FALSE, {leader_failure}\n"
+        f"\tsetflag {leader_received}\n"
+        "\tgoto Cormoria_GastreeGym_LeaderBattle_1\n"
+        f"\n{leader_failure}::\n"
+        f"\tmsgbox {leader_failure_text}, MSGBOX_DEFAULT\n"
+        "\treleaseall\n"
+        "\tend\n"
+        f"\n{leader_failure_text}:\n"
+        '\t.string "The Bag is full. Make room for the\\n"\n'
+        '\t.string "Rare Shard, then talk to Inger again.$"\n'
+    )
+    return text
+
+
+def _adapt_carabrue_welcome_package(text: str) -> str:
+    """Keep the package object and flag available if the Key Items pocket is full."""
+    failure = "Cormoria_CarabrueTown_Home2F_EventScript_PickUpBag_ItemFull"
+    explanation = f"{failure}_Text_0"
+    anchor = (
+        "\tgiveitem ITEM_LAB_WELCOMEPACKAGE\n"
+        '# 10 "data//maps/CarabrueTown_Home2F/scripts.pory"\n'
+        "\tsetflag Cormoria_FLAG_TENEBRIS_POLICE_PRESCENCE\n"
+    )
+    if (failure in text or text.count(anchor) != 1
+            or text.count("\tgiveitem ITEM_LAB_WELCOMEPACKAGE\n") != 1):
+        raise ScriptRegistrationError("Carabrue welcome package flow drift")
+    text = text.replace(anchor, anchor.replace(
+        '# 10', f"\tgoto_if_eq VAR_RESULT, FALSE, {failure}\n# 10", 1), 1)
+    exit_anchor = (
+        '# 13 "data//maps/CarabrueTown_Home2F/scripts.pory"\n'
+        "\treleaseall\n\treturn\n"
+    )
+    if text.count(exit_anchor) != 1:
+        raise ScriptRegistrationError("Carabrue welcome package exit drift")
+    return text.replace(exit_anchor, exit_anchor +
+                        f"\n{failure}::\n\tmsgbox {explanation}, MSGBOX_DEFAULT\n"
+                        "\treleaseall\n\treturn\n"
+                        f"\n{explanation}:\n"
+                        '\t.string "The Bag is full. Make room for the\\n"\n'
+                        '\t.string "Lab Package, then try again.$"\n', 1)
+
+
+def _adapt_carabrue_starter_supplies(text: str) -> str:
+    """Preflight each distinct pocket before granting any of the three gifts."""
+    failure = "Cormoria_CarabrueTown_TenebrisLab_EventScript_Start_ItemFull"
+    explanation = f"{failure}_Text_0"
+    # Poké Balls, Items and Key Items are distinct pockets in src/data/items.h.
+    checks = (
+        ("ITEM_POKE_BALL", 5),
+        ("ITEM_POTION", 1),
+        ("ITEM_TOWN_MAP", 1),
+    )
+    reward_anchor = (
+        '# 50 "data//maps/CarabrueTown_TenebrisLab/scripts.pory"\n'
+        "\tsetflag Cormoria_FLAG_REAL_PACKAGE_GET\n"
+        '# 51 "data//maps/CarabrueTown_TenebrisLab/scripts.pory"\n'
+        "\tgiveitem ITEM_POKE_BALL, 5\n"
+        '# 52 "data//maps/CarabrueTown_TenebrisLab/scripts.pory"\n'
+        "\tgiveitem ITEM_POTION, 1\n"
+        '# 53 "data//maps/CarabrueTown_TenebrisLab/scripts.pory"\n'
+        "\tgiveitem ITEM_TOWN_MAP\n"
+    )
+    gifts = ("\tgiveitem ITEM_POKE_BALL, 5\n", "\tgiveitem ITEM_POTION, 1\n",
+             "\tgiveitem ITEM_TOWN_MAP\n")
+    entry_anchor = (
+        "Cormoria_CarabrueTown_TenebrisLab_EventScript_Start::\n"
+        '# 22 "data//maps/CarabrueTown_TenebrisLab/scripts.pory"\n'
+        "\tlockall\n"
+    )
+    if (failure in text or text.count(reward_anchor) != 1
+            or text.count(entry_anchor) != 1
+            or any(text.count(gift) != 1 for gift in gifts)):
+        raise ScriptRegistrationError("Carabrue starter supplies flow drift")
+    preflight = "".join(
+        f"\tcheckitemspace {item}, {count}\n"
+        f"\tgoto_if_eq VAR_RESULT, FALSE, {failure}\n"
+        for item, count in checks
+    )
+    # The map's on-frame trigger repeats while LAB_STATE is 0. A failed check
+    # must leave that state intact and move the player out of the map so the
+    # script cannot immediately restart before Bag access is possible.
+    text = text.replace(entry_anchor, entry_anchor + preflight, 1)
+    exit_anchor = (
+        '# 98 "data//maps/CarabrueTown_TenebrisLab/scripts.pory"\n'
+        "\treleaseall\n\treturn\n"
+    )
+    if text.count(exit_anchor) != 1:
+        raise ScriptRegistrationError("Carabrue starter supplies exit drift")
+    return text.replace(exit_anchor, exit_anchor +
+                        f"\n{failure}::\n\tmsgbox {explanation}, MSGBOX_DEFAULT\n"
+                        "\treleaseall\n"
+                        "\twarp MAP_CORMORIA_CARABRUE_TOWN, 8, 18\n\tend\n"
+                        f"\n{explanation}:\n"
+                        '\t.string "The Bag is full. Make room for the\\n"\n'
+                        '\t.string "supplies, then return to the lab.$"\n', 1)
+
+
+def _adapt_carabrue_starter_capacity(text: str) -> str:
+    """Keep starter choices available when a traveler has no Pokémon space."""
+    prefix = "Cormoria_CarabrueTown_TenebrisLab_EventScript"
+    check = f"{prefix}_StarterCapacity"
+    ready = f"{check}_Ready"
+    failure = f"{prefix}_StarterStorageFull"
+    if check in text or failure in text:
+        raise ScriptRegistrationError("Carabrue starter capacity overlay drift")
+    for choice, object_id in (("One", 4), ("Two", 7), ("Three", 6)):
+        entry = f"{prefix}_Pokeball_{choice}"
+        gate = f"\tgoto_if_set Cormoria_FLAG_UNUSED_0x020, {entry}_2\n"
+        success = f"{entry}_8:\n"
+        remove = f"\tremoveobject {object_id}\n"
+        accepted = f"{entry}_5:\n"
+        if any(text.count(anchor) != 1 for anchor in (gate, success, accepted)):
+            raise ScriptRegistrationError(f"Carabrue {choice} starter flow drift")
+        gift_body = text.split(accepted, 1)[1].split(success, 1)[0]
+        if gift_body.count(remove) != 1:
+            raise ScriptRegistrationError(f"Carabrue {choice} starter object drift")
+        text = text.replace(gate, gate + f"\tcall {check}\n"
+                            f"\tgoto_if_eq VAR_RESULT, FALSE, {failure}\n", 1)
+        # Do not consume the selected object until either party or PC delivery
+        # succeeds. Both shiny branches converge here, retaining VAR_RESULT.
+        text = text.replace(accepted + gift_body + success,
+                            accepted + gift_body.replace(remove, "", 1) + success, 1)
+        text = text.replace(success, success +
+                            f"\tgoto_if_eq VAR_RESULT, MON_CANT_GIVE, {failure}\n" + remove, 1)
+    return text + (
+        f"\n{check}::\n\tgetpartysize\n"
+        f"\tgoto_if_ne VAR_RESULT, PARTY_SIZE, {ready}\n"
+        "\tspecialvar VAR_RESULT, ScriptCheckFreePokemonStorageSpace\n\treturn\n"
+        f"{ready}::\n\tsetvar VAR_RESULT, TRUE\n\treturn\n"
+        f"{failure}::\n\tmsgbox {failure}_Text_0, MSGBOX_DEFAULT\n"
+        "\treleaseall\n\tend\n"
+        f"{failure}_Text_0:\n"
+        '\t.string "Your party and PC are full. Make\\n"\n'
+        '\t.string "room for a Pokémon, then try again.$"\n'
+    )
+
+
+def _adapt_galecrest_rock_smash(text: str) -> str:
+    """Keep Galecrest's Rock Smash gift retryable when the Bag is full."""
+    failure = "Cormoria_GalecrestCity_NPC_5_ItemFull"
+    explanation = f"{failure}_Text_0"
+    gift = "\tgiveitem ITEM_HM_ROCK_SMASH\n"
+    gift_flow = (
+        '# 345 "data//maps/GalecrestCity/scripts.pory"\n'
+        f"{gift}"
+        '# 346 "data//maps/GalecrestCity/scripts.pory"\n'
+        "\trelease\n"
+        '# 347 "data//maps/GalecrestCity/scripts.pory"\n'
+        "\tsetflag Cormoria_FLAG_GALECREST_ROCKSMASH\n"
+        "\tgoto Cormoria_GalecrestCity_NPC_5_1\n"
+    )
+    if (failure in text or explanation in text or text.count(gift_flow) != 1
+            or text.count(gift) != 1):
+        raise ScriptRegistrationError("Galecrest Rock Smash reward flow drift")
+    text = text.replace(
+        gift_flow,
+        '# 345 "data//maps/GalecrestCity/scripts.pory"\n'
+        f"{gift}"
+        f"\tgoto_if_eq VAR_RESULT, FALSE, {failure}\n"
+        '# 346 "data//maps/GalecrestCity/scripts.pory"\n'
+        "\trelease\n"
+        '# 347 "data//maps/GalecrestCity/scripts.pory"\n'
+        "\tsetflag Cormoria_FLAG_GALECREST_ROCKSMASH\n"
+        "\tgoto Cormoria_GalecrestCity_NPC_5_1\n",
+        1,
+    )
+    return text + (
+        f"\n{failure}::\n"
+        f"\tmsgbox {explanation}, MSGBOX_DEFAULT\n"
+        "\treleaseall\n"
+        "\tend\n"
+        f"\n{explanation}:\n"
+        '\t.string "The Bag is full. Make room for the\\n"\n'
+        '\t.string "Rock Smash, then talk to me again.$"\n'
+    )
+
+
+def _adapt_winterlily_surf(text: str) -> str:
+    """Make Winterlily's Surf gift reachable and retryable when the Bag is full."""
+    failure = "Cormoria_WinterlilyHollow_NPC_SurfMan_ItemFull"
+    explanation = f"{failure}_Text_0"
+    gift = "\tgiveitem ITEM_HM03\n"
+    entry_flow = (
+        "Cormoria_WinterlilyHollow_NPC_SurfMan::\n"
+        '# 272 "data//maps/WinterlilyHollow/scripts.pory"\n'
+        "\tmsgbox Cormoria_WinterlilyHollow_NPC_SurfMan_Text_0, MSGBOX_NPC\n"
+        '# 273 "data//maps/WinterlilyHollow/scripts.pory"\n'
+        "\tend\n"
+        '# 276 "data//maps/WinterlilyHollow/scripts.pory"\n'
+        "\tlockall\n"
+        '# 277 "data//maps/WinterlilyHollow/scripts.pory"\n'
+        "\tfaceplayer\n"
+        '# 279 "data//maps/WinterlilyHollow/scripts.pory"\n'
+        "\tgoto_if_set Cormoria_FLAG_WINTERLILY_HOLLOW_SURF, "
+        "Cormoria_WinterlilyHollow_NPC_SurfMan_2\n"
+    )
+    completed_flow = (
+        "Cormoria_WinterlilyHollow_NPC_SurfMan_2:\n"
+        '# 280 "data//maps/WinterlilyHollow/scripts.pory"\n'
+        "\tmsgbox Cormoria_WinterlilyHollow_NPC_SurfMan_Text_1\n"
+        "\tgoto Cormoria_WinterlilyHollow_NPC_SurfMan_1\n"
+    )
+    decline_flow = (
+        "Cormoria_WinterlilyHollow_NPC_SurfMan_5:\n"
+        '# 286 "data//maps/WinterlilyHollow/scripts.pory"\n'
+        "\tmsgbox Cormoria_WinterlilyHollow_NPC_SurfMan_Text_3, MSGBOX_NPC\n"
+        "\tend\n"
+    )
+    no_scale_flow = (
+        "Cormoria_WinterlilyHollow_NPC_SurfMan_8:\n"
+        '# 292 "data//maps/WinterlilyHollow/scripts.pory"\n'
+        "\tmsgbox Cormoria_WinterlilyHollow_NPC_SurfMan_Text_4, MSGBOX_NPC\n"
+        "\tend\n"
+    )
+    remove_scale = "\tremoveitem ITEM_HEART_SCALE\n"
+    success_dialogue = (
+        '# 296 "data//maps/WinterlilyHollow/scripts.pory"\n'
+        "\tmsgbox Cormoria_WinterlilyHollow_NPC_SurfMan_Text_5, MSGBOX_SIGN\n"
+        '# 297 "data//maps/WinterlilyHollow/scripts.pory"\n'
+        "\tmsgbox Cormoria_WinterlilyHollow_NPC_SurfMan_Text_6\n"
+    )
+    exchange_flow = (
+        success_dialogue
+        + '# 298 "data//maps/WinterlilyHollow/scripts.pory"\n'
+        f"{gift}"
+        '# 299 "data//maps/WinterlilyHollow/scripts.pory"\n'
+        "\tmsgbox Cormoria_WinterlilyHollow_NPC_SurfMan_Text_7\n"
+        '# 301 "data//maps/WinterlilyHollow/scripts.pory"\n'
+        "\tsetflag Cormoria_FLAG_WINTERLILY_HOLLOW_SURF\n"
+        "\treturn\n"
+    )
+    if (failure in text or explanation in text or text.count(entry_flow) != 1
+            or text.count(completed_flow) != 1 or text.count(decline_flow) != 1
+            or text.count(no_scale_flow) != 1 or text.count(exchange_flow) != 1
+            or text.count(gift) != 1 or text.count(remove_scale) != 0):
+        raise ScriptRegistrationError("Winterlily Surf reward flow drift")
+    # The map object enters this label directly. The donor's `end` after the
+    # introductory line made the authenticated trade block unreachable.
+    text = text.replace(
+        entry_flow,
+        entry_flow.replace(
+            '# 273 "data//maps/WinterlilyHollow/scripts.pory"\n'
+            "\tend\n",
+            "",
+            1,
+        ),
+        1,
+    )
+    # Once the flag is set, acknowledge the completed exchange and terminate;
+    # looping back to the trade prompt would grant Surf repeatedly.
+    text = text.replace(
+        completed_flow,
+        "Cormoria_WinterlilyHollow_NPC_SurfMan_2:\n"
+        '# 280 "data//maps/WinterlilyHollow/scripts.pory"\n'
+        "\tmsgbox Cormoria_WinterlilyHollow_NPC_SurfMan_Text_1\n"
+        "\treleaseall\n"
+        "\tend\n",
+        1,
+    )
+    text = text.replace(
+        decline_flow,
+        "Cormoria_WinterlilyHollow_NPC_SurfMan_5:\n"
+        '# 286 "data//maps/WinterlilyHollow/scripts.pory"\n'
+        "\tmsgbox Cormoria_WinterlilyHollow_NPC_SurfMan_Text_3, MSGBOX_NPC\n"
+        "\treleaseall\n"
+        "\tend\n",
+        1,
+    )
+    text = text.replace(
+        no_scale_flow,
+        "Cormoria_WinterlilyHollow_NPC_SurfMan_8:\n"
+        '# 292 "data//maps/WinterlilyHollow/scripts.pory"\n'
+        "\tmsgbox Cormoria_WinterlilyHollow_NPC_SurfMan_Text_4, MSGBOX_NPC\n"
+        "\treleaseall\n"
+        "\tend\n",
+        1,
+    )
+    # Text_5 says the scale was given; keep both exchange messages behind the
+    # successful HM grant and scale removal so a full Bag cannot claim success.
+    text = text.replace(
+        exchange_flow,
+        '# 298 "data//maps/WinterlilyHollow/scripts.pory"\n'
+        f"{gift}"
+        f"\tgoto_if_eq VAR_RESULT, FALSE, {failure}\n"
+        f"{remove_scale}"
+        f"{success_dialogue}"
+        '# 299 "data//maps/WinterlilyHollow/scripts.pory"\n'
+        "\tmsgbox Cormoria_WinterlilyHollow_NPC_SurfMan_Text_7\n"
+        '# 301 "data//maps/WinterlilyHollow/scripts.pory"\n'
+        "\tsetflag Cormoria_FLAG_WINTERLILY_HOLLOW_SURF\n"
+        "\treleaseall\n"
+        "\tend\n",
+        1,
+    )
+    return text + (
+        f"\n{failure}::\n"
+        f"\tmsgbox {explanation}, MSGBOX_DEFAULT\n"
+        "\treleaseall\n"
+        "\tend\n"
+        f"\n{explanation}:\n"
+        '\t.string "The Bag is full. Make room for\\n"\n'
+        '\t.string "Surf, then talk to me again.$"\n'
+    )
+
+
+def _adapt_silversun_strength(text: str) -> str:
+    """Keep the cutscene complete while making its HM claim retryable on re-entry."""
+    prefix = "Cormoria_SilversunCity_OnFrame"
+    gift = (
+        "\tsetflag Cormoria_FLAG_SYS_GOT_STRENGTH\n"
+        '# 85 "data//maps/SilversunCity/scripts.pory"\n'
+        "\tgiveitem ITEM_HM04\n"
+    )
+    next_quest = "\tsetflag Cormoria_FLAG_SILVERSUN_NEXTQUEST\n"
+    return_label = f"{prefix}_3:\n\treturn\n"
+    if text.count(gift) != 1 or text.count(next_quest) != 1 or text.count(return_label) != 1:
+        raise ScriptRegistrationError("Silversun Strength cutscene flow drift")
+    text = text.replace(gift, (
+        "\tcheckitem ITEM_HM04\n"
+        f"\tgoto_if_eq VAR_RESULT, TRUE, {prefix}_StrengthOwned\n"
+        "\tgiveitem ITEM_HM04\n"
+        f"\tgoto_if_eq VAR_RESULT, FALSE, {prefix}_StrengthSkipped\n"
+        f"{prefix}_StrengthOwned::\n"
+        "\tsetflag Cormoria_FLAG_SYS_GOT_STRENGTH\n"
+        f"{prefix}_StrengthSkipped::\n"
+    ), 1)
+    text = text.replace(next_quest, next_quest + "\tsetvar VAR_TEMP_0, 1\n", 1)
+    text = text.replace(return_label, (
+        f"{prefix}_3:\n"
+        "\tsetvar VAR_TEMP_0, 1\n"
+        f"\tgoto_if_set Cormoria_FLAG_SYS_GOT_STRENGTH, {prefix}_StrengthDone\n"
+        "\tcheckitem ITEM_HM04\n"
+        f"\tgoto_if_eq VAR_RESULT, TRUE, {prefix}_StrengthReconciled\n"
+        "\tlockall\n"
+        "\tgiveitem ITEM_HM04\n"
+        f"\tgoto_if_eq VAR_RESULT, FALSE, {prefix}_StrengthBagFull\n"
+        "\tsetflag Cormoria_FLAG_SYS_GOT_STRENGTH\n"
+        "\treleaseall\n\tend\n"
+        f"{prefix}_StrengthReconciled::\n"
+        "\tsetflag Cormoria_FLAG_SYS_GOT_STRENGTH\n"
+        f"{prefix}_StrengthDone::\n\treturn\n"
+        f"{prefix}_StrengthBagFull::\n"
+        f"\tmsgbox {prefix}_StrengthBagFull_Text_0, MSGBOX_DEFAULT\n"
+        "\treleaseall\n\tend\n"
+    ), 1)
+    return text + (
+        f"\n{prefix}_StrengthBagFull_Text_0:\n"
+        '\t.string "The Bag is full. Make room for\\n"\n'
+        '\t.string "Strength, then return to the city.$"\n'
+    )
+
+
+def _adapt_carabrue_gardevoir_reward(text: str) -> str:
+    """Keep the one-time berry available when its pocket rejects delivery."""
+    prefix = "Cormoria_CarabrueTown_TenebrisLab_Gardevoir"
+    gift = "\tgiveitem ITEM_STARF_BERRY\n"
+    failure = prefix + "_ItemFull"
+    if text.count(gift) != 1 or failure in text:
+        raise ScriptRegistrationError("Carabrue Gardevoir reward flow drift")
+    return text.replace(gift, gift + f"\tgoto_if_eq VAR_RESULT, FALSE, {failure}\n", 1) + (
+        f"\n{failure}::\n\treleaseall\n\tend\n"
+    )
+
+
+def _adapt_carabrue_waterfall(text: str) -> str:
+    """Do not replay the finale, and retry its HM after a full-Bag failure."""
+    prefix = "Cormoria_CarabrueTown_TenebrisLab_PostFinale"
+    start = "\tsetvar VAR_TEMP_1, 1\n"
+    gift = "\tgiveitem ITEM_HM07\n"
+    if text.count(start) != 1 or text.count(gift) != 1:
+        raise ScriptRegistrationError("Carabrue Waterfall finale flow drift")
+    text = text.replace(start, start + (
+        f"\tgoto_if_set Cormoria_FLAG_POST_FINALE_CUTSCENE, {prefix}_WaterfallRetry\n"
+    ), 1)
+    text = text.replace(gift, (
+        "\tcheckitem ITEM_HM07\n"
+        f"\tgoto_if_eq VAR_RESULT, TRUE, {prefix}_WaterfallAlreadyOwned\n"
+        "\tgiveitem ITEM_HM07\n"
+        f"{prefix}_WaterfallAlreadyOwned::\n"
+    ), 1)
+    return text + (
+        f"\n{prefix}_WaterfallRetry::\n"
+        "\tcheckitem ITEM_HM07\n"
+        f"\tgoto_if_eq VAR_RESULT, TRUE, {prefix}_WaterfallDone\n"
+        "\tlockall\n"
+        "\tgiveitem ITEM_HM07\n"
+        f"\tgoto_if_eq VAR_RESULT, FALSE, {prefix}_WaterfallBagFull\n"
+        "\treleaseall\n\tend\n"
+        f"{prefix}_WaterfallBagFull::\n"
+        f"\tmsgbox {prefix}_WaterfallBagFull_Text_0, MSGBOX_DEFAULT\n"
+        "\treleaseall\n\tend\n"
+        f"{prefix}_WaterfallDone::\n\treturn\n"
+        f"{prefix}_WaterfallBagFull_Text_0:\n"
+        '\t.string "The Bag is full. Make room for\\n"\n'
+        '\t.string "Waterfall, then return here.$"\n'
+    )
+
+
+def _adapt_silversun_backstage_pass(text: str) -> str:
+    """Do not retire the only pass pickup unless the Key Items pocket accepts it."""
+    failure = "Cormoria_SilversunCityGym_EventScript_BackstagePass_ItemFull"
+    owned = "Cormoria_SilversunCityGym_EventScript_BackstagePass_AlreadyOwned"
+    gift = "\tgiveitem ITEM_BACKSTAGE_PASS\n"
+    possession_anchor = (
+        "\tgoto_if_set Cormoria_FLAG_SILVERSUN_BACKSTAGEPASS_GET, "
+        "Cormoria_SilversunCityGym_EventScript_BackstagePass_2\n"
+        '# 15 "data//maps/SilversunCityGym/scripts.pory"\n'
+    )
+    anchor = (
+        '# 17 "data//maps/SilversunCityGym/scripts.pory"\n'
+        "\tsetflag Cormoria_FLAG_SILVERSUN_BACKSTAGEPASS_GET\n"
+        '# 18 "data//maps/SilversunCityGym/scripts.pory"\n'
+        + gift
+    )
+    if (failure in text or owned in text or text.count(anchor) != 1
+            or text.count(gift) != 1 or text.count(possession_anchor) != 1):
+        raise ScriptRegistrationError("Silversun backstage pass flow drift")
+    text = text.replace(possession_anchor, (
+        possession_anchor.split('# 15', 1)[0]
+        + "\tcheckitem ITEM_BACKSTAGE_PASS\n"
+        + f"\tgoto_if_eq VAR_RESULT, TRUE, {owned}\n"
+        + '# 15 "data//maps/SilversunCityGym/scripts.pory"\n'
+    ), 1)
+    text = text.replace(anchor, (
+        '# 18 "data//maps/SilversunCityGym/scripts.pory"\n'
+        + gift
+        + f"\tgoto_if_eq VAR_RESULT, FALSE, {failure}\n"
+        + "\tsetflag Cormoria_FLAG_SILVERSUN_BACKSTAGEPASS_GET\n"
+    ), 1)
+    return text + (
+        f"\n{owned}::\n"
+        "\tsetflag Cormoria_FLAG_SILVERSUN_BACKSTAGEPASS_GET\n"
+        "\tgoto Cormoria_SilversunCityGym_EventScript_BackstagePass_2\n"
+        f"\n{failure}::\n"
+        f"\tmsgbox {failure}_Text_0, MSGBOX_DEFAULT\n"
+        "\treleaseall\n\treturn\n"
+        f"\n{failure}_Text_0:\n"
+        '\t.string "The Bag is full. Make room for the\\n"\n'
+        '\t.string "Backstage Pass, then ask again.$"\n'
+    )
+
+
+def _adapt_galecrest_student_id(text: str) -> str:
+    """Charge the fee and mark the ID obtained only after successful delivery."""
+    failure = "Cormoria_GalecrestCity_DetectiveAcademy_Receptionist_StudentID_ItemFull"
+    gift = "\tgiveitem ITEM_DETECTIVE_STUDENT_ID\n"
+    anchor = (
+        '# 158 "data//maps/GalecrestCity_DetectiveAcademy/scripts.pory"\n'
+        + gift
+        + '# 159 "data//maps/GalecrestCity_DetectiveAcademy/scripts.pory"\n'
+        + "\tsetflag Cormoria_FLAG_GALECREST_STUDENTID_GET\n"
+        + '# 160 "data//maps/GalecrestCity_DetectiveAcademy/scripts.pory"\n'
+        + "\tremovemoney 1000\n"
+    )
+    owned_anchor = (
+        "Cormoria_GalecrestCity_DetectiveAcademy_Receptionist_StudentID_2:\n"
+        '# 141 "data//maps/GalecrestCity_DetectiveAcademy/scripts.pory"\n'
+    )
+    if (failure in text or text.count(anchor) != 1 or text.count(gift) != 1
+            or text.count(owned_anchor) != 1):
+        raise ScriptRegistrationError("Galecrest student ID flow drift")
+    text = text.replace(anchor, anchor.replace(
+        '# 159', f"\tgoto_if_eq VAR_RESULT, FALSE, {failure}\n# 159", 1), 1)
+    text = text.replace(owned_anchor, (
+        owned_anchor + "\tsetflag Cormoria_FLAG_GALECREST_STUDENTID_GET\n"
+    ), 1)
+    return text + (
+        f"\n{failure}::\n"
+        f"\tmsgbox {failure}_Text_0, MSGBOX_DEFAULT\n"
+        "\treleaseall\n\treturn\n"
+        f"\n{failure}_Text_0:\n"
+        '\t.string "The Bag is full. Make room for the\\n"\n'
+        '\t.string "Student ID, then ask again.$"\n'
+    )
 
 
 def build_preview(stage: Path, root: Path = ROOT) -> dict[str, bytes]:
@@ -275,6 +842,61 @@ def build_preview(stage: Path, root: Path = ROOT) -> dict[str, bytes]:
             if rewritten.count(premature_clear) != 1:
                 raise ScriptRegistrationError("Championship game-clear script drift")
             rewritten = rewritten.replace(premature_clear, "")
+        if relative == GALECREST_CITY:
+            rewritten = _adapt_galecrest_rock_smash(rewritten)
+            overlay_labels.add("Cormoria_GalecrestCity_NPC_5_ItemFull")
+            overlay_labels.add("Cormoria_GalecrestCity_NPC_5_ItemFull_Text_0")
+        if relative == WINTERLILY_HOLLOW:
+            rewritten = _adapt_winterlily_surf(rewritten)
+            overlay_labels.add("Cormoria_WinterlilyHollow_NPC_SurfMan_ItemFull")
+            overlay_labels.add("Cormoria_WinterlilyHollow_NPC_SurfMan_ItemFull_Text_0")
+        if relative == SILVERSUN_CITY:
+            rewritten = _adapt_silversun_strength(rewritten)
+            overlay_labels.update({
+                "Cormoria_SilversunCity_OnFrame_StrengthOwned",
+                "Cormoria_SilversunCity_OnFrame_StrengthSkipped",
+                "Cormoria_SilversunCity_OnFrame_StrengthReconciled",
+                "Cormoria_SilversunCity_OnFrame_StrengthDone",
+                "Cormoria_SilversunCity_OnFrame_StrengthBagFull",
+                "Cormoria_SilversunCity_OnFrame_StrengthBagFull_Text_0",
+            })
+        if relative == CARABRUE_FINALE:
+            rewritten = _adapt_carabrue_waterfall(rewritten)
+            overlay_labels.update({
+                "Cormoria_CarabrueTown_TenebrisLab_PostFinale_WaterfallAlreadyOwned",
+                "Cormoria_CarabrueTown_TenebrisLab_PostFinale_WaterfallRetry",
+                "Cormoria_CarabrueTown_TenebrisLab_PostFinale_WaterfallBagFull",
+                "Cormoria_CarabrueTown_TenebrisLab_PostFinale_WaterfallDone",
+                "Cormoria_CarabrueTown_TenebrisLab_PostFinale_WaterfallBagFull_Text_0",
+            })
+        if relative == SILVERSUN_GYM:
+            rewritten = _adapt_silversun_backstage_pass(rewritten)
+            overlay_labels.add("Cormoria_SilversunCityGym_EventScript_BackstagePass_AlreadyOwned")
+            overlay_labels.add("Cormoria_SilversunCityGym_EventScript_BackstagePass_ItemFull")
+            overlay_labels.add("Cormoria_SilversunCityGym_EventScript_BackstagePass_ItemFull_Text_0")
+        if relative == GALECREST_ACADEMY:
+            rewritten = _adapt_galecrest_student_id(rewritten)
+            overlay_labels.add("Cormoria_GalecrestCity_DetectiveAcademy_Receptionist_StudentID_ItemFull")
+            overlay_labels.add("Cormoria_GalecrestCity_DetectiveAcademy_Receptionist_StudentID_ItemFull_Text_0")
+        if relative == GASTREE_GYM:
+            rewritten = _adapt_gastree_item_rewards(rewritten)
+            overlay_labels.add("Cormoria_GastreeGym_Red_ItemFull")
+            overlay_labels.add("Cormoria_GastreeGym_LeaderBattle_RareShardRetry")
+            overlay_labels.add("Cormoria_GastreeGym_LeaderBattle_RareShardItemFull")
+            overlay_labels.add("Cormoria_GastreeGym_LeaderBattle_RareShardItemFull_Text_0")
+        if relative == CARABRUE_HOME_2F:
+            rewritten = _adapt_carabrue_welcome_package(rewritten)
+            overlay_labels.add("Cormoria_CarabrueTown_Home2F_EventScript_PickUpBag_ItemFull")
+            overlay_labels.add("Cormoria_CarabrueTown_Home2F_EventScript_PickUpBag_ItemFull_Text_0")
+        if relative == CARABRUE_TENEBRIS_LAB:
+            rewritten = _adapt_carabrue_starter_supplies(rewritten)
+            rewritten = _adapt_carabrue_starter_capacity(rewritten)
+            rewritten = _adapt_carabrue_gardevoir_reward(rewritten)
+            overlay_labels.add("Cormoria_CarabrueTown_TenebrisLab_Gardevoir_ItemFull")
+            overlay_labels.add("Cormoria_CarabrueTown_TenebrisLab_EventScript_Start_ItemFull")
+            overlay_labels.add("Cormoria_CarabrueTown_TenebrisLab_EventScript_Start_ItemFull_Text_0")
+            for suffix in ("StarterCapacity", "StarterCapacity_Ready", "StarterStorageFull", "StarterStorageFull_Text_0"):
+                overlay_labels.add("Cormoria_CarabrueTown_TenebrisLab_EventScript_" + suffix)
         donor_gacha_token_references += texts[relative].count("removeitem ITEM_GACHA_TOKEN")
         if relative == GACHA_TOKEN_SETTLEMENT:
             rewritten, transformed = _adapt_gacha_token_settlement(rewritten)

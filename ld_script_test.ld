@@ -29,20 +29,22 @@ SECTIONS {
     __test_ewram_overlay_start = .;
     OVERLAY : NOCROSSREFS
     {
-        .test_johto_save             { test/johto/save.o(.sbss) }
-        .test_coop_presence_runtime  { test/coop/presence_runtime.o(.sbss) }
-        .test_coop_net_bridge        { test/coop/net_bridge.o(.sbss) }
-        .test_johto_field_moves      { test/johto/field_moves.o(.sbss) }
-        .test_johto_bug_contest_save { test/johto/bug_contest_save.o(.sbss) }
-        .test_johto_bug_settlement   { test/johto/bug_contest_settlement.o(.sbss) }
-        .test_johto_bug_contest      { test/johto/bug_contest.o(.sbss) }
-        .test_johto_trainer_slides   { test/johto/trainer_slide_bounds.o(.sbss) }
-        .test_johto_berry_plots      { test/johto/berry_plots.o(.sbss) }
-        .test_johto_berry_lifetime   { test/johto/berry_lifetime.o(.sbss) }
-        .test_johto_berry_harvest    { test/johto/berry_harvest.o(.sbss) }
-        .test_johto_headbutt         { test/johto/headbutt.o(.sbss) }
-        .test_coop_save              { test/coop/save.o(.sbss) }
-        .test_sprite                 { test/sprite.o(.sbss) }
+        /* Exact-match wildcards select linked fixtures without loading objects
+         * omitted by TEST_SRCS. */
+        .test_johto_save             { test/johto/[s]ave.o(.sbss) }
+        .test_coop_presence_runtime  { test/coop/[p]resence_runtime.o(.sbss) }
+        .test_coop_net_bridge        { test/coop/[n]et_bridge.o(.sbss) }
+        .test_johto_field_moves      { test/johto/[f]ield_moves.o(.sbss) }
+        .test_johto_bug_contest_save { test/johto/[b]ug_contest_save.o(.sbss) }
+        .test_johto_bug_settlement   { test/johto/[b]ug_contest_settlement.o(.sbss) }
+        .test_johto_bug_contest      { test/johto/[b]ug_contest.o(.sbss) }
+        .test_johto_trainer_slides   { test/johto/[t]rainer_slide_bounds.o(.sbss) }
+        .test_johto_berry_plots      { test/johto/[b]erry_plots.o(.sbss) }
+        .test_johto_berry_lifetime   { test/johto/[b]erry_lifetime.o(.sbss) }
+        .test_johto_berry_harvest    { test/johto/[b]erry_harvest.o(.sbss) }
+        .test_johto_headbutt         { test/johto/[h]eadbutt.o(.sbss) }
+        .test_coop_save              { test/coop/[s]ave.o(.sbss) }
+        .test_sprite                 { test/[s]prite.o(.sbss) }
     } > EWRAM
     __test_ewram_overlay_end = .;
 
@@ -171,7 +173,7 @@ SECTIONS {
     ALIGN(4)
     {
         __start_tests = .;
-        test/test_test_runner.o(.tests); /* Sanity checks first. */
+        test/[t]est_test_runner.o(.tests); /* Sanity checks first, if selected. */
         test/*.o(.tests);
         __stop_tests = .;
         test/*.o(.text);

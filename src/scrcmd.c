@@ -30,6 +30,7 @@
 #include "fieldmap.h"
 #include "follower_npc.h"
 #include "gpu_regs.h"
+#include "heal_location.h"
 #include "item.h"
 #include "lilycove_lady.h"
 #include "main.h"
@@ -2733,7 +2734,7 @@ bool8 ScrCmd_setrespawn(struct ScriptContext *ctx)
 
     Script_RequestEffects(SCREFF_V1 | SCREFF_SAVE);
 
-    SetLastHealLocationWarp(healLocationId);
+    SetLastHealLocationWarp(ResolveScriptHealLocation(healLocationId));
     return FALSE;
 }
 

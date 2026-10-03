@@ -71,7 +71,8 @@ Cormoria_GastreeGym_LeaderBattle_1:
 Cormoria_GastreeGym_LeaderBattle_2:
 # 24 "data//maps/GastreeGym/scripts.pory"
 	msgbox Cormoria_GastreeGym_LeaderBattle_Text_0, MSGBOX_NPC
-	goto Cormoria_GastreeGym_LeaderBattle_1
+	goto_if_set Cormoria_FLAG_GASTREEGYM_LEADER_RARE_SHARD_RECEIVED, Cormoria_GastreeGym_LeaderBattle_1
+	goto Cormoria_GastreeGym_LeaderBattle_RareShardRetry
 
 
 Cormoria_GastreeGym_EventScript_Victory::
@@ -101,6 +102,8 @@ Cormoria_GastreeGym_EventScript_Victory::
 	speakername NULL
 # 77 "data//maps/GastreeGym/scripts.pory"
 	giveitem ITEM_RARE_SHARD
+	goto_if_eq VAR_RESULT, FALSE, Cormoria_GastreeGym_LeaderBattle_RareShardItemFull
+	setflag Cormoria_FLAG_GASTREEGYM_LEADER_RARE_SHARD_RECEIVED
 # 78 "data//maps/GastreeGym/scripts.pory"
 	speakername Cormoria_GastreeGym_LeaderBattle_Text_1
 # 79 "data//maps/GastreeGym/scripts.pory"
@@ -131,6 +134,7 @@ Cormoria_GastreeGym_Red::
 	msgbox Cormoria_GastreeGym_Red_Text_3
 # 122 "data//maps/GastreeGym/scripts.pory"
 	giveitem ITEM_FRESH_WATER
+	goto_if_eq VAR_RESULT, FALSE, Cormoria_GastreeGym_Red_ItemFull
 # 123 "data//maps/GastreeGym/scripts.pory"
 	msgbox Cormoria_GastreeGym_Red_Text_4
 # 124 "data//maps/GastreeGym/scripts.pory"
@@ -213,6 +217,7 @@ Cormoria_GastreeGym_Red_Reward_Give::
 Cormoria_GastreeGym_Red_Reward_Give_1:
 # 146 "data//maps/GastreeGym/scripts.pory"
 	giveitem VAR_0x8006
+	goto_if_eq VAR_RESULT, FALSE, Cormoria_GastreeGym_Red_ItemFull
 # 147 "data//maps/GastreeGym/scripts.pory"
 	setflag Cormoria_FLAG_GASTREEGYM_SPENSER_REWARD
 # 148 "data//maps/GastreeGym/scripts.pory"
@@ -223,6 +228,10 @@ Cormoria_GastreeGym_Red_Reward_Give_1:
 Cormoria_GastreeGym_Red_Reward_End::
 # 155 "data//maps/GastreeGym/scripts.pory"
 	msgbox Cormoria_GastreeGym_Red_Reward_End_Text_0, MSGBOX_NPC
+	end
+
+Cormoria_GastreeGym_Red_ItemFull::
+	releaseall
 	end
 
 
@@ -427,3 +436,20 @@ Cormoria_GastreeGym_Text_Intro::
 Cormoria_GastreeGym_Text_Defeated::
 # 92 "data//maps/GastreeGym/scripts.pory"
 	.string "No way! Two defeats in a day?$"
+
+Cormoria_GastreeGym_LeaderBattle_RareShardRetry::
+	checkitemspace ITEM_RARE_SHARD, 1
+	goto_if_eq VAR_RESULT, FALSE, Cormoria_GastreeGym_LeaderBattle_RareShardItemFull
+	giveitem ITEM_RARE_SHARD
+	goto_if_eq VAR_RESULT, FALSE, Cormoria_GastreeGym_LeaderBattle_RareShardItemFull
+	setflag Cormoria_FLAG_GASTREEGYM_LEADER_RARE_SHARD_RECEIVED
+	goto Cormoria_GastreeGym_LeaderBattle_1
+
+Cormoria_GastreeGym_LeaderBattle_RareShardItemFull::
+	msgbox Cormoria_GastreeGym_LeaderBattle_RareShardItemFull_Text_0, MSGBOX_DEFAULT
+	releaseall
+	end
+
+Cormoria_GastreeGym_LeaderBattle_RareShardItemFull_Text_0:
+	.string "The Bag is full. Make room for the\n"
+	.string "Rare Shard, then talk to Inger again.$"

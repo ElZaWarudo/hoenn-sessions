@@ -32,12 +32,13 @@ TEST("Cormoria quest state keeps each donor bit independently")
     EXPECT(!value);
 }
 
-TEST("Cormoria subquest completions occupy the following 21 flags")
+TEST("Cormoria subquest completions occupy exactly the donor's 20 flags")
 {
     bool8 completed = TRUE;
     u16 subquest;
 
     WorldEventSave_InitializeCurrent();
+    EXPECT_EQ(CORMORIA_SUBQUEST_COUNT, 20);
     for (subquest = 0; subquest < CORMORIA_SUBQUEST_COUNT; subquest++)
     {
         EXPECT(CormoriaQuestState_GetSubquest(subquest, &completed));
@@ -45,8 +46,11 @@ TEST("Cormoria subquest completions occupy the following 21 flags")
         EXPECT(CormoriaQuestState_SetSubquest(subquest, TRUE));
         EXPECT(WorldEventSave_GetFlag(CORMORIA_SUBQUEST_FLAG_BASE + subquest));
     }
-    EXPECT(CormoriaQuestState_GetSubquest(20, &completed));
+    EXPECT(CormoriaQuestState_GetSubquest(19, &completed));
     EXPECT(completed);
+    EXPECT(!CormoriaQuestState_GetSubquest(20, &completed));
+    EXPECT(!CormoriaQuestState_SetSubquest(20, TRUE));
+    EXPECT(!WorldEventSave_GetFlag(CORMORIA_SUBQUEST_FLAG_BASE - 1));
     EXPECT(!WorldEventSave_GetFlag(CORMORIA_QUEST_FLAG_END));
 }
 

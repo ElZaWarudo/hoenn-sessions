@@ -871,6 +871,24 @@ static void EstablishTestCloudSession(void)
     EXPECT(CoopBridgeQueue_IsEmpty(&gCoopNetBridge.game_to_network));
 }
 
+static void DeliverTestOnlineStatus(u32 requestId, u32 sequence, u8 flags)
+{
+    struct CoopOnlineRequest request = { .request_id = requestId, .action = COOP_ONLINE_REFRESH };
+    struct CoopBridgeMessage message;
+    u8 payload[COOP_ONLINE_STATUS_SIZE] = {0};
+
+    EXPECT(CoopNetBridge_SendOnlineRequest(&request));
+    EXPECT(CoopNetBridge_DequeueGameToNetwork(&message));
+    EXPECT_EQ(message.type, COOP_BRIDGE_MESSAGE_ONLINE_REQUEST);
+    payload[0] = requestId;
+    payload[5] = flags;
+    EXPECT(CoopBridgeMessage_Seal(&message, COOP_BRIDGE_MESSAGE_ONLINE_STATUS,
+                                 sequence, 17, payload, sizeof(payload)));
+    EXPECT(CoopNetBridge_EnqueueNetworkToGame(&message));
+    CoopNetBridge_Poll();
+    EXPECT(CoopBridgeQueue_IsEmpty(&gCoopNetBridge.game_to_network));
+}
+
 static void StartTestCheckpoint(void)
 {
     struct CoopBridgeMessage message;
@@ -980,6 +998,34 @@ TEST("Harbor script portals queue their fixed world routes only in cloud mode")
     EXPECT(memcmp(message.payload, "to_main", 7) == 0);
     EXPECT(CoopNetBridge_DequeueGameToNetwork(&message));
     EXPECT_EQ(message.type, COOP_BRIDGE_MESSAGE_CHECKPOINT_READY);
+}
+
+TEST("Grouped cloud sessions enqueue region portals and ordinary checkpoints")
+{
+    struct CoopBridgeMessage message;
+
+    EstablishTestCloudSession();
+    DeliverTestOnlineStatus(1, 2, COOP_ONLINE_GROUPED);
+    EXPECT(CoopNetBridge_IsGrouped());
+    EXPECT(CoopBridgeQueue_IsEmpty(&gCoopNetBridge.game_to_network));
+
+    CoopNetBridge_ScriptPortalAvailable();
+    EXPECT_EQ(gSpecialVar_Result, TRUE);
+    EXPECT_EQ(CoopNetBridge_RequestPortalTravel("to_cormoria"), COOP_CHECKPOINT_REQUEST_STARTED);
+    EXPECT(CoopNetBridge_DequeueGameToNetwork(&message));
+    EXPECT_EQ(message.type, COOP_BRIDGE_MESSAGE_PORTAL_TRAVEL_REQUEST);
+    EXPECT_EQ(message.length, 11);
+    EXPECT(memcmp(message.payload, "to_cormoria", 11) == 0);
+    EXPECT(CoopNetBridge_DequeueGameToNetwork(&message));
+    EXPECT_EQ(message.type, COOP_BRIDGE_MESSAGE_CHECKPOINT_READY);
+    EXPECT(CoopBridgeQueue_IsEmpty(&gCoopNetBridge.game_to_network));
+
+    EstablishTestCloudSession();
+    DeliverTestOnlineStatus(1, 2, COOP_ONLINE_GROUPED);
+    EXPECT_EQ(CoopNetBridge_RequestCheckpoint(), COOP_CHECKPOINT_REQUEST_STARTED);
+    EXPECT(CoopNetBridge_DequeueGameToNetwork(&message));
+    EXPECT_EQ(message.type, COOP_BRIDGE_MESSAGE_CHECKPOINT_READY);
+    EXPECT(CoopBridgeQueue_IsEmpty(&gCoopNetBridge.game_to_network));
 }
 
 TEST("Cloud Coop portal request rejects overlong ID without publishing intent")

@@ -541,6 +541,11 @@ bool8 CoopNetBridge_IsGrouped(void)
         && (sCoopNetRuntime.online_status.flags & COOP_ONLINE_GROUPED) != 0;
 }
 
+static bool8 IsPortalAvailable(void)
+{
+    return CoopNetBridge_IsCloudMode();
+}
+
 static bool8 DecodeOnlineName(u8 *out, const u8 *in)
 {
     u32 i;
@@ -682,14 +687,14 @@ enum CoopCheckpointRequestResult CoopNetBridge_RequestCheckpoint(void)
 
 enum CoopCheckpointRequestResult CoopNetBridge_RequestPortalTravel(const char *portal_id)
 {
-    if (portal_id == NULL)
+    if (portal_id == NULL || !IsPortalAvailable())
         return COOP_CHECKPOINT_REQUEST_REJECTED;
     return RequestCheckpoint(portal_id);
 }
 
 void CoopNetBridge_ScriptPortalAvailable(void)
 {
-    gSpecialVar_Result = CoopNetBridge_IsCloudMode();
+    gSpecialVar_Result = IsPortalAvailable();
 }
 
 void CoopNetBridge_ScriptTravelToCormoria(void)

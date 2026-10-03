@@ -1,0 +1,130 @@
+{
+  "schema_version": 1,
+  "donor_revision": "f7997186345885bfa23a170e5f573851fc034b9b",
+  "cases": [
+    {
+      "id": "gardevoir-starf-capacity-retry",
+      "test": "Cormoria Gardevoir Starf reward retains full-stack claim for retry and delivers once",
+      "source": "test/cormoria/rewards.c",
+      "coverage": "compiled production entry and STD_OBTAIN_ITEM transaction with bounded presentation stubs; ROM_WORLD=2",
+      "initial_state": "saturated Starf Berry stack, unrelated Potion/Oran Berry and regional/Main flag sentinels",
+      "expected": "failed insertion preserves Bag/claim; remove one Berry and retry restores quantity and claims once; third interaction attempts no gift",
+      "excluded": "visible dialogue, field locking and save/reload persistence"
+    },
+    {
+      "id": "starter-party-space",
+      "test": "Cormoria starter uses party space even when every PC slot is full",
+      "source": "test/cormoria/campaign.c",
+      "coverage": "production givemon command",
+      "initial_state": "party empty, every PC slot occupied",
+      "expected": "MON_GIVEN_TO_PARTY; level 5 gift and Oran Berry; PC unchanged"
+    },
+    {
+      "id": "starter-pc-space",
+      "test": "Cormoria starter uses PC space when all party slots are occupied",
+      "source": "test/cormoria/campaign.c",
+      "coverage": "production givemon command",
+      "initial_state": "six occupied party slots, PC empty",
+      "expected": "MON_GIVEN_TO_PC; exactly one stored gift; party unchanged"
+    },
+    {
+      "id": "starter-full-storage-retry",
+      "test": "Cormoria starter full storage rejects without losing data and permits retry",
+      "source": "test/cormoria/campaign.c",
+      "coverage": "production givemon command",
+      "initial_state": "six occupied party slots, every PC slot occupied",
+      "expected": "MON_CANT_GIVE; party/PC and caught status unchanged; free last PC slot and retry succeeds"
+    },
+    {
+      "id": "championship-signup-gates",
+      "test": "Cormoria finale signup gates use regional completion and signup precedence",
+      "source": "test/cormoria/finale.c",
+      "coverage": "production exported entry to first UI effect; ROM_WORLD=2",
+      "initial_state": "regional room, signup and game-clear combinations; host clear separately",
+      "expected": "production text branch and first lock/message boundary; completion precedence; closed without room"
+    },
+    {
+      "id": "championship-entry-gates",
+      "test": "Cormoria finale match entry requires regional signup and prioritizes completion",
+      "source": "test/cormoria/finale.c",
+      "coverage": "production exported entry to first UI effect; ROM_WORLD=2",
+      "initial_state": "all regional signup/game-clear combinations",
+      "expected": "production entry text; regional clear dominates signup"
+    },
+    {
+      "id": "post-finale-lab-gates",
+      "test": "Cormoria finale scientist distinguishes partner finale and regional clear",
+      "source": "test/cormoria/finale.c",
+      "coverage": "production exported entry to first UI effect; ROM_WORLD=2",
+      "initial_state": "partner, post-finale, regional clear and host-clear-only states",
+      "expected": "production scientist text; host clear does not select regional completion"
+    },
+    {
+      "id": "ceram-badge-gate",
+      "test": "Cormoria campaign Ceram exit requires its own second badge",
+      "source": "test/cormoria/finale.c",
+      "coverage": "production exported entry to first UI effect; ROM_WORLD=2",
+      "initial_state": "no badge, host second badge, regional second badge",
+      "expected": "first lockall boundary when blocked; regional badge ends before hardware"
+    },
+    {
+      "id": "completion-first-repeat",
+      "test": "Cormoria GameClear awards normal party once and keeps host completion independent",
+      "source": "test/cormoria/post_battle.c",
+      "coverage": "actual GameClear, four host-clear/first-HOF-time combinations and repeat; ROM_WORLD=2",
+      "initial_state": "normal injured mon, egg, host completion clear/set, global first-HOF time zero/present",
+      "expected": "healing and normal-mon ribbon once; identity and held items retained; regional flag and Carabrue continue warp; repeat party/world record unchanged",
+      "excluded": "visible Hall of Fame, flash save and cold reload"
+    },
+    {
+      "id": "dreamstone-return-present",
+      "test": "Cormoria Dreamstone No preserves finale and Yes commits return to present",
+      "source": "test/cormoria/story_transitions.c",
+      "coverage": "complete production Yes/No bytecode with bounded question/field presentation and native setwarp/ApplyCurrentWarp adapter; ROM_WORLD=2",
+      "initial_state": "island stage3, Tenebris visible, finale hidden; all four host/regional completion combinations",
+      "expected": "No preserves region/location/last warp; Yes stage4 and visibility swap, commits Uncharted(78,24), warp255; party/Bag/completion unchanged",
+      "excluded": "actual warp scheduling, avatar reset, rendered map/sign and flash persistence"
+    },
+    {
+      "id": "somber-ending-lab-state",
+      "test": "Cormoria Somber ending and normal finale lab commit regional completion",
+      "source": "test/cormoria/somber_ending.c",
+      "coverage": "full imported ending and normal lab bytecode with bounded presentation adapters; native state, quest, healing, respawn and warp commit; ROM_WORLD=2",
+      "initial_state": "island stage4, active Somber quest, Waterfall owned; all four host/regional championship completion combinations",
+      "expected": "stage5, finale flags and Somber quest completion; party/Bag and championship flags retained; finale lab(5,4) and regional Carabrue respawn",
+      "excluded": "visible cutscene/map loading, missing Waterfall/full-pocket delivery, flash save and cold reload"
+    },
+    {
+      "id": "qualified-heal-script-ids",
+      "test": "Cormoria setrespawn maps all qualified ledger IDs to native heal locations",
+      "source": "test/cormoria/heal_commands.c",
+      "coverage": "actual setrespawn command for all 17 explicit qualified-to-native mappings; ROM_WORLD=2",
+      "initial_state": "host respawn sentinel and full-width token through script variable",
+      "expected": "correct saved regional map/coordinates/warp and reverse native lookup; no token truncation",
+      "excluded": "visible whiteout, healer interaction and disk persistence"
+    },
+    {
+      "id": "heal-host-and-invalid-inputs",
+      "test": "Cormoria setrespawn rejects invalid full-width IDs without truncation",
+      "source": "test/cormoria/heal_commands.c",
+      "coverage": "actual setrespawn; all 62 host IDs and invalid full-width IDs in both ROM profiles",
+      "initial_state": "host respawn sentinel; NONE, out-of-range tokens, high values with valid low bytes; foreign Cormoria token in Main",
+      "expected": "valid host destinations unchanged; unsupported values preserve full saved WarpData",
+      "excluded": "visible whiteout and disk persistence"
+    }
+  ],
+  "variants": {
+    "species": [
+      "SPECIES_GOTHITA",
+      "SPECIES_TIMBURR",
+      "SPECIES_ZIGZAGOON_GALAR"
+    ],
+    "shiny_modes": [
+      "SHINY_MODE_ALWAYS",
+      "SHINY_MODE_NEVER"
+    ]
+  },
+  "entry_flow_check": "tools.tests.test_cormoria_scripts.ScriptPreviewTests.test_starter_capacity_does_not_consume_choice_before_delivery",
+  "entry_flow_coverage": "generated source guards only; not visible lab interaction or save/reload",
+  "remaining_campaign_coverage": "other mandatory gyms, Somber ending, ship, Uncharted Island, Ancient Cormoria, Victory Road, full Championship battles/Hall of Fame, postgame, legends and venues"
+}

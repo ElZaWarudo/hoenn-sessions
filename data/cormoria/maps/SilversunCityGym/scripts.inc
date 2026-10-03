@@ -9,14 +9,16 @@ Cormoria_SilversunCityGym_EventScript_BackstagePass::
 	faceplayer
 # 12 "data//maps/SilversunCityGym/scripts.pory"
 	goto_if_set Cormoria_FLAG_SILVERSUN_BACKSTAGEPASS_GET, Cormoria_SilversunCityGym_EventScript_BackstagePass_2
+	checkitem ITEM_BACKSTAGE_PASS
+	goto_if_eq VAR_RESULT, TRUE, Cormoria_SilversunCityGym_EventScript_BackstagePass_AlreadyOwned
 # 15 "data//maps/SilversunCityGym/scripts.pory"
 	msgbox Cormoria_SilversunCityGym_EventScript_BackstagePass_Text_1
 # 16 "data//maps/SilversunCityGym/scripts.pory"
 	release
-# 17 "data//maps/SilversunCityGym/scripts.pory"
-	setflag Cormoria_FLAG_SILVERSUN_BACKSTAGEPASS_GET
 # 18 "data//maps/SilversunCityGym/scripts.pory"
 	giveitem ITEM_BACKSTAGE_PASS
+	goto_if_eq VAR_RESULT, FALSE, Cormoria_SilversunCityGym_EventScript_BackstagePass_ItemFull
+	setflag Cormoria_FLAG_SILVERSUN_BACKSTAGEPASS_GET
 Cormoria_SilversunCityGym_EventScript_BackstagePass_1:
 # 21 "data//maps/SilversunCityGym/scripts.pory"
 	releaseall
@@ -288,3 +290,16 @@ Cormoria_SilversunCityGym_TrainerD_Text_1:
 Cormoria_SilversunCityGym_TrainerD_Text_2:
 # 119 "data//maps/SilversunCityGym/scripts.pory"
 	.string "Gloria is just glorious!$"
+
+Cormoria_SilversunCityGym_EventScript_BackstagePass_AlreadyOwned::
+	setflag Cormoria_FLAG_SILVERSUN_BACKSTAGEPASS_GET
+	goto Cormoria_SilversunCityGym_EventScript_BackstagePass_2
+
+Cormoria_SilversunCityGym_EventScript_BackstagePass_ItemFull::
+	msgbox Cormoria_SilversunCityGym_EventScript_BackstagePass_ItemFull_Text_0, MSGBOX_DEFAULT
+	releaseall
+	return
+
+Cormoria_SilversunCityGym_EventScript_BackstagePass_ItemFull_Text_0:
+	.string "The Bag is full. Make room for the\n"
+	.string "Backstage Pass, then ask again.$"

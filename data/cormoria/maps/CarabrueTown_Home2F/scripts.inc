@@ -11,6 +11,7 @@ Cormoria_CarabrueTown_Home2F_EventScript_PickUpBag::
 	release
 # 9 "data//maps/CarabrueTown_Home2F/scripts.pory"
 	giveitem ITEM_LAB_WELCOMEPACKAGE
+	goto_if_eq VAR_RESULT, FALSE, Cormoria_CarabrueTown_Home2F_EventScript_PickUpBag_ItemFull
 # 10 "data//maps/CarabrueTown_Home2F/scripts.pory"
 	setflag Cormoria_FLAG_TENEBRIS_POLICE_PRESCENCE
 # 11 "data//maps/CarabrueTown_Home2F/scripts.pory"
@@ -18,6 +19,15 @@ Cormoria_CarabrueTown_Home2F_EventScript_PickUpBag::
 # 13 "data//maps/CarabrueTown_Home2F/scripts.pory"
 	releaseall
 	return
+
+Cormoria_CarabrueTown_Home2F_EventScript_PickUpBag_ItemFull::
+	msgbox Cormoria_CarabrueTown_Home2F_EventScript_PickUpBag_ItemFull_Text_0, MSGBOX_DEFAULT
+	releaseall
+	return
+
+Cormoria_CarabrueTown_Home2F_EventScript_PickUpBag_ItemFull_Text_0:
+	.string "The Bag is full. Make room for the\n"
+	.string "Lab Package, then try again.$"
 
 
 Cormoria_CarabrueTown_Home2F_EventScript_PC::

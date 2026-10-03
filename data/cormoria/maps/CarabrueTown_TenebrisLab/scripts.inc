@@ -31,6 +31,12 @@ Cormoria_CarabrueTown_TenebrisLab_EventScript_OnWarp::
 Cormoria_CarabrueTown_TenebrisLab_EventScript_Start::
 # 22 "data//maps/CarabrueTown_TenebrisLab/scripts.pory"
 	lockall
+	checkitemspace ITEM_POKE_BALL, 5
+	goto_if_eq VAR_RESULT, FALSE, Cormoria_CarabrueTown_TenebrisLab_EventScript_Start_ItemFull
+	checkitemspace ITEM_POTION, 1
+	goto_if_eq VAR_RESULT, FALSE, Cormoria_CarabrueTown_TenebrisLab_EventScript_Start_ItemFull
+	checkitemspace ITEM_TOWN_MAP, 1
+	goto_if_eq VAR_RESULT, FALSE, Cormoria_CarabrueTown_TenebrisLab_EventScript_Start_ItemFull
 # 23 "data//maps/CarabrueTown_TenebrisLab/scripts.pory"
 	speakername Cormoria_CarabrueTown_TenebrisLab_EventScript_Start_Text_0
 # 24 "data//maps/CarabrueTown_TenebrisLab/scripts.pory"
@@ -146,6 +152,16 @@ Cormoria_CarabrueTown_TenebrisLab_EventScript_Start::
 # 98 "data//maps/CarabrueTown_TenebrisLab/scripts.pory"
 	releaseall
 	return
+
+Cormoria_CarabrueTown_TenebrisLab_EventScript_Start_ItemFull::
+	msgbox Cormoria_CarabrueTown_TenebrisLab_EventScript_Start_ItemFull_Text_0, MSGBOX_DEFAULT
+	releaseall
+	warp MAP_CORMORIA_CARABRUE_TOWN, 8, 18
+	end
+
+Cormoria_CarabrueTown_TenebrisLab_EventScript_Start_ItemFull_Text_0:
+	.string "The Bag is full. Make room for the\n"
+	.string "supplies, then return to the lab.$"
 
 
 Cormoria_CarabrueTown_TenebrisLab_EventScript_ByTheWayGiveToDetectives::
@@ -781,6 +797,8 @@ Cormoria_CarabrueTown_TenebrisLab_EventScript_Pokeball_One::
 	lockall
 # 490 "data//maps/CarabrueTown_TenebrisLab/scripts.pory"
 	goto_if_set Cormoria_FLAG_UNUSED_0x020, Cormoria_CarabrueTown_TenebrisLab_EventScript_Pokeball_One_2
+	call Cormoria_CarabrueTown_TenebrisLab_EventScript_StarterCapacity
+	goto_if_eq VAR_RESULT, FALSE, Cormoria_CarabrueTown_TenebrisLab_EventScript_StarterStorageFull
 # 494 "data//maps/CarabrueTown_TenebrisLab/scripts.pory"
 	showmonpic SPECIES_GOTHITA, 10, 3
 # 495 "data//maps/CarabrueTown_TenebrisLab/scripts.pory"
@@ -806,7 +824,6 @@ Cormoria_CarabrueTown_TenebrisLab_EventScript_Pokeball_One_2:
 
 Cormoria_CarabrueTown_TenebrisLab_EventScript_Pokeball_One_5:
 # 498 "data//maps/CarabrueTown_TenebrisLab/scripts.pory"
-	removeobject 4
 # 500 "data//maps/CarabrueTown_TenebrisLab/scripts.pory"
 	playfanfare MUS_OBTAIN_ITEM
 # 501 "data//maps/CarabrueTown_TenebrisLab/scripts.pory"
@@ -835,6 +852,8 @@ Cormoria_CarabrueTown_TenebrisLab_EventScript_Pokeball_One_5:
 # 520 "data//maps/CarabrueTown_TenebrisLab/scripts.pory"
 	givemon SPECIES_GOTHITA, 5, ITEM_ORAN_BERRY, shinyMode=SHINY_MODE_ALWAYS
 Cormoria_CarabrueTown_TenebrisLab_EventScript_Pokeball_One_8:
+	goto_if_eq VAR_RESULT, MON_CANT_GIVE, Cormoria_CarabrueTown_TenebrisLab_EventScript_StarterStorageFull
+	removeobject 4
 # 523 "data//maps/CarabrueTown_TenebrisLab/scripts.pory"
 	setflag Cormoria_FLAG_SYS_POKEMON_GET
 # 525 "data//maps/CarabrueTown_TenebrisLab/scripts.pory"
@@ -864,6 +883,8 @@ Cormoria_CarabrueTown_TenebrisLab_EventScript_Pokeball_Two::
 	lockall
 # 545 "data//maps/CarabrueTown_TenebrisLab/scripts.pory"
 	goto_if_set Cormoria_FLAG_UNUSED_0x020, Cormoria_CarabrueTown_TenebrisLab_EventScript_Pokeball_Two_2
+	call Cormoria_CarabrueTown_TenebrisLab_EventScript_StarterCapacity
+	goto_if_eq VAR_RESULT, FALSE, Cormoria_CarabrueTown_TenebrisLab_EventScript_StarterStorageFull
 # 549 "data//maps/CarabrueTown_TenebrisLab/scripts.pory"
 	showmonpic SPECIES_TIMBURR, 10, 3
 # 550 "data//maps/CarabrueTown_TenebrisLab/scripts.pory"
@@ -889,7 +910,6 @@ Cormoria_CarabrueTown_TenebrisLab_EventScript_Pokeball_Two_2:
 
 Cormoria_CarabrueTown_TenebrisLab_EventScript_Pokeball_Two_5:
 # 553 "data//maps/CarabrueTown_TenebrisLab/scripts.pory"
-	removeobject 7
 # 555 "data//maps/CarabrueTown_TenebrisLab/scripts.pory"
 	playfanfare MUS_OBTAIN_ITEM
 # 556 "data//maps/CarabrueTown_TenebrisLab/scripts.pory"
@@ -918,6 +938,8 @@ Cormoria_CarabrueTown_TenebrisLab_EventScript_Pokeball_Two_5:
 # 575 "data//maps/CarabrueTown_TenebrisLab/scripts.pory"
 	givemon SPECIES_TIMBURR, 5, ITEM_ORAN_BERRY, shinyMode=SHINY_MODE_ALWAYS
 Cormoria_CarabrueTown_TenebrisLab_EventScript_Pokeball_Two_8:
+	goto_if_eq VAR_RESULT, MON_CANT_GIVE, Cormoria_CarabrueTown_TenebrisLab_EventScript_StarterStorageFull
+	removeobject 7
 # 578 "data//maps/CarabrueTown_TenebrisLab/scripts.pory"
 	setflag Cormoria_FLAG_SYS_POKEMON_GET
 # 579 "data//maps/CarabrueTown_TenebrisLab/scripts.pory"
@@ -947,6 +969,8 @@ Cormoria_CarabrueTown_TenebrisLab_EventScript_Pokeball_Three::
 	lockall
 # 601 "data//maps/CarabrueTown_TenebrisLab/scripts.pory"
 	goto_if_set Cormoria_FLAG_UNUSED_0x020, Cormoria_CarabrueTown_TenebrisLab_EventScript_Pokeball_Three_2
+	call Cormoria_CarabrueTown_TenebrisLab_EventScript_StarterCapacity
+	goto_if_eq VAR_RESULT, FALSE, Cormoria_CarabrueTown_TenebrisLab_EventScript_StarterStorageFull
 # 605 "data//maps/CarabrueTown_TenebrisLab/scripts.pory"
 	showmonpic SPECIES_ZIGZAGOON_GALAR, 10, 3
 # 606 "data//maps/CarabrueTown_TenebrisLab/scripts.pory"
@@ -972,7 +996,6 @@ Cormoria_CarabrueTown_TenebrisLab_EventScript_Pokeball_Three_2:
 
 Cormoria_CarabrueTown_TenebrisLab_EventScript_Pokeball_Three_5:
 # 609 "data//maps/CarabrueTown_TenebrisLab/scripts.pory"
-	removeobject 6
 # 611 "data//maps/CarabrueTown_TenebrisLab/scripts.pory"
 	playfanfare MUS_OBTAIN_ITEM
 # 612 "data//maps/CarabrueTown_TenebrisLab/scripts.pory"
@@ -1001,6 +1024,8 @@ Cormoria_CarabrueTown_TenebrisLab_EventScript_Pokeball_Three_5:
 # 631 "data//maps/CarabrueTown_TenebrisLab/scripts.pory"
 	givemon SPECIES_ZIGZAGOON_GALAR, 5, ITEM_ORAN_BERRY, shinyMode=SHINY_MODE_ALWAYS
 Cormoria_CarabrueTown_TenebrisLab_EventScript_Pokeball_Three_8:
+	goto_if_eq VAR_RESULT, MON_CANT_GIVE, Cormoria_CarabrueTown_TenebrisLab_EventScript_StarterStorageFull
+	removeobject 6
 # 634 "data//maps/CarabrueTown_TenebrisLab/scripts.pory"
 	setflag Cormoria_FLAG_SYS_POKEMON_GET
 # 635 "data//maps/CarabrueTown_TenebrisLab/scripts.pory"
@@ -1162,6 +1187,7 @@ Cormoria_CarabrueTown_TenebrisLab_Gardevoir::
 	lockall
 # 757 "data//maps/CarabrueTown_TenebrisLab/scripts.pory"
 	giveitem ITEM_STARF_BERRY
+	goto_if_eq VAR_RESULT, FALSE, Cormoria_CarabrueTown_TenebrisLab_Gardevoir_ItemFull
 # 758 "data//maps/CarabrueTown_TenebrisLab/scripts.pory"
 	msgbox Cormoria_CarabrueTown_TenebrisLab_Gardevoir_Text_2
 # 759 "data//maps/CarabrueTown_TenebrisLab/scripts.pory"
@@ -2121,3 +2147,23 @@ Cormoria_CarabrueTown_TenebrisLab_Tenebris_Text_7:
 Cormoria_CarabrueTown_TenebrisLab_Tenebris_Text_8:
 # 816 "data//maps/CarabrueTown_TenebrisLab/scripts.pory"
 	.string "Go {PLAYER} go!$"
+
+Cormoria_CarabrueTown_TenebrisLab_EventScript_StarterCapacity::
+	getpartysize
+	goto_if_ne VAR_RESULT, PARTY_SIZE, Cormoria_CarabrueTown_TenebrisLab_EventScript_StarterCapacity_Ready
+	specialvar VAR_RESULT, ScriptCheckFreePokemonStorageSpace
+	return
+Cormoria_CarabrueTown_TenebrisLab_EventScript_StarterCapacity_Ready::
+	setvar VAR_RESULT, TRUE
+	return
+Cormoria_CarabrueTown_TenebrisLab_EventScript_StarterStorageFull::
+	msgbox Cormoria_CarabrueTown_TenebrisLab_EventScript_StarterStorageFull_Text_0, MSGBOX_DEFAULT
+	releaseall
+	end
+Cormoria_CarabrueTown_TenebrisLab_EventScript_StarterStorageFull_Text_0:
+	.string "Your party and PC are full. Make\n"
+	.string "room for a Pokémon, then try again.$"
+
+Cormoria_CarabrueTown_TenebrisLab_Gardevoir_ItemFull::
+	releaseall
+	end

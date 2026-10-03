@@ -381,8 +381,6 @@ Cormoria_MirrohInterior_Sneasler_2:
 Cormoria_WinterlilyHollow_NPC_SurfMan::
 # 272 "data//maps/WinterlilyHollow/scripts.pory"
 	msgbox Cormoria_WinterlilyHollow_NPC_SurfMan_Text_0, MSGBOX_NPC
-# 273 "data//maps/WinterlilyHollow/scripts.pory"
-	end
 # 276 "data//maps/WinterlilyHollow/scripts.pory"
 	lockall
 # 277 "data//maps/WinterlilyHollow/scripts.pory"
@@ -400,31 +398,37 @@ Cormoria_WinterlilyHollow_NPC_SurfMan_1:
 # 291 "data//maps/WinterlilyHollow/scripts.pory"
 	compare VAR_RESULT, 0
 	goto_if_eq Cormoria_WinterlilyHollow_NPC_SurfMan_8
+# 298 "data//maps/WinterlilyHollow/scripts.pory"
+	giveitem ITEM_HM03
+	goto_if_eq VAR_RESULT, FALSE, Cormoria_WinterlilyHollow_NPC_SurfMan_ItemFull
+	removeitem ITEM_HEART_SCALE
 # 296 "data//maps/WinterlilyHollow/scripts.pory"
 	msgbox Cormoria_WinterlilyHollow_NPC_SurfMan_Text_5, MSGBOX_SIGN
 # 297 "data//maps/WinterlilyHollow/scripts.pory"
 	msgbox Cormoria_WinterlilyHollow_NPC_SurfMan_Text_6
-# 298 "data//maps/WinterlilyHollow/scripts.pory"
-	giveitem ITEM_HM03
 # 299 "data//maps/WinterlilyHollow/scripts.pory"
 	msgbox Cormoria_WinterlilyHollow_NPC_SurfMan_Text_7
 # 301 "data//maps/WinterlilyHollow/scripts.pory"
 	setflag Cormoria_FLAG_WINTERLILY_HOLLOW_SURF
-	return
+	releaseall
+	end
 
 Cormoria_WinterlilyHollow_NPC_SurfMan_2:
 # 280 "data//maps/WinterlilyHollow/scripts.pory"
 	msgbox Cormoria_WinterlilyHollow_NPC_SurfMan_Text_1
-	goto Cormoria_WinterlilyHollow_NPC_SurfMan_1
+	releaseall
+	end
 
 Cormoria_WinterlilyHollow_NPC_SurfMan_5:
 # 286 "data//maps/WinterlilyHollow/scripts.pory"
 	msgbox Cormoria_WinterlilyHollow_NPC_SurfMan_Text_3, MSGBOX_NPC
+	releaseall
 	end
 
 Cormoria_WinterlilyHollow_NPC_SurfMan_8:
 # 292 "data//maps/WinterlilyHollow/scripts.pory"
 	msgbox Cormoria_WinterlilyHollow_NPC_SurfMan_Text_4, MSGBOX_NPC
+	releaseall
 	end
 
 
@@ -823,3 +827,12 @@ Cormoria_WinterlilyHollow_NPC_Miner_Text_2:
 # 356 "data//maps/WinterlilyHollow/scripts.pory"
 	.string "Too bad, You can dig up some great\n"
 	.string "stuff, you know?$"
+
+Cormoria_WinterlilyHollow_NPC_SurfMan_ItemFull::
+	msgbox Cormoria_WinterlilyHollow_NPC_SurfMan_ItemFull_Text_0, MSGBOX_DEFAULT
+	releaseall
+	end
+
+Cormoria_WinterlilyHollow_NPC_SurfMan_ItemFull_Text_0:
+	.string "The Bag is full. Make room for\n"
+	.string "Surf, then talk to me again.$"

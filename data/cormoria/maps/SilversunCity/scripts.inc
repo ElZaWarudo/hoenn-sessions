@@ -148,9 +148,13 @@ Cormoria_SilversunCity_OnFrame_1:
 # 83 "data//maps/SilversunCity/scripts.pory"
 	delay 8
 # 84 "data//maps/SilversunCity/scripts.pory"
-	setflag Cormoria_FLAG_SYS_GOT_STRENGTH
-# 85 "data//maps/SilversunCity/scripts.pory"
+	checkitem ITEM_HM04
+	goto_if_eq VAR_RESULT, TRUE, Cormoria_SilversunCity_OnFrame_StrengthOwned
 	giveitem ITEM_HM04
+	goto_if_eq VAR_RESULT, FALSE, Cormoria_SilversunCity_OnFrame_StrengthSkipped
+Cormoria_SilversunCity_OnFrame_StrengthOwned::
+	setflag Cormoria_FLAG_SYS_GOT_STRENGTH
+Cormoria_SilversunCity_OnFrame_StrengthSkipped::
 # 86 "data//maps/SilversunCity/scripts.pory"
 	release
 # 87 "data//maps/SilversunCity/scripts.pory"
@@ -173,6 +177,7 @@ Cormoria_SilversunCity_OnFrame_1:
 	setflag Cormoria_FLAG_HIDE_SILVERSUN_PROF
 # 100 "data//maps/SilversunCity/scripts.pory"
 	setflag Cormoria_FLAG_SILVERSUN_NEXTQUEST
+	setvar VAR_TEMP_0, 1
 # 101 "data//maps/SilversunCity/scripts.pory"
 	subquestmenu QUEST_MENU_COMPLETE_QUEST, QUEST_DREAMSTONE_MYSTERIES, SUB_QUEST_4
 # 102 "data//maps/SilversunCity/scripts.pory"
@@ -182,7 +187,24 @@ Cormoria_SilversunCity_OnFrame_1:
 	end
 
 Cormoria_SilversunCity_OnFrame_3:
+	setvar VAR_TEMP_0, 1
+	goto_if_set Cormoria_FLAG_SYS_GOT_STRENGTH, Cormoria_SilversunCity_OnFrame_StrengthDone
+	checkitem ITEM_HM04
+	goto_if_eq VAR_RESULT, TRUE, Cormoria_SilversunCity_OnFrame_StrengthReconciled
+	lockall
+	giveitem ITEM_HM04
+	goto_if_eq VAR_RESULT, FALSE, Cormoria_SilversunCity_OnFrame_StrengthBagFull
+	setflag Cormoria_FLAG_SYS_GOT_STRENGTH
+	releaseall
+	end
+Cormoria_SilversunCity_OnFrame_StrengthReconciled::
+	setflag Cormoria_FLAG_SYS_GOT_STRENGTH
+Cormoria_SilversunCity_OnFrame_StrengthDone::
 	return
+Cormoria_SilversunCity_OnFrame_StrengthBagFull::
+	msgbox Cormoria_SilversunCity_OnFrame_StrengthBagFull_Text_0, MSGBOX_DEFAULT
+	releaseall
+	end
 
 
 Cormoria_SilversunCity_EventScript_Detectives::
@@ -661,3 +683,7 @@ Cormoria_SilversunCity_Vivillon_Text_3:
 Cormoria_SilversunCity_Vivillon_Text_4:
 # 240 "data//maps/SilversunCity/scripts.pory"
 	.string "Better move away quickly!$"
+
+Cormoria_SilversunCity_OnFrame_StrengthBagFull_Text_0:
+	.string "The Bag is full. Make room for\n"
+	.string "Strength, then return to the city.$"

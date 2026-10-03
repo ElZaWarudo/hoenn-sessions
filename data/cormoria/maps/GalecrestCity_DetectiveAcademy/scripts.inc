@@ -225,6 +225,7 @@ Cormoria_GalecrestCity_DetectiveAcademy_Receptionist_StudentID_1:
 
 Cormoria_GalecrestCity_DetectiveAcademy_Receptionist_StudentID_2:
 # 141 "data//maps/GalecrestCity_DetectiveAcademy/scripts.pory"
+	setflag Cormoria_FLAG_GALECREST_STUDENTID_GET
 	msgbox Cormoria_GalecrestCity_DetectiveAcademy_Receptionist_StudentID_Text_0
 # 142 "data//maps/GalecrestCity_DetectiveAcademy/scripts.pory"
 	goto Cormoria_GalecrestCity_DetectiveAcademy_Receptionist_Multichoice
@@ -257,6 +258,7 @@ Cormoria_GalecrestCity_DetectiveAcademy_Receptionist_StudentID_8:
 	msgbox Cormoria_GalecrestCity_DetectiveAcademy_Receptionist_StudentID_Text_3
 # 158 "data//maps/GalecrestCity_DetectiveAcademy/scripts.pory"
 	giveitem ITEM_DETECTIVE_STUDENT_ID
+	goto_if_eq VAR_RESULT, FALSE, Cormoria_GalecrestCity_DetectiveAcademy_Receptionist_StudentID_ItemFull
 # 159 "data//maps/GalecrestCity_DetectiveAcademy/scripts.pory"
 	setflag Cormoria_FLAG_GALECREST_STUDENTID_GET
 # 160 "data//maps/GalecrestCity_DetectiveAcademy/scripts.pory"
@@ -927,3 +929,12 @@ Cormoria_GalecrestCity_DetectiveAcademy_Charcadet_A_Text_0:
 # 366 "data//maps/GalecrestCity_DetectiveAcademy/scripts.pory"
 	.string "Charcadet is also curious about the\n"
 	.string "class rankings!$"
+
+Cormoria_GalecrestCity_DetectiveAcademy_Receptionist_StudentID_ItemFull::
+	msgbox Cormoria_GalecrestCity_DetectiveAcademy_Receptionist_StudentID_ItemFull_Text_0, MSGBOX_DEFAULT
+	releaseall
+	return
+
+Cormoria_GalecrestCity_DetectiveAcademy_Receptionist_StudentID_ItemFull_Text_0:
+	.string "The Bag is full. Make room for the\n"
+	.string "Student ID, then ask again.$"

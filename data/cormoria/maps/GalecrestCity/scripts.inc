@@ -444,6 +444,7 @@ Cormoria_GalecrestCity_NPC_5_5:
 	msgbox Cormoria_GalecrestCity_NPC_5_Text_6
 # 345 "data//maps/GalecrestCity/scripts.pory"
 	giveitem ITEM_HM_ROCK_SMASH
+	goto_if_eq VAR_RESULT, FALSE, Cormoria_GalecrestCity_NPC_5_ItemFull
 # 346 "data//maps/GalecrestCity/scripts.pory"
 	release
 # 347 "data//maps/GalecrestCity/scripts.pory"
@@ -1228,3 +1229,12 @@ Cormoria_GalecrestCity_NPC_Red_Text_0:
 	.string "The Gym Leader's not in right now.\n"
 	.string "He should be back soon. Check out the\l"
 	.string "Detective Academy in the meantime!$"
+
+Cormoria_GalecrestCity_NPC_5_ItemFull::
+	msgbox Cormoria_GalecrestCity_NPC_5_ItemFull_Text_0, MSGBOX_DEFAULT
+	releaseall
+	end
+
+Cormoria_GalecrestCity_NPC_5_ItemFull_Text_0:
+	.string "The Bag is full. Make room for the\n"
+	.string "Rock Smash, then talk to me again.$"
