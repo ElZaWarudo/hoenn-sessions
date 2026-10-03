@@ -14,6 +14,7 @@
 /data/tilesets/cormoria/rules.mk text eol=lf
 /src/data/tilesets/cormoria_imported.h text eol=lf
 /graphics/cormoria/snake/*.pal text eol=lf
+/graphics/cormoria/quest_menu/*.pal text eol=lf
 /graphics/cormoria/flappy_bird/*.pal text eol=lf
 /graphics/cormoria/mining/*.pal text eol=lf
 /graphics/cormoria/mining/**/*.pal text eol=lf

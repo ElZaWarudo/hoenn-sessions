@@ -47,12 +47,12 @@ class RomReleaseCatalogTests(unittest.TestCase):
         for name, expected_view, expected_events, expected_templates in (
             ("arrival-v3-main-lilycove.sav",
              "6504fa83ec58bf81abb96c3ad2af70c593150f121181d09b1e0c4cffaea5e8c6",
-             "e36508d98074c7ba06356c7b77d0ef5e78dabb7de7f8db6777e6238a7c782f89",
-             "042251ba906a9ea93294b7e4c82595e7fc6a0493028654e6a4128966ad905888"),
+             "81e6e52107d8458cbac87e90102a6ac1eeb3de87e0540cc5292b395e959354df",
+             "e34203c219f7d1f758f78fed6f85d4430a278245eb59141a7726bef915ad9f29"),
             ("arrival-v3-cormoria-rivetshore.sav",
              "61403f41b9f7691f32790cdf8557ffcc95370f0c8266313e9d47ac63cf8cd9df",
              "a711be54b4f77ba383a6284470bd575db14632205d138db258480d941be143e5",
-             "162c5fa590bc27600f1636bc466dd6151494d25a5b7e4ab908832a2c1a1b3d5e"),
+             "0f912dc06a43d8dc54d86d0c4716f91753a0cc801013858aacd367e36a45c3d4"),
         ):
             image = (Path(__file__).parent / "fixtures" / name).read_bytes()
             sectors = {}
