@@ -92,7 +92,7 @@ No external server, account, or network configuration change is involved.
    ungrouped. Close the menus and verify nearby avatars remain. Repeat the
    invitation/acceptance/leave sequence with the roles reversed.
 4. Send and decline another invitation. Also leave an invitation displayed for
-   more than 30 seconds, then attempt acceptance. Neither stale action may
+   more than two minutes, then attempt acceptance. Neither stale action may
    create a group; Refresh must show the authoritative state.
 5. Close both menus. Create the printed `interrupt-websockets.txt` marker once.
    The proxy logs each actual disconnection. Observe old avatars freeze for
