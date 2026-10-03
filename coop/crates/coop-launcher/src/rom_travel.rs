@@ -18,6 +18,8 @@ use coop_protocol::RomWorldId;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
+use crate::paired_travel::{PairedPhase, PairedTerminal, PairedTravelRecord};
+
 const FORMAT_VERSION: u16 = 3;
 const MAX_RECORD_BYTES: u64 = 4096;
 const MAX_RETAINED_ENTRIES: usize = 16;
@@ -261,6 +263,103 @@ impl RomTravelJournal {
         };
         self.append(&record)?;
         Ok(record)
+    }
+
+    /// Advance the local active-world pointer only after the paired journal
+    /// holds a verified arrival and an exact terminal server commit. Replaying
+    /// the same proof after a crash is idempotent; it never sends a solo commit.
+    pub fn adopt_paired_commit(
+        &self,
+        proof: &PairedTravelRecord,
+    ) -> Result<TravelRecord, RomTravelError> {
+        let PairedTerminal::Committed(commit) =
+            proof.terminal.as_ref().ok_or(RomTravelError::Conflict)?
+        else {
+            return Err(RomTravelError::Conflict);
+        };
+        if !matches!(proof.phase, PairedPhase::Committed | PairedPhase::Adopted)
+            || proof.character_id != self.character_id
+        {
+            return Err(RomTravelError::Conflict);
+        }
+        let request = &proof.intent.request;
+        let stage = proof.stage.as_ref().ok_or(RomTravelError::Conflict)?;
+        let arrival = proof.verified_arrival.ok_or(RomTravelError::Conflict)?;
+        let key = proof.attempt_key.ok_or(RomTravelError::Conflict)?;
+        let source = proof.intent.source_world_id;
+        let destination = stage.destination_world_id;
+        if request.fence.character_id != self.character_id
+            || request.fence.current_revision.is_initial()
+            || source == destination
+            || commit.own_snapshot_id != stage.stage_id
+            || commit.own_world_id != destination
+            || commit.own_revision
+                != request
+                    .fence
+                    .current_revision
+                    .next()
+                    .map_err(|_| RomTravelError::Conflict)?
+            || arrival.stage_id != stage.stage_id
+            || arrival.destination_save_sha256 != stage.destination_save_sha256
+            || arrival.nonce != stage.expected_nonce
+            || stage.expected_nonce == [0; 16]
+            || digest_is_zero(proof.intent.source_save_sha256)
+            || digest_is_zero(stage.destination_save_sha256)
+            || digest_is_zero(proof.intent.catalog_digest)
+        {
+            return Err(RomTravelError::Conflict);
+        }
+        self.require_world(source)?;
+        self.require_world(destination)?;
+        validate_portal(&request.portal_id)?;
+        let _lock = self.lock()?;
+        let current = self.read_locked()?.ok_or(RomTravelError::Conflict)?;
+        if current.phase == TravelPhase::Committed
+            && current.active_world == destination
+            && current.source_world == Some(source)
+            && current.prepare_idempotency_key == Some(key)
+            && current.server_stage_snapshot_id == Some(stage.stage_id)
+        {
+            return Ok(current);
+        }
+        if proof.phase == PairedPhase::Adopted {
+            return Err(RomTravelError::Conflict);
+        }
+        if !matches!(
+            current.phase,
+            TravelPhase::Idle | TravelPhase::Committed | TravelPhase::Aborted
+        ) || current.active_world != source
+            || request.fence.current_revision.value() <= current.checkpoint
+        {
+            return Err(RomTravelError::Conflict);
+        }
+        let next = TravelRecord {
+            sequence: next_sequence(current.sequence)?,
+            checkpoint: request.fence.current_revision.value(),
+            active_world: destination,
+            phase: TravelPhase::Committed,
+            source_world: Some(source),
+            destination_world: Some(destination),
+            portal_id: Some(request.portal_id.clone()),
+            source_snapshot_id: Some(request.source_snapshot_id),
+            source_revision: Some(request.fence.current_revision),
+            server_stage_snapshot_id: Some(stage.stage_id),
+            prepare_idempotency_key: Some(key),
+            trusted_catalog_digest: Some(proof.intent.catalog_digest),
+            lease_fence: Some(LeaseFenceIdentity::new(
+                request.fence.session_id,
+                request.fence.session_epoch,
+                request.fence.client_instance_id,
+            )),
+            source_head_save_sha256: Some(proof.intent.source_save_sha256),
+            source_save_sha256: Some(proof.intent.source_save_sha256),
+            destination_save_sha256: Some(stage.destination_save_sha256),
+            arrival_nonce: Some(stage.expected_nonce),
+            ..current.clone()
+        };
+        self.validate(&next, Some(&current), next.sequence)?;
+        self.append(&next)?;
+        Ok(next)
     }
 
     /// Persist the source head and retry identity before sending HTTP prepare.
@@ -1017,6 +1116,30 @@ impl RomTravelJournal {
             }
             return Ok(());
         }
+        // A paired commit is the only other terminal-to-terminal world change.
+        // The writer checks the separate paired journal's complete server proof;
+        // this check keeps a persisted suffix internally coherent on cold read.
+        if matches!(
+            previous.phase,
+            TravelPhase::Idle | TravelPhase::Committed | TravelPhase::Aborted
+        ) && record.phase == TravelPhase::Committed
+            && record.active_world != previous.active_world
+        {
+            return if record.source_world == Some(previous.active_world)
+                && record.destination_world == Some(record.active_world)
+                && record.checkpoint > previous.checkpoint
+                && record.server_stage_snapshot_id.is_some()
+                && record.source_save_sha256 == record.source_head_save_sha256
+                && record
+                    .destination_save_sha256
+                    .is_some_and(|digest| !digest_is_zero(digest))
+                && record.arrival_nonce.is_some_and(|nonce| nonce != [0; 16])
+            {
+                Ok(())
+            } else {
+                Err(RomTravelError::Corrupt)
+            };
+        }
         if record.checkpoint != previous.checkpoint
             || record.source_world != previous.source_world
             || record.portal_id != previous.portal_id
@@ -1256,6 +1379,11 @@ mod tests {
     use std::fs;
 
     use super::*;
+    use crate::paired_travel::{
+        PairedArrivalEvidence, PairedCommit, PairedJoinIntent, PairedStage,
+    };
+    use coop_cloud::{ApiVersion, GroupId, GroupRomHandoffJoinRequest, LeaseFence};
+    use coop_protocol::{RegionId, WorldZone};
     use uuid::Uuid;
 
     fn world(id: u16) -> RomWorldId {
@@ -1302,6 +1430,75 @@ mod tests {
         let journal =
             RomTravelJournal::new(root.path(), character, [world(1), world(2), world(3)]).unwrap();
         (root, journal)
+    }
+
+    #[test]
+    fn paired_commit_advances_solo_world_once_and_allows_next_portal() {
+        let (root, journal) = fixture();
+        journal.initialize(world(1)).unwrap();
+        let character = journal.character_id;
+        let source_fence = LeaseFence::new(
+            SessionId::new(Uuid::from_u128(601)).unwrap(),
+            character,
+            Revision::new(1),
+            SessionEpoch::new(1).unwrap(),
+            ClientInstanceId::new(Uuid::from_u128(602)).unwrap(),
+        );
+        let stage_id = snapshot(8);
+        let save_digest = digest(0x44);
+        let proof = PairedTravelRecord {
+            format_version: 1,
+            sequence: 4,
+            character_id: character,
+            phase: PairedPhase::Committed,
+            intent: PairedJoinIntent {
+                request: GroupRomHandoffJoinRequest {
+                    api_version: ApiVersion::V1,
+                    group_id: GroupId::new(Uuid::from_u128(603)).unwrap(),
+                    fence: source_fence,
+                    source_snapshot_id: snapshot(7),
+                    portal_id: "to_cormoria".into(),
+                    client_intent_key: idempotency_key(7),
+                },
+                source_world_id: world(1),
+                catalog_digest: digest(0x22),
+                source_save_sha256: digest(0x33),
+            },
+            attempt_key: Some(idempotency_key(8)),
+            stage: Some(PairedStage {
+                stage_id,
+                destination_world_id: world(2),
+                arrival_portal_id: "cormoria_harbor".into(),
+                destination_save_sha256: save_digest,
+                arrival_challenge: digest(0x55),
+                expected_nonce: [7; 16],
+            }),
+            verified_arrival: Some(PairedArrivalEvidence {
+                stage_id,
+                destination_save_sha256: save_digest,
+                nonce: [7; 16],
+            }),
+            terminal: Some(PairedTerminal::Committed(PairedCommit {
+                destination_zone: WorldZone::new(
+                    RegionId::Cormoria,
+                    "CORMORIA_RIVETSHORE_CITY_HARBOR",
+                    1,
+                )
+                .unwrap(),
+                group_zone_revision: 2,
+                own_snapshot_id: stage_id,
+                own_world_id: world(2),
+                own_revision: Revision::new(2),
+            })),
+        };
+        let adopted = journal.adopt_paired_commit(&proof).unwrap();
+        assert_eq!(adopted.active_world, world(2));
+        assert_eq!(journal.adopt_paired_commit(&proof).unwrap(), adopted);
+        let reopened = RomTravelJournal::new(root.path(), character, [world(1), world(2)]).unwrap();
+        assert_eq!(reopened.read().unwrap(), Some(adopted));
+        reopened
+            .prepare_intent(world(2), "to_main", 3, digest(0x66), preparation(3))
+            .unwrap();
     }
 
     fn begin(
@@ -1950,7 +2147,10 @@ mod tests {
         assert_eq!(aborted.phase, TravelPhase::Aborted);
         assert_eq!(aborted.active_world, world(1));
         assert_eq!(aborted.source_save_sha256, Some(digest(1)));
-        assert_eq!(journal.reconcile_aborted_prepare(10, &status).unwrap(), aborted);
+        assert_eq!(
+            journal.reconcile_aborted_prepare(10, &status).unwrap(),
+            aborted
+        );
         assert!(matches!(
             journal.commit(10, stage_id(10), digest(2), fence(10)),
             Err(RomTravelError::Conflict)

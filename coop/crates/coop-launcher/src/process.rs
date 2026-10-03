@@ -3577,7 +3577,11 @@ impl SupervisedChildren {
         sidecar_command
             .args(&sidecar.args)
             .stdin(Stdio::null())
-            .stderr(Stdio::null())
+            .stderr(if cfg!(debug_assertions) {
+                Stdio::inherit()
+            } else {
+                Stdio::null()
+            })
             .stdout(Stdio::piped())
             .kill_on_drop(true);
         let child = match sidecar_command.spawn() {

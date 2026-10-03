@@ -8,6 +8,7 @@
 
 pub mod auth;
 pub mod group;
+pub mod group_handoff;
 pub mod ids;
 pub mod online;
 pub mod presence;
@@ -29,6 +30,11 @@ pub use group::{
     GroupTravelAction, GroupTravelActionRequest, GroupTravelCommit, GroupTravelProposalRequest,
     GroupTravelProposalStatus, GroupTravelProposalView, GroupTravelRequest, GroupTravelResponse,
     GroupView, MAX_WORLD_REVISION, RouteId,
+};
+pub use group_handoff::{
+    GroupRomHandoffAbortRequest, GroupRomHandoffArrivalRequest, GroupRomHandoffError,
+    GroupRomHandoffIntent, GroupRomHandoffJoinRequest, GroupRomHandoffSource,
+    GroupRomHandoffStatus, GroupRomHandoffStatusRequest,
 };
 pub use ids::{
     BridgeAbiVersion, CharacterId, ClientInstanceId, CommitId, GameBuildId, GroupId,

@@ -59,6 +59,7 @@ pub(crate) struct WireArrival {
 
 /// Exact build identities authenticated by a separately pinned release digest.
 pub(crate) struct TrustedBuildCatalog {
+    digest: Sha256Digest,
     worlds: HashMap<RomWorldId, RuntimeBuildIdentity>,
     presence_regions: HashMap<RomWorldId, Vec<RegionId>>,
     descriptor_sha256: Option<Sha256Digest>,
@@ -209,6 +210,7 @@ impl TrustedBuildCatalog {
             }
         }
         Ok(Self {
+            digest: trusted_digest,
             worlds,
             presence_regions,
             descriptor_sha256: wire.shared_player_descriptor_sha256,
@@ -217,6 +219,10 @@ impl TrustedBuildCatalog {
             arrival_templates,
             arrival_saves: HashMap::new(),
         })
+    }
+
+    pub(crate) fn digest(&self) -> Sha256Digest {
+        self.digest
     }
 
     /// Select only a world durably bound to this snapshot. The optional

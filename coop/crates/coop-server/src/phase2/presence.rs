@@ -1658,6 +1658,9 @@ fn repository_disposition(
     snapshot: &PresenceSnapshot,
     now_ms: u64,
 ) -> RepositoryDisposition {
+    if state.paired_handoff_for_member(snapshot.character_id) {
+        return RepositoryDisposition::LeaseInvalid;
+    }
     let Some(user) = state.users_by_id.get(&snapshot.actor.user_id) else {
         return RepositoryDisposition::LeaseInvalid;
     };

@@ -48,6 +48,7 @@ use crate::{
     compat::BuildCompatibility,
     epoch::{EpochError, EpochStore},
     keychain::{KeychainError, RefreshTokenStore},
+    paired_travel::{PairedPhase, PairedTerminal, PairedTravelRecord},
     process::{
         ControlChannel, ProcessError, RawSupervisorEvent, SessionSupervisor, SupervisorEvent,
         new_command_id,
@@ -499,6 +500,34 @@ pub trait CloudApi: AuthApi {
         _character_id: CharacterId,
         _stage_id: SnapshotId,
     ) -> CloudFuture<'a, ()> {
+        Box::pin(async { Err(SessionError::PortalHandoffUnavailable) })
+    }
+    fn join_group_rom_handoff<'a>(
+        &'a self,
+        _auth: &'a AuthSession,
+        _request: coop_cloud::GroupRomHandoffJoinRequest,
+    ) -> CloudFuture<'a, coop_cloud::GroupRomHandoffStatus> {
+        Box::pin(async { Err(SessionError::PortalHandoffUnavailable) })
+    }
+    fn status_group_rom_handoff<'a>(
+        &'a self,
+        _auth: &'a AuthSession,
+        _request: coop_cloud::GroupRomHandoffStatusRequest,
+    ) -> CloudFuture<'a, coop_cloud::GroupRomHandoffStatus> {
+        Box::pin(async { Err(SessionError::PortalHandoffUnavailable) })
+    }
+    fn arrive_group_rom_handoff<'a>(
+        &'a self,
+        _auth: &'a AuthSession,
+        _request: coop_cloud::GroupRomHandoffArrivalRequest,
+    ) -> CloudFuture<'a, coop_cloud::GroupRomHandoffStatus> {
+        Box::pin(async { Err(SessionError::PortalHandoffUnavailable) })
+    }
+    fn abort_group_rom_handoff<'a>(
+        &'a self,
+        _auth: &'a AuthSession,
+        _request: coop_cloud::GroupRomHandoffAbortRequest,
+    ) -> CloudFuture<'a, coop_cloud::GroupRomHandoffStatus> {
         Box::pin(async { Err(SessionError::PortalHandoffUnavailable) })
     }
     fn group_travel_create(
@@ -961,6 +990,47 @@ impl SessionWorkspace {
     ///
     /// Returns an error for an unknown filename or filesystem failure.
     pub fn write_atomic(&self, name: &str, bytes: &[u8]) -> Result<PathBuf, SessionError> {
+        self.write_atomic_inner(name, bytes, false)
+    }
+
+    /// Restores the canonical destination save after a verifier has stopped.
+    ///
+    /// The verifier owns this private workspace while it runs and may delete
+    /// or rewrite the emulator's implicit save file.  A clean verifier exit
+    /// must leave the trusted staged bytes available for the coordinator's
+    /// commit-artifact preflight, so an existing changed regular file is
+    /// deliberately replaced and then read back through the fixed-file
+    /// validation path.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the existing artifact is not a regular file,
+    /// when the replacement fails, or when the restored bytes cannot be
+    /// revalidated exactly.
+    pub fn restore_character_save(&self, bytes: &[u8]) -> Result<PathBuf, SessionError> {
+        let path = fixed_path(self.path(), "character.sav")?;
+        match self.read_fixed("character.sav") {
+            Ok(existing) if existing == bytes => return Ok(path),
+            Ok(_) => {}
+            Err(SessionError::Filesystem(error))
+                if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => return Err(error),
+        }
+        let path = self.write_atomic_inner("character.sav", bytes, true)?;
+        if self.read_fixed("character.sav")? != bytes {
+            return Err(SessionError::CorruptActiveSav);
+        }
+        Ok(path)
+    }
+
+    fn write_atomic_inner(
+        &self,
+        name: &str,
+        bytes: &[u8],
+        replace_existing: bool,
+    ) -> Result<PathBuf, SessionError> {
+        #[cfg(not(windows))]
+        let _ = replace_existing;
         if bytes.len() > MAX_SESSION_FILE_BYTES {
             return Err(SessionError::Package);
         }
@@ -972,7 +1042,7 @@ impl SessionWorkspace {
         reject_symlink(&path)?;
         reject_symlink(&temporary)?;
         #[cfg(windows)]
-        if path.exists() {
+        if path.exists() && !replace_existing {
             // Windows' portable rename operation is not an atomic replace.
             // Refuse to replace an existing fixed file rather than creating
             // a remove-then-rename window in which readers see no file.  The
@@ -993,6 +1063,21 @@ impl SessionWorkspace {
             file.sync_all().map_err(SessionError::Filesystem)?;
             drop(file);
             reject_symlink_ancestors(&path).map_err(SessionError::Filesystem)?;
+            #[cfg(windows)]
+            if replace_existing {
+                // std::fs::rename cannot replace an existing Windows file.
+                // This remove-then-rename window is bounded to the private
+                // workspace after verifier cleanup; a retry starts by
+                // restoring the same staged bytes and handles a missing SAV.
+                match std::fs::symlink_metadata(&path) {
+                    Ok(metadata) if metadata.file_type().is_symlink() || !metadata.is_file() => {
+                        return Err(SessionError::Package);
+                    }
+                    Ok(_) => std::fs::remove_file(&path).map_err(SessionError::Filesystem)?,
+                    Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+                    Err(error) => return Err(SessionError::Filesystem(error)),
+                }
+            }
             std::fs::rename(&temporary, &path).map_err(SessionError::Filesystem)
         })();
         if result.is_err() {
@@ -2236,34 +2321,13 @@ impl SessionLifecycle {
         if Sha256Digest::of_bytes(&pending) != manifest.pending_commits_sha256 {
             return Err(SessionError::Package);
         }
-        let resume = if manifest.savestate_compatible {
-            match self
-                .authenticated_artifact(api, character, ArtifactIdentity::ResumeSs1, revision)
-                .await
-            {
-                Ok(bytes)
-                    if valid_resume_bytes(&bytes)
-                        && manifest.savestate_sha256 == Some(Sha256Digest::of_bytes(&bytes)) =>
-                {
-                    Some(bytes)
-                }
-                // SAV has already been verified above.  An optional
-                // savestate is an optimization, so an absent, oversized, or
-                // transiently unavailable transport must never strand a
-                // character that can safely resume from SAV.
-                Ok(_) | Err(_) => None,
-            }
-        } else {
-            None
-        };
-        match manifest.select_resume(&target, &sav, resume.as_deref()) {
-            Ok(ResumeSelection::UseSavestate) => Ok(VerifiedPackage {
-                manifest: manifest.clone(),
-                sav,
-                pending,
-                resume,
-                save_generation,
-            }),
+        // A checkpoint state is captured before the ROM's SAVE_DATA_UPDATED
+        // queue entry is consumed. Loading it under a newly acquired epoch
+        // restores a pending update from the old epoch and permanently gates
+        // the next portal behind RECOVERY_REQUIRED. The verified Flash1M SAV
+        // is authoritative across acquisitions; keep optional states out of
+        // the boot path until capture can happen after that acknowledgement.
+        match manifest.select_resume(&target, &sav, None) {
             Ok(ResumeSelection::FallbackToSav(_)) => Ok(VerifiedPackage {
                 manifest: manifest.clone(),
                 sav,
@@ -2271,6 +2335,7 @@ impl SessionLifecycle {
                 resume: None,
                 save_generation,
             }),
+            Ok(ResumeSelection::UseSavestate) => Err(SessionError::Package),
             Err(_) => Err(SessionError::Package),
         }
     }
@@ -5301,6 +5366,44 @@ impl SessionLifecycle {
             || committed.source_save_sha256 != committed.source_head_save_sha256
             || committed.destination_save_sha256.is_none()
             || committed.arrival_nonce.is_none_or(|nonce| nonce == [0; 16])
+        {
+            return Err(SessionError::Lease);
+        }
+        let mut auth = self.auth;
+        auth.clear_active_fence();
+        Ok(auth)
+    }
+
+    /// Retain credentials after both group members committed an exact paired
+    /// handoff. The source lease was released by the server transaction.
+    pub fn into_auth_after_committed_paired_handoff(
+        self,
+        committed: &PairedTravelRecord,
+    ) -> Result<AuthSession, SessionError> {
+        let PairedTerminal::Committed(commit) =
+            committed.terminal.as_ref().ok_or(SessionError::Lease)?
+        else {
+            return Err(SessionError::Lease);
+        };
+        let request = &committed.intent.request;
+        let stage = committed.stage.as_ref().ok_or(SessionError::Lease)?;
+        let arrival = committed.verified_arrival.ok_or(SessionError::Lease)?;
+        if !matches!(committed.phase, PairedPhase::Committed | PairedPhase::Adopted)
+            || committed.character_id != self.lease.character_id
+            || request.fence != self.lease.fence()
+            || committed.intent.source_world_id != self.config.rom_world_id
+            || request.source_snapshot_id
+                != self.last_finalized_snapshot_id.ok_or(SessionError::Lease)?
+            || self.revision.is_initial()
+            || request.fence.current_revision != self.revision
+            || committed.intent.source_save_sha256.as_bytes() == &[0; 32]
+            || stage.destination_world_id == self.config.rom_world_id
+            || commit.own_world_id != stage.destination_world_id
+            || commit.own_snapshot_id != stage.stage_id
+            || commit.own_revision != self.revision.next().map_err(|_| SessionError::Lease)?
+            || arrival.stage_id != stage.stage_id
+            || arrival.destination_save_sha256 != stage.destination_save_sha256
+            || arrival.nonce != stage.expected_nonce
         {
             return Err(SessionError::Lease);
         }

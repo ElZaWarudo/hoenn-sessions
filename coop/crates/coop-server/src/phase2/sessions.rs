@@ -52,6 +52,9 @@ pub(crate) fn acquire(
         if !owns(state, actor, request.character_id) {
             return Err(Phase2Error::NotFound);
         }
+        if state.paired_handoff_for_member(request.character_id) {
+            return Err(Phase2Error::Conflict);
+        }
         state
             .acquire_history
             .retain(|_, record| record.expires_at > now);
@@ -229,6 +232,9 @@ pub(crate) fn acquire_world(
     store.write_transaction(|state| {
         if !owns(state, actor, request.character_id) {
             return Err(Phase2Error::NotFound);
+        }
+        if state.paired_handoff_for_member(request.character_id) {
+            return Err(Phase2Error::Conflict);
         }
         let (world_id, snapshot_id, build, revision) =
             authoritative_world(state, store, request.character_id)?;
@@ -422,6 +428,9 @@ pub(crate) fn reconnect(
         if !owns(state, actor, request.character_id) {
             return Err(Phase2Error::NotFound);
         }
+        if state.paired_handoff_for_member(request.character_id) {
+            return Err(Phase2Error::Conflict);
+        }
         let (lease_contract, grace_until, released, reconnect, runtime_binding) = {
             let lease = state
                 .leases
@@ -534,6 +543,9 @@ pub(crate) fn release(
     store.write_transaction(|state| {
         if !owns(state, actor, request.character_id) {
             return Err(Phase2Error::NotFound);
+        }
+        if state.paired_handoff_for_member(request.character_id) {
+            return Err(Phase2Error::Conflict);
         }
         let lease = state
             .leases

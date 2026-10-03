@@ -66,7 +66,9 @@ fn active_lease(
     fence: coop_cloud::LeaseFence,
     now: u64,
 ) -> Result<&super::storage::LeaseRecord, Phase2Error> {
-    if state.rom_handoff_staging.contains_key(&fence.character_id) {
+    if state.rom_handoff_staging.contains_key(&fence.character_id)
+        || state.paired_handoff_for_member(fence.character_id)
+    {
         return Err(Phase2Error::Conflict);
     }
     if !owner(state, actor, fence.character_id) {
@@ -83,7 +85,7 @@ fn active_lease(
     Ok(lease)
 }
 
-fn validate_runtime_binding(
+pub(super) fn validate_runtime_binding(
     catalog: &build_catalog::TrustedBuildCatalog,
     lease: &super::storage::LeaseRecord,
     claimed_world: coop_protocol::RomWorldId,
@@ -123,7 +125,9 @@ fn active_lease_identity(
     client_instance_id: coop_cloud::ClientInstanceId,
     now: u64,
 ) -> Result<super::storage::LeaseRecord, Phase2Error> {
-    if state.rom_handoff_staging.contains_key(&character_id) {
+    if state.rom_handoff_staging.contains_key(&character_id)
+        || state.paired_handoff_for_member(character_id)
+    {
         return Err(Phase2Error::Conflict);
     }
     active_lease_identity_for_handoff(
@@ -469,16 +473,16 @@ fn ticket_limit(ticket: &TicketRecord) -> u64 {
     }
 }
 
-type VerifiedSourceObjects = (Vec<(ArtifactIdentity, Vec<u8>)>, coop_save::ValidatedSaveV2);
+pub(super) type VerifiedSourceObjects = (Vec<(ArtifactIdentity, Vec<u8>)>, coop_save::ValidatedSaveV2);
 
-fn identity_registry_contract() -> coop_save::RegistryContract {
+pub(super) fn identity_registry_contract() -> coop_save::RegistryContract {
     coop_save::RegistryContract::new(
         coop_protocol::IDENTITY_REGISTRY_VERSION,
         coop_protocol::IDENTITY_REGISTRY_DIGEST,
     )
 }
 
-fn validate_character_sav(
+pub(super) fn validate_character_sav(
     bytes: &[u8],
     revision: Revision,
 ) -> Result<coop_save::ValidatedSaveV2, Phase2Error> {
@@ -1129,7 +1133,7 @@ fn restore_preflight(
     })
 }
 
-fn verified_source_objects(
+pub(super) fn verified_source_objects(
     store: &Store,
     character_id: coop_cloud::CharacterId,
     source: &SnapshotRecord,
@@ -1180,7 +1184,7 @@ fn verify_uploaded_objects(
     validated_save.ok_or(Phase2Error::Conflict)
 }
 
-fn snapshot_save(
+pub(super) fn snapshot_save(
     store: &Store,
     character_id: coop_cloud::CharacterId,
     snapshot: &SnapshotRecord,
@@ -1295,7 +1299,7 @@ fn cleanup_restore_objects(store: &Store, keys: &[String]) -> Result<(), Phase2E
     Ok(())
 }
 
-fn seal_object(store: &Store, key: &str) -> Result<(), Phase2Error> {
+pub(super) fn seal_object(store: &Store, key: &str) -> Result<(), Phase2Error> {
     for _ in 0..8 {
         store.objects.delete_if_present(key)?;
         if store.objects.retire_if_absent(key)? {

@@ -19,8 +19,10 @@ use axum::{
     routing::{get, post, put},
 };
 use coop_cloud::{
-    AcquireLeaseRequest, AcquireWorldLeaseResponse, CharacterId, HeartbeatLeaseRequest,
-    ReconnectLeaseRequest, ReleaseLeaseRequest, RomHandoffCommitRequest, RomHandoffPrepareRequest,
+    AcquireLeaseRequest, AcquireWorldLeaseResponse, CharacterId, GroupRomHandoffAbortRequest,
+    GroupRomHandoffArrivalRequest, GroupRomHandoffJoinRequest, GroupRomHandoffStatus,
+    GroupRomHandoffStatusRequest, HeartbeatLeaseRequest, ReconnectLeaseRequest,
+    ReleaseLeaseRequest, RomHandoffCommitRequest, RomHandoffPrepareRequest,
     RomHandoffPrepareResponse, RomHandoffRecoveryRequest, RomHandoffRecoveryStatus,
     SnapshotFinalizeRequest, SnapshotListRequest, SnapshotPrepareRequest, SnapshotRestoreRequest,
 };
@@ -83,6 +85,7 @@ use thiserror::Error;
 
 pub mod auth;
 mod firebase;
+mod group_handoff;
 pub(crate) mod group_travel;
 mod online;
 mod persistent;
@@ -401,6 +404,22 @@ impl Phase2App {
                     )
                     .route("/v1/groups/{group_id}", get(inspect_group))
                     .route("/v1/groups/{group_id}/travel", post(travel_group))
+                    .route(
+                        "/v1/groups/{group_id}/rom-handoff/join",
+                        post(join_group_rom_handoff),
+                    )
+                    .route(
+                        "/v1/groups/{group_id}/rom-handoff/status",
+                        post(status_group_rom_handoff),
+                    )
+                    .route(
+                        "/v1/groups/{group_id}/rom-handoff/arrive",
+                        post(arrive_group_rom_handoff),
+                    )
+                    .route(
+                        "/v1/groups/{group_id}/rom-handoff/abort",
+                        post(abort_group_rom_handoff),
+                    )
                     .route(
                         "/v1/groups/{group_id}/travel-proposals",
                         post(create_group_travel_proposal),
@@ -1388,6 +1407,86 @@ struct GroupPath {
     group_id: coop_cloud::GroupId,
 }
 
+fn reconcile_paired_presence(
+    app: &Phase2App,
+    status: &GroupRomHandoffStatus,
+) -> Result<(), Phase2Error> {
+    if let GroupRomHandoffStatus::Committed { group_id, .. } = status {
+        let members = app.store.read_transaction(|state| {
+            Ok::<_, Phase2Error>(
+                state
+                    .groups
+                    .get(group_id)
+                    .ok_or(Phase2Error::NotFound)?
+                    .group
+                    .members(),
+            )
+        })?;
+        for member in members {
+            app.presence.reconcile_lease_release(member);
+        }
+    }
+    Ok(())
+}
+
+async fn join_group_rom_handoff(
+    State(app): State<Phase2App>,
+    headers: axum::http::HeaderMap,
+    Path(path): Path<GroupPath>,
+    Phase2Json(request): Phase2Json<GroupRomHandoffJoinRequest>,
+) -> Result<Json<GroupRomHandoffStatus>, Phase2Error> {
+    if request.group_id != path.group_id {
+        return Err(Phase2Error::NotFound);
+    }
+    Ok(Json(group_handoff::join(
+        &app.store,
+        actor(&headers, &app)?,
+        &request,
+    )?))
+}
+
+async fn status_group_rom_handoff(
+    State(app): State<Phase2App>,
+    headers: axum::http::HeaderMap,
+    Path(path): Path<GroupPath>,
+    Phase2Json(request): Phase2Json<GroupRomHandoffStatusRequest>,
+) -> Result<Json<GroupRomHandoffStatus>, Phase2Error> {
+    if request.group_id != path.group_id {
+        return Err(Phase2Error::NotFound);
+    }
+    let response = group_handoff::status(&app.store, actor(&headers, &app)?, &request)?;
+    reconcile_paired_presence(&app, &response)?;
+    Ok(Json(response))
+}
+
+async fn arrive_group_rom_handoff(
+    State(app): State<Phase2App>,
+    headers: axum::http::HeaderMap,
+    Path(path): Path<GroupPath>,
+    Phase2Json(request): Phase2Json<GroupRomHandoffArrivalRequest>,
+) -> Result<Json<GroupRomHandoffStatus>, Phase2Error> {
+    if request.group_id != path.group_id {
+        return Err(Phase2Error::NotFound);
+    }
+    let response = group_handoff::arrive(&app.store, actor(&headers, &app)?, &request)?;
+    reconcile_paired_presence(&app, &response)?;
+    Ok(Json(response))
+}
+
+async fn abort_group_rom_handoff(
+    State(app): State<Phase2App>,
+    headers: axum::http::HeaderMap,
+    Path(path): Path<GroupPath>,
+    Phase2Json(request): Phase2Json<GroupRomHandoffAbortRequest>,
+) -> Result<Json<GroupRomHandoffStatus>, Phase2Error> {
+    if request.group_id != path.group_id {
+        return Err(Phase2Error::NotFound);
+    }
+    let response = group_handoff::abort(&app.store, actor(&headers, &app)?, &request)?;
+    reconcile_paired_presence(&app, &response)?;
+    Ok(Json(response))
+}
+
 #[derive(Deserialize)]
 struct GroupInvitationPath {
     invitation_id: coop_cloud::GroupInvitationId,
@@ -1562,6 +1661,7 @@ mod tests {
     include!("phase2/persistence_tests.rs");
     include!("phase2/recovery_tests.rs");
     include!("phase2/handoff_tests.rs");
+    include!("phase2/group_handoff_tests.rs");
     use coop_cloud::{
         ArtifactIdentity, ClientInstanceId, IdempotencyKey, InvitationCode, LeaseFence,
         LoginRequest, LogoutRequest, LogoutResponse, Password, ReconnectLeaseRequest,
@@ -4547,7 +4647,8 @@ mod tests {
         let mut bytes = valid_character_sav(false);
         for slot in 0..2 {
             for physical in 0..coop_save::SECTORS_PER_SLOT {
-                let start = (slot * coop_save::SECTORS_PER_SLOT + physical) * coop_save::SECTOR_SIZE;
+                let start =
+                    (slot * coop_save::SECTORS_PER_SLOT + physical) * coop_save::SECTOR_SIZE;
                 if read_u16(&bytes, start + TEST_SECTOR_ID_OFFSET) != 1 {
                     continue;
                 }

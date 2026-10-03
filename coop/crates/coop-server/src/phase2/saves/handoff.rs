@@ -167,7 +167,7 @@ fn snapshot_retirement_plan(
     Ok(victims)
 }
 
-pub(super) fn can_make_snapshot_room(
+pub(in crate::phase2) fn can_make_snapshot_room(
     state: &super::super::storage::State,
     character_id: coop_cloud::CharacterId,
     files: &[SnapshotFile],
@@ -186,7 +186,7 @@ pub(super) fn can_make_snapshot_room(
     Ok(())
 }
 
-pub(super) fn make_snapshot_room(
+pub(in crate::phase2) fn make_snapshot_room(
     state: &mut super::super::storage::State,
     character_id: coop_cloud::CharacterId,
     files: &[SnapshotFile],

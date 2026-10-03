@@ -7,15 +7,18 @@ use argon2::{
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
 use coop_cloud::{
     CharacterCloudState, CharacterId, ClientInstanceId, CommitId, Group, GroupId,
-    GroupInvitationId, GroupTravelProposalId, GroupTravelProposalView, IdempotencyKey,
-    LeaseContract, RefreshFamilyId, Revision, RomHandoffCommitRequest, RomHandoffPrepareRequest,
-    RuntimeBuildIdentity, RuntimeLeaseFence, SessionId, Sha256Digest, SigningPrivateKey,
-    SnapshotFile, SnapshotFinalizeRequest, SnapshotId, SnapshotPrepareRequest, SnapshotRecord,
+    GroupInvitationId, GroupRomHandoffArrivalRequest, GroupRomHandoffIntent, GroupRomHandoffSource,
+    GroupTravelProposalId, GroupTravelProposalView, IdempotencyKey, LeaseContract, RefreshFamilyId,
+    Revision, RomHandoffCommitRequest, RomHandoffPrepareRequest, RuntimeBuildIdentity,
+    RuntimeLeaseFence, SessionId, Sha256Digest, SigningPrivateKey, SnapshotFile,
+    SnapshotFinalizeRequest, SnapshotId, SnapshotPrepareRequest, SnapshotRecord,
     SnapshotRestoreRequest, StableRuntimeSession, UnixTimestampMillis, UploadTarget, UserId,
+    MAX_WORLD_REVISION,
 };
 use coop_protocol::{RegionId, RegionalProgress, RomWorldId, WorldZone};
 use getrandom::fill as random_fill;
 use hmac::Mac;
+use serde::de::{MapAccess, Visitor};
 use sha2::{Digest, Sha256};
 use std::{
     collections::{BTreeMap, HashMap, HashSet},
@@ -69,6 +72,12 @@ pub const GROUP_INVITATION_TTL_MS: u64 = coop_cloud::GROUP_INVITATION_TTL_MS;
 pub const MAX_GROUP_INVITATIONS: usize = 1_024;
 pub const MAX_GROUP_IDEMPOTENCY: usize = 4_096;
 pub const GROUP_IDEMPOTENCY_TTL_MS: u64 = 24 * 60 * 60 * 1_000;
+pub const MAX_GROUP_ROM_HANDOFF_STAGES: usize = 1_024;
+pub const MAX_GROUP_ROM_HANDOFF_RECEIPTS: usize = 4_096;
+/// Terminal paired-handoff receipts are replay tombstones, not an unbounded
+/// audit log. They remain available for this recovery window; a client must
+/// deliberately use a new `client_intent_key` after it expires.
+pub const GROUP_ROM_HANDOFF_RECEIPT_RETENTION_MS: u64 = 24 * 60 * 60 * 1_000;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum StorageMode {
@@ -806,6 +815,457 @@ pub(crate) struct RomHandoffAbortTombstone {
     pub source_world_id: RomWorldId,
 }
 
+/// Server-owned paired stage. Immutable object keys are the two stage IDs;
+/// neither source head changes while this record exists. A verifier may fill
+/// each arrival slot independently, but only the paired commit may promote
+/// both snapshots and the group zone in one repository transaction.
+#[derive(serde::Serialize, serde::Deserialize, Clone, Debug, Eq, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct GroupRomHandoffStage {
+    pub intent: GroupRomHandoffIntent,
+    pub stage_ids: [SnapshotId; 2],
+    /// Client intent keys are present for route-created stages. `None` keeps
+    /// direct internal preparation fixtures compatible with the old shape.
+    #[serde(default)]
+    pub client_intent_keys: Option<[IdempotencyKey; 2]>,
+    pub destination_save_sha256: [Sha256Digest; 2],
+    pub arrival_challenges: [Sha256Digest; 2],
+    pub verified_arrivals: [Option<VerifiedGroupRomArrival>; 2],
+    pub expires_at: u64,
+}
+
+/// A durable rendezvous. Each slot is filled only by that member's own
+/// authenticated request; neither caller may supply the companion's fence.
+#[derive(serde::Serialize, serde::Deserialize, Clone, Debug, Eq, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct GroupRomHandoffProposal {
+    pub group_id: GroupId,
+    pub idempotency_key: IdempotencyKey,
+    pub group_zone_revision: u64,
+    pub source_zone: WorldZone,
+    pub source_world_id: RomWorldId,
+    pub destination_world_id: RomWorldId,
+    pub portal_id: String,
+    pub arrival_portal_id: String,
+    pub catalog_sha256: Sha256Digest,
+    pub descriptor_sha256: Sha256Digest,
+    pub arrival_template_sha256: Sha256Digest,
+    pub members: [Option<GroupRomHandoffSource>; 2],
+    /// Each occupied member slot is paired with that member's durable key.
+    #[serde(default)]
+    pub client_intent_keys: [Option<IdempotencyKey>; 2],
+    pub expires_at: u64,
+}
+
+impl GroupRomHandoffProposal {
+    pub(crate) fn validate(&self) -> Result<(), StorageError> {
+        if self.expires_at == 0
+            || self.group_zone_revision > MAX_WORLD_REVISION
+            || self.source_world_id == self.destination_world_id
+            || self.portal_id.is_empty()
+            || self.portal_id.len() > 64
+            || self.arrival_portal_id.is_empty()
+            || self.arrival_portal_id.len() > 64
+            || !self.members.iter().any(Option::is_some)
+            || self
+                .members
+                .iter()
+                .zip(self.client_intent_keys)
+                .any(|(member, key)| member.is_some() != key.is_some())
+            || matches!(
+                self.client_intent_keys,
+                [Some(first), Some(second)] if first == second
+            )
+            || matches!(self.members, [Some(first), Some(second)] if first.fence.character_id >= second.fence.character_id)
+        {
+            return Err(StorageError::Transaction);
+        }
+        Ok(())
+    }
+}
+
+#[derive(serde::Serialize, serde::Deserialize, Clone, Debug, Eq, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct VerifiedGroupRomArrival {
+    pub stage_id: SnapshotId,
+    pub destination_save_sha256: Sha256Digest,
+    pub runtime: RuntimeLeaseFence,
+    /// Digest of the independently authenticated arrival acknowledgment.
+    pub acknowledgment_sha256: Sha256Digest,
+}
+
+/// Terminal result survives stage retirement. Aborts fence delayed prepare
+/// replays for the exact source heads; commits replay the authoritative pair.
+#[derive(serde::Serialize, serde::Deserialize, Clone, Debug, Eq, PartialEq)]
+#[serde(tag = "status", rename_all = "snake_case", deny_unknown_fields)]
+pub(crate) enum GroupRomHandoffReceipt {
+    Withdrawn {
+        proposal: GroupRomHandoffProposal,
+        resolved_at: u64,
+    },
+    Aborted {
+        intent: GroupRomHandoffIntent,
+        stage_ids: [SnapshotId; 2],
+        #[serde(default)]
+        client_intent_keys: Option<[IdempotencyKey; 2]>,
+        resolved_at: u64,
+    },
+    Committed {
+        intent: GroupRomHandoffIntent,
+        snapshots: [SnapshotRecord; 2],
+        destination_zone: WorldZone,
+        group_zone_revision: u64,
+        #[serde(default)]
+        client_intent_keys: Option<[IdempotencyKey; 2]>,
+        resolved_at: u64,
+    },
+}
+
+impl GroupRomHandoffStage {
+    pub(crate) fn validate(&self) -> Result<(), StorageError> {
+        self.intent
+            .validate()
+            .map_err(|_| StorageError::Transaction)?;
+        if self.stage_ids[0] == self.stage_ids[1]
+            || self.arrival_challenges[0] == self.arrival_challenges[1]
+            || self.expires_at == 0
+            || self
+                .verified_arrivals
+                .iter()
+                .enumerate()
+                .any(|(index, arrival)| {
+                    arrival.as_ref().is_some_and(|arrival| {
+                        let fence = self.intent.members[index].fence;
+                        let request = GroupRomHandoffArrivalRequest {
+                            api_version: coop_cloud::ApiVersion::V1,
+                            group_id: self.intent.group_id,
+                            fence,
+                            idempotency_key: self.intent.idempotency_key,
+                            stage_id: arrival.stage_id,
+                            destination_save_sha256: arrival.destination_save_sha256,
+                            destination_build: arrival.runtime.build.clone(),
+                            acknowledgment_mac: arrival.acknowledgment_sha256,
+                        };
+                        arrival.stage_id != self.stage_ids[index]
+                            || arrival.destination_save_sha256
+                                != self.destination_save_sha256[index]
+                            || arrival.runtime.session
+                                != StableRuntimeSession::from_lease_fence(&fence)
+                            || request.expected_mac(self.arrival_challenges[index])
+                                != arrival.acknowledgment_sha256
+                    })
+                })
+        {
+            return Err(StorageError::Transaction);
+        }
+        if self
+            .client_intent_keys
+            .is_some_and(|keys| keys[0] == keys[1])
+        {
+            return Err(StorageError::Transaction);
+        }
+        Ok(())
+    }
+}
+
+impl GroupRomHandoffReceipt {
+    pub(crate) fn validate(&self) -> Result<(), StorageError> {
+        match self {
+            Self::Withdrawn {
+                proposal,
+                resolved_at,
+            } => {
+                proposal.validate()?;
+                if *resolved_at == 0 {
+                    return Err(StorageError::Transaction);
+                }
+            }
+            Self::Aborted {
+                intent,
+                stage_ids,
+                client_intent_keys,
+                resolved_at,
+            } => {
+                intent.validate().map_err(|_| StorageError::Transaction)?;
+                if stage_ids[0] == stage_ids[1]
+                    || *resolved_at == 0
+                    || client_intent_keys.is_some_and(|keys| keys[0] == keys[1])
+                {
+                    return Err(StorageError::Transaction);
+                }
+            }
+            Self::Committed {
+                intent,
+                snapshots,
+                group_zone_revision,
+                client_intent_keys,
+                resolved_at,
+                ..
+            } => {
+                intent.validate().map_err(|_| StorageError::Transaction)?;
+                if snapshots[0].snapshot_id == snapshots[1].snapshot_id
+                    || intent.group_zone_revision.checked_add(1) != Some(*group_zone_revision)
+                    || *group_zone_revision > MAX_WORLD_REVISION
+                    || *resolved_at == 0
+                    || client_intent_keys.is_some_and(|keys| keys[0] == keys[1])
+                    || snapshots.iter().enumerate().any(|(index, snapshot)| {
+                        snapshot.character_id != intent.members[index].fence.character_id
+                            || snapshot.rom_world_id != intent.destination_world_id
+                            || snapshot.parent_revision
+                                != intent.members[index].fence.current_revision
+                            || intent.members[index].fence.current_revision.next().ok()
+                                != Some(snapshot.revision)
+                    })
+                {
+                    return Err(StorageError::Transaction);
+                }
+            }
+        }
+        Ok(())
+    }
+
+    pub(crate) fn resolved_at(&self) -> u64 {
+        match self {
+            Self::Withdrawn { resolved_at, .. }
+            | Self::Aborted { resolved_at, .. }
+            | Self::Committed { resolved_at, .. } => *resolved_at,
+        }
+    }
+
+    pub(crate) fn client_intent_keys(&self) -> [Option<IdempotencyKey>; 2] {
+        match self {
+            Self::Withdrawn { proposal, .. } => proposal.client_intent_keys,
+            Self::Aborted {
+                client_intent_keys, ..
+            }
+            | Self::Committed {
+                client_intent_keys, ..
+            } => client_intent_keys
+                .as_ref()
+                .map(|keys| [Some(keys[0]), Some(keys[1])])
+                .unwrap_or([None, None]),
+        }
+    }
+}
+
+/// Remove terminal replay tombstones outside the bounded recovery window.
+/// Callers hold the repository write transaction while invoking this helper.
+pub(crate) fn prune_group_rom_handoff_receipts(state: &mut State, now: u64) {
+    let floor = now
+        .max(state.group_rom_handoff_receipt_high_water)
+        .saturating_sub(GROUP_ROM_HANDOFF_RECEIPT_RETENTION_MS);
+    state
+        .group_rom_handoff_receipts
+        .retain(|_, receipt| receipt.resolved_at() > floor);
+}
+
+pub(crate) fn ensure_group_rom_handoff_receipt_capacity(
+    state: &State,
+    key: (GroupId, IdempotencyKey),
+    now: u64,
+) -> Result<(), StorageError> {
+    let floor = now
+        .max(state.group_rom_handoff_receipt_high_water)
+        .saturating_sub(GROUP_ROM_HANDOFF_RECEIPT_RETENTION_MS);
+    let retained = state
+        .group_rom_handoff_receipts
+        .values()
+        .filter(|receipt| receipt.resolved_at() > floor)
+        .count();
+    let group_reserved = state
+        .group_rom_handoff_receipt_reservations
+        .contains_key(&key.0);
+    let other_reservations = state
+        .group_rom_handoff_receipt_reservations
+        .len()
+        .saturating_sub(if group_reserved { 1 } else { 0 });
+    let needed_receipt = if state.group_rom_handoff_receipts.contains_key(&key) {
+        0
+    } else {
+        1
+    };
+    if retained
+        .saturating_add(other_reservations)
+        .saturating_add(needed_receipt)
+        > MAX_GROUP_ROM_HANDOFF_RECEIPTS
+    {
+        return Err(StorageError::Busy);
+    }
+    Ok(())
+}
+
+pub(crate) fn reserve_group_rom_handoff_receipt(
+    state: &mut State,
+    key: (GroupId, IdempotencyKey),
+    now: u64,
+) -> Result<(), StorageError> {
+    if state
+        .group_rom_handoff_receipt_reservations
+        .contains_key(&key.0)
+    {
+        return Ok(());
+    }
+    ensure_group_rom_handoff_receipt_capacity(state, key, now)?;
+    state
+        .group_rom_handoff_receipt_reservations
+        .insert(key.0, ());
+    Ok(())
+}
+
+/// Persists one terminal receipt while keeping the replay cache bounded. Only
+/// receipts outside the recovery window are removed. If all retained receipts
+/// are still live, the caller must retry after the window advances; evicting a
+/// live tombstone would let a delayed client intent become a new proposal.
+pub(crate) fn record_group_rom_handoff_receipt(
+    state: &mut State,
+    key: (GroupId, IdempotencyKey),
+    receipt: GroupRomHandoffReceipt,
+    now: u64,
+) -> Result<(), StorageError> {
+    let effective_now = now.max(state.group_rom_handoff_receipt_high_water);
+    prune_group_rom_handoff_receipts(state, effective_now);
+    ensure_group_rom_handoff_receipt_capacity(state, key, effective_now)?;
+    state.group_rom_handoff_receipt_reservations.remove(&key.0);
+    state.group_rom_handoff_receipt_high_water = state
+        .group_rom_handoff_receipt_high_water
+        .max(receipt.resolved_at())
+        .max(now);
+    state.group_rom_handoff_receipts.insert(key, receipt);
+    Ok(())
+}
+
+fn deserialize_bounded_group_handoff_map<'de, D, K, V>(
+    deserializer: D,
+    limit: usize,
+    validate: fn(&K, &V) -> Result<(), StorageError>,
+) -> Result<HashMap<K, V>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+    K: serde::Deserialize<'de> + Eq + std::hash::Hash,
+    V: serde::Deserialize<'de>,
+{
+    struct BoundedMap<K, V> {
+        limit: usize,
+        validate: fn(&K, &V) -> Result<(), StorageError>,
+        marker: std::marker::PhantomData<K>,
+    }
+    impl<'de, K, V> Visitor<'de> for BoundedMap<K, V>
+    where
+        K: serde::Deserialize<'de> + Eq + std::hash::Hash,
+        V: serde::Deserialize<'de>,
+    {
+        type Value = HashMap<K, V>;
+
+        fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+            write!(formatter, "at most {} valid handoff records", self.limit)
+        }
+
+        fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error>
+        where
+            A: MapAccess<'de>,
+        {
+            if map.size_hint().is_some_and(|size| size > self.limit) {
+                return Err(serde::de::Error::custom("handoff map exceeds limit"));
+            }
+            let mut records = HashMap::new();
+            while let Some((key, value)) = map.next_entry::<K, V>()? {
+                if records.len() >= self.limit
+                    || (self.validate)(&key, &value).is_err()
+                    || records.insert(key, value).is_some()
+                {
+                    return Err(serde::de::Error::custom("invalid handoff record"));
+                }
+            }
+            Ok(records)
+        }
+    }
+    deserializer.deserialize_map(BoundedMap {
+        limit,
+        validate,
+        marker: std::marker::PhantomData,
+    })
+}
+
+fn deserialize_group_rom_handoff_stages<'de, D>(
+    deserializer: D,
+) -> Result<HashMap<GroupId, GroupRomHandoffStage>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    deserialize_bounded_group_handoff_map(
+        deserializer,
+        MAX_GROUP_ROM_HANDOFF_STAGES,
+        |group_id, stage| {
+            stage.validate()?;
+            if stage.intent.group_id != *group_id {
+                return Err(StorageError::Transaction);
+            }
+            Ok(())
+        },
+    )
+}
+
+fn deserialize_group_rom_handoff_proposals<'de, D>(
+    deserializer: D,
+) -> Result<HashMap<GroupId, GroupRomHandoffProposal>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    deserialize_bounded_group_handoff_map(
+        deserializer,
+        MAX_GROUP_ROM_HANDOFF_STAGES,
+        |group_id, proposal| {
+            proposal.validate()?;
+            if proposal.group_id != *group_id {
+                return Err(StorageError::Transaction);
+            }
+            Ok(())
+        },
+    )
+}
+
+fn deserialize_group_rom_handoff_receipts<'de, D>(
+    deserializer: D,
+) -> Result<HashMap<(GroupId, IdempotencyKey), GroupRomHandoffReceipt>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    deserialize_bounded_group_handoff_map(
+        deserializer,
+        MAX_GROUP_ROM_HANDOFF_RECEIPTS,
+        |(group_id, key), receipt| {
+            receipt.validate()?;
+            let intent = match receipt {
+                GroupRomHandoffReceipt::Withdrawn { proposal, .. } => {
+                    if proposal.group_id != *group_id || proposal.idempotency_key != *key {
+                        return Err(StorageError::Transaction);
+                    }
+                    return Ok(());
+                }
+                GroupRomHandoffReceipt::Aborted { intent, .. }
+                | GroupRomHandoffReceipt::Committed { intent, .. } => intent,
+            };
+            if intent.group_id != *group_id || intent.idempotency_key != *key {
+                return Err(StorageError::Transaction);
+            }
+            Ok(())
+        },
+    )
+}
+
+fn deserialize_group_rom_handoff_reservations<'de, D>(
+    deserializer: D,
+) -> Result<HashMap<GroupId, ()>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    deserialize_bounded_group_handoff_map(
+        deserializer,
+        MAX_GROUP_ROM_HANDOFF_STAGES,
+        |_group_id, _unit| Ok(()),
+    )
+}
+
 #[derive(serde::Serialize, serde::Deserialize, Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum GroupStatus {
     Active,
@@ -991,6 +1451,27 @@ pub struct State {
     /// and are bounded per character.
     #[serde(default)]
     pub(crate) rom_handoff_aborts: HashMap<(CharacterId, IdempotencyKey), RomHandoffAbortTombstone>,
+    /// Paired cross-ROM stages and terminal outcomes are separate from the
+    /// existing solo path; endpoints remain unavailable until atomic commit.
+    #[serde(default, deserialize_with = "deserialize_group_rom_handoff_stages")]
+    pub(crate) group_rom_handoff_stages: HashMap<GroupId, GroupRomHandoffStage>,
+    #[serde(default, deserialize_with = "deserialize_group_rom_handoff_proposals")]
+    pub(crate) group_rom_handoff_proposals: HashMap<GroupId, GroupRomHandoffProposal>,
+    #[serde(default, deserialize_with = "deserialize_group_rom_handoff_receipts")]
+    pub(crate) group_rom_handoff_receipts:
+        HashMap<(GroupId, IdempotencyKey), GroupRomHandoffReceipt>,
+    /// One reserved terminal-receipt slot per live proposal or stage. The
+    /// reservation is consumed atomically when its terminal receipt lands.
+    #[serde(
+        default,
+        deserialize_with = "deserialize_group_rom_handoff_reservations"
+    )]
+    pub(crate) group_rom_handoff_receipt_reservations: HashMap<GroupId, ()>,
+    /// Monotonic server-time high-water for terminal handoff tombstones.
+    /// It prevents a restored clock from extending an already-expired replay
+    /// window while remaining a single bounded scalar.
+    #[serde(default)]
+    pub(crate) group_rom_handoff_receipt_high_water: u64,
     /// Snapshots removed from history in the same transaction as a new handoff
     /// head, awaiting idempotent object-store retirement after that commit.
     #[serde(default)]
@@ -1023,6 +1504,16 @@ pub struct State {
     #[serde(default)]
     pub(crate) group_travel_proposal_idempotency:
         HashMap<(CharacterId, String, IdempotencyKey), GroupTravelProposalIdempotencyRecord>,
+}
+
+impl State {
+    /// All ordinary runtime and group mutations are fenced while either
+    /// member's source save is staged for a paired ROM switch.
+    pub(crate) fn paired_handoff_for_member(&self, character_id: CharacterId) -> bool {
+        self.active_group_by_member
+            .get(&character_id)
+            .is_some_and(|group_id| self.group_rom_handoff_stages.contains_key(group_id))
+    }
 }
 #[derive(Clone)]
 pub(crate) struct Store {
@@ -1299,6 +1790,11 @@ impl Store {
         self.config.entropy.fill(&mut bytes[..])?;
         Ok(URL_SAFE_NO_PAD.encode(bytes.as_slice()))
     }
+    pub(crate) fn random_challenge(&self) -> Result<Sha256Digest, StorageError> {
+        let mut bytes = [0_u8; 32];
+        self.config.entropy.fill(&mut bytes)?;
+        Ok(Sha256Digest::from_bytes(bytes))
+    }
     pub(crate) fn random_uuid(&self) -> Result<Uuid, StorageError> {
         let mut bytes = [0_u8; 16];
         self.config.entropy.fill(&mut bytes)?;
@@ -1375,4 +1871,371 @@ pub(crate) fn is_artifact_size_allowed(artifact: coop_cloud::ArtifactIdentity, s
 }
 pub(crate) fn commit_id_allowed(commit: Option<CommitId>) -> bool {
     commit.is_none()
+}
+
+#[cfg(test)]
+mod group_rom_handoff_state_tests {
+    use super::*;
+    use coop_cloud::{ApiVersion, GroupRomHandoffSource, LeaseFence, SessionEpoch, SnapshotFence};
+    use uuid::Uuid;
+
+    fn uuid_id<T>(number: u128, constructor: fn(Uuid) -> Result<T, coop_cloud::IdError>) -> T {
+        constructor(Uuid::from_u128(number)).unwrap()
+    }
+
+    fn intent() -> GroupRomHandoffIntent {
+        let source = |number: u128| GroupRomHandoffSource {
+            fence: LeaseFence::new(
+                uuid_id(number + 10, SessionId::new),
+                uuid_id(number, CharacterId::new),
+                Revision::new(1),
+                SessionEpoch::new(1).unwrap(),
+                uuid_id(number + 20, ClientInstanceId::new),
+            ),
+            source_snapshot_id: uuid_id(number + 30, SnapshotId::new),
+        };
+        GroupRomHandoffIntent {
+            api_version: ApiVersion::V1,
+            group_id: uuid_id(100, GroupId::new),
+            group_zone_revision: 1,
+            source_zone: WorldZone::new(RegionId::Hoenn, "LILYCOVE_CITY_HARBOR", 1).unwrap(),
+            source_world_id: RomWorldId::new(1).unwrap(),
+            destination_world_id: RomWorldId::new(2).unwrap(),
+            portal_id: "to_cormoria".into(),
+            arrival_portal_id: "rivetshore_harbor".into(),
+            catalog_sha256: Sha256Digest::of_bytes(b"catalog"),
+            descriptor_sha256: Sha256Digest::of_bytes(b"descriptor"),
+            arrival_template_sha256: Sha256Digest::of_bytes(b"arrival"),
+            members: [source(1), source(2)],
+            idempotency_key: uuid_id(101, IdempotencyKey::new),
+        }
+    }
+
+    fn stage() -> GroupRomHandoffStage {
+        GroupRomHandoffStage {
+            intent: intent(),
+            stage_ids: [uuid_id(200, SnapshotId::new), uuid_id(201, SnapshotId::new)],
+            client_intent_keys: None,
+            destination_save_sha256: [
+                Sha256Digest::of_bytes(b"member one"),
+                Sha256Digest::of_bytes(b"member two"),
+            ],
+            arrival_challenges: [
+                Sha256Digest::of_bytes(b"challenge one"),
+                Sha256Digest::of_bytes(b"challenge two"),
+            ],
+            verified_arrivals: [None, None],
+            expires_at: 1_700_000_300_000,
+        }
+    }
+
+    fn proposal() -> GroupRomHandoffProposal {
+        let intent = intent();
+        GroupRomHandoffProposal {
+            group_id: intent.group_id,
+            idempotency_key: intent.idempotency_key,
+            group_zone_revision: intent.group_zone_revision,
+            source_zone: intent.source_zone,
+            source_world_id: intent.source_world_id,
+            destination_world_id: intent.destination_world_id,
+            portal_id: intent.portal_id,
+            arrival_portal_id: intent.arrival_portal_id,
+            catalog_sha256: intent.catalog_sha256,
+            descriptor_sha256: intent.descriptor_sha256,
+            arrival_template_sha256: intent.arrival_template_sha256,
+            members: [Some(intent.members[0]), None],
+            client_intent_keys: [Some(uuid_id(500, IdempotencyKey::new)), None],
+            expires_at: 1_700_000_300_000,
+        }
+    }
+
+    #[test]
+    fn paired_proposal_survives_restart_and_rejects_bad_key_or_member_order() {
+        let proposal = proposal();
+        let mut state = State::default();
+        state
+            .group_rom_handoff_proposals
+            .insert(proposal.group_id, proposal.clone());
+        assert_eq!(
+            decode(&state).unwrap().group_rom_handoff_proposals[&proposal.group_id],
+            proposal
+        );
+        state.group_rom_handoff_proposals.clear();
+        state
+            .group_rom_handoff_proposals
+            .insert(uuid_id(999, GroupId::new), proposal.clone());
+        assert!(decode(&state).is_err());
+        state.group_rom_handoff_proposals.clear();
+        let mut invalid = proposal.clone();
+        invalid.members = [Some(intent().members[1]), Some(intent().members[0])];
+        state
+            .group_rom_handoff_proposals
+            .insert(invalid.group_id, invalid);
+        assert!(decode(&state).is_err());
+    }
+
+    fn decode(state: &State) -> Result<State, ciborium::de::Error<std::io::Error>> {
+        let mut bytes = Vec::new();
+        ciborium::into_writer(state, &mut bytes).unwrap();
+        ciborium::from_reader(bytes.as_slice())
+    }
+
+    fn committed_record(intent: &GroupRomHandoffIntent, index: usize) -> SnapshotRecord {
+        let source = intent.members[index];
+        let pending =
+            SnapshotFile::from_bytes(coop_cloud::ArtifactIdentity::PendingCommits, b"[]").unwrap();
+        SnapshotRecord::new(
+            uuid_id(300 + index as u128, SnapshotId::new),
+            intent.destination_world_id,
+            SnapshotFence::new(
+                source.fence.session_id,
+                source.fence.character_id,
+                source.fence.session_epoch,
+            ),
+            source.fence.current_revision,
+            Revision::new(2),
+            vec![
+                SnapshotFile::from_bytes(coop_cloud::ArtifactIdentity::CharacterSav, b"save")
+                    .unwrap(),
+                pending.clone(),
+            ],
+            pending.sha256,
+            None,
+            UnixTimestampMillis::new(1_700_000_001_000),
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn paired_stage_and_abort_receipt_survive_cbor_restart() {
+        let stage = stage();
+        let group_id = stage.intent.group_id;
+        let key = stage.intent.idempotency_key;
+        let mut state = State::default();
+        state
+            .group_rom_handoff_stages
+            .insert(group_id, stage.clone());
+        state.group_rom_handoff_receipts.insert(
+            (group_id, key),
+            GroupRomHandoffReceipt::Aborted {
+                intent: stage.intent.clone(),
+                stage_ids: stage.stage_ids,
+                client_intent_keys: stage.client_intent_keys,
+                resolved_at: 1_700_000_001_000,
+            },
+        );
+        let recovered = decode(&state).unwrap();
+        assert_eq!(recovered.group_rom_handoff_stages[&group_id], stage);
+        assert!(matches!(
+            recovered.group_rom_handoff_receipts[&(group_id, key)],
+            GroupRomHandoffReceipt::Aborted { .. }
+        ));
+    }
+
+    #[test]
+    fn paired_stage_decode_rejects_mismatched_key_or_stage_and_oversize_map() {
+        let mut state = State::default();
+        let stage = stage();
+        state
+            .group_rom_handoff_stages
+            .insert(uuid_id(900, GroupId::new), stage.clone());
+        assert!(decode(&state).is_err());
+
+        state.group_rom_handoff_stages.clear();
+        let mut invalid = stage.clone();
+        invalid.stage_ids[1] = invalid.stage_ids[0];
+        state
+            .group_rom_handoff_stages
+            .insert(invalid.intent.group_id, invalid);
+        assert!(decode(&state).is_err());
+
+        state.group_rom_handoff_stages.clear();
+        for number in 0..=MAX_GROUP_ROM_HANDOFF_STAGES {
+            let mut member = stage.clone();
+            let id = uuid_id(1_000 + number as u128, GroupId::new);
+            member.intent.group_id = id;
+            state.group_rom_handoff_stages.insert(id, member);
+        }
+        assert!(decode(&state).is_err());
+    }
+
+    #[test]
+    fn paired_receipt_decode_rejects_wrong_replay_key() {
+        let stage = stage();
+        let mut state = State::default();
+        state.group_rom_handoff_receipts.insert(
+            (stage.intent.group_id, uuid_id(999, IdempotencyKey::new)),
+            GroupRomHandoffReceipt::Aborted {
+                intent: stage.intent,
+                stage_ids: stage.stage_ids,
+                client_intent_keys: stage.client_intent_keys,
+                resolved_at: 1_700_000_001_000,
+            },
+        );
+        assert!(decode(&state).is_err());
+    }
+
+    #[test]
+    fn paired_commit_receipt_replays_both_authoritative_heads() {
+        let intent = intent();
+        let records = [committed_record(&intent, 0), committed_record(&intent, 1)];
+        let mut state = State::default();
+        state.group_rom_handoff_receipts.insert(
+            (intent.group_id, intent.idempotency_key),
+            GroupRomHandoffReceipt::Committed {
+                intent: intent.clone(),
+                snapshots: records.clone(),
+                destination_zone: WorldZone::new(
+                    RegionId::Cormoria,
+                    "CORMORIA_RIVETSHORE_CITY_HARBOR",
+                    1,
+                )
+                .unwrap(),
+                group_zone_revision: 2,
+                client_intent_keys: None,
+                resolved_at: 1_700_000_001_000,
+            },
+        );
+        let recovered = decode(&state).unwrap();
+        assert!(matches!(
+            &recovered.group_rom_handoff_receipts[&(intent.group_id, intent.idempotency_key)],
+            GroupRomHandoffReceipt::Committed { snapshots, .. } if *snapshots == records
+        ));
+    }
+
+    #[test]
+    fn paired_receipt_retention_gc_is_bounded_and_clock_monotonic() {
+        let stage = stage();
+        let group_id = stage.intent.group_id;
+        let now = 1_800_000_000_000;
+        let old_key = uuid_id(8_001, IdempotencyKey::new);
+        let recent_key = uuid_id(8_002, IdempotencyKey::new);
+        let old = GroupRomHandoffReceipt::Aborted {
+            intent: stage.intent.clone(),
+            stage_ids: stage.stage_ids,
+            client_intent_keys: None,
+            resolved_at: now - GROUP_ROM_HANDOFF_RECEIPT_RETENTION_MS - 1,
+        };
+        let recent = GroupRomHandoffReceipt::Aborted {
+            intent: stage.intent.clone(),
+            stage_ids: stage.stage_ids,
+            client_intent_keys: None,
+            resolved_at: now,
+        };
+        let mut state = State::default();
+        state
+            .group_rom_handoff_receipts
+            .insert((group_id, old_key), old);
+        state
+            .group_rom_handoff_receipts
+            .insert((group_id, recent_key), recent.clone());
+        state.group_rom_handoff_receipt_high_water = now;
+        prune_group_rom_handoff_receipts(&mut state, now - 1);
+        assert!(!state
+            .group_rom_handoff_receipts
+            .contains_key(&(group_id, old_key)));
+        assert!(state
+            .group_rom_handoff_receipts
+            .contains_key(&(group_id, recent_key)));
+
+        for index in 0..MAX_GROUP_ROM_HANDOFF_RECEIPTS {
+            state.group_rom_handoff_receipts.insert(
+                (
+                    group_id,
+                    uuid_id(10_000 + index as u128, IdempotencyKey::new),
+                ),
+                recent.clone(),
+            );
+        }
+        let terminal_key = uuid_id(20_000, IdempotencyKey::new);
+        assert_eq!(
+            record_group_rom_handoff_receipt(&mut state, (group_id, terminal_key), recent, now),
+            Err(StorageError::Busy)
+        );
+        assert_eq!(
+            state.group_rom_handoff_receipts.len(),
+            MAX_GROUP_ROM_HANDOFF_RECEIPTS + 1
+        );
+        assert!(!state
+            .group_rom_handoff_receipts
+            .contains_key(&(group_id, terminal_key)));
+
+        let next_now = now + GROUP_ROM_HANDOFF_RECEIPT_RETENTION_MS + 1;
+        prune_group_rom_handoff_receipts(&mut state, next_now);
+        assert_eq!(
+            record_group_rom_handoff_receipt(
+                &mut state,
+                (group_id, terminal_key),
+                GroupRomHandoffReceipt::Aborted {
+                    intent: stage.intent,
+                    stage_ids: stage.stage_ids,
+                    client_intent_keys: None,
+                    resolved_at: next_now,
+                },
+                next_now,
+            ),
+            Ok(())
+        );
+    }
+
+    #[test]
+    fn paired_receipt_reservation_counts_toward_terminal_capacity() {
+        let stage = stage();
+        let group_id = stage.intent.group_id;
+        let now = 1_800_000_000_000;
+        let receipt = GroupRomHandoffReceipt::Aborted {
+            intent: stage.intent.clone(),
+            stage_ids: stage.stage_ids,
+            client_intent_keys: None,
+            resolved_at: now,
+        };
+        let mut state = State::default();
+        state.group_rom_handoff_receipt_high_water = now;
+        for index in 0..MAX_GROUP_ROM_HANDOFF_RECEIPTS - 1 {
+            state.group_rom_handoff_receipts.insert(
+                (
+                    group_id,
+                    uuid_id(30_000 + index as u128, IdempotencyKey::new),
+                ),
+                receipt.clone(),
+            );
+        }
+        let terminal_key = uuid_id(40_000, IdempotencyKey::new);
+        assert_eq!(
+            reserve_group_rom_handoff_receipt(&mut state, (group_id, terminal_key), now),
+            Ok(())
+        );
+        assert!(state
+            .group_rom_handoff_receipt_reservations
+            .contains_key(&group_id));
+        let other_group = uuid_id(40_001, GroupId::new);
+        assert_eq!(
+            reserve_group_rom_handoff_receipt(&mut state, (other_group, terminal_key), now),
+            Err(StorageError::Busy)
+        );
+
+        let mut terminal_intent = stage.intent.clone();
+        terminal_intent.idempotency_key = terminal_key;
+        assert_eq!(
+            record_group_rom_handoff_receipt(
+                &mut state,
+                (group_id, terminal_key),
+                GroupRomHandoffReceipt::Aborted {
+                    intent: terminal_intent,
+                    stage_ids: stage.stage_ids,
+                    client_intent_keys: None,
+                    resolved_at: now,
+                },
+                now,
+            ),
+            Ok(())
+        );
+        assert!(!state
+            .group_rom_handoff_receipt_reservations
+            .contains_key(&group_id));
+        assert_eq!(
+            state.group_rom_handoff_receipts.len(),
+            MAX_GROUP_ROM_HANDOFF_RECEIPTS
+        );
+    }
 }

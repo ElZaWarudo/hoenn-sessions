@@ -10,8 +10,8 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
-use ed25519_dalek::SigningKey;
 use coop_launcher::compat;
+use ed25519_dalek::SigningKey;
 use serde_json::json;
 use sha2::{Digest, Sha256};
 use tempfile::tempdir;

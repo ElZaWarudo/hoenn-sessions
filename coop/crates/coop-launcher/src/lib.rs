@@ -10,6 +10,8 @@ pub mod epoch;
 pub mod group_travel;
 pub mod keychain;
 pub mod online;
+pub mod paired_travel;
+pub mod paired_coordinator;
 pub mod process;
 pub mod realtime;
 pub mod recovery;
@@ -17,9 +19,9 @@ pub mod rom_travel;
 pub mod session;
 pub mod travel_coordinator;
 pub mod update;
-pub mod world_acquire;
 #[cfg(windows)]
 pub mod windows_mgba_supervisor;
+pub mod world_acquire;
 
 pub use auth::{AuthApi, AuthError, AuthSession};
 pub use compat::{BuildCompatibility, CompatibilityError, SelectedRomWorld, TrustedRomCatalog};
@@ -58,7 +60,9 @@ use std::time::Duration;
 
 use coop_cloud::{
     AcquireLeaseRequest, AcquireWorldLeaseResponse, ArtifactIdentity as CloudArtifactIdentity,
-    CharacterId, HeartbeatLeaseRequest, LeaseContract, LeaseFence, LoginRequest, LoginResponse,
+    CharacterId, GroupId, GroupRomHandoffAbortRequest, GroupRomHandoffArrivalRequest,
+    GroupRomHandoffJoinRequest, GroupRomHandoffStatus, GroupRomHandoffStatusRequest,
+    HeartbeatLeaseRequest, IdempotencyKey, LeaseContract, LeaseFence, LoginRequest, LoginResponse,
     LogoutRequest, LogoutResponse, PrepareSnapshotRequest, ReconnectLeaseRequest, RefreshRequest,
     RefreshResponse, RegisterRequest, RegisterResponse, ReleaseLeaseRequest, Revision,
     RomHandoffCommitRequest, RomHandoffPrepareRequest, RomHandoffPrepareResponse,
@@ -101,6 +105,53 @@ fn map_acquire_error(error: HttpClientError) -> SessionError {
         HttpClientError::Status(StatusCode::CONFLICT) => SessionError::AcquireConflict,
         HttpClientError::Status(StatusCode::GONE) => SessionError::AcquireClosed,
         other => map_cloud_error(other),
+    }
+}
+
+fn validate_group_rom_handoff_status(
+    status: &GroupRomHandoffStatus,
+    group_id: GroupId,
+    expected_key: Option<IdempotencyKey>,
+    character_id: CharacterId,
+) -> Result<(), SessionError> {
+    let (returned_group, returned_key) = match status {
+        GroupRomHandoffStatus::Pending {
+            group_id,
+            idempotency_key,
+            ..
+        }
+        | GroupRomHandoffStatus::Staged {
+            group_id,
+            idempotency_key,
+            ..
+        }
+        | GroupRomHandoffStatus::Committed {
+            group_id,
+            idempotency_key,
+            ..
+        }
+        | GroupRomHandoffStatus::Aborted {
+            group_id,
+            idempotency_key,
+        } => (*group_id, *idempotency_key),
+    };
+    if returned_group != group_id || expected_key.is_some_and(|key| key != returned_key) {
+        return Err(SessionError::Cloud);
+    }
+    match status {
+        GroupRomHandoffStatus::Staged {
+            destination_save_sha256,
+            destination_save,
+            ..
+        } if *destination_save_sha256 != coop_cloud::Sha256Digest::of_bytes(destination_save) => {
+            Err(SessionError::Cloud)
+        }
+        GroupRomHandoffStatus::Committed { own_snapshot, .. }
+            if own_snapshot.character_id != character_id =>
+        {
+            Err(SessionError::Cloud)
+        }
+        _ => Ok(()),
     }
 }
 
@@ -541,6 +592,127 @@ impl CloudApi for ReqwestCloudApi {
             .map_err(map_cloud_error)
         })
     }
+    fn join_group_rom_handoff<'a>(
+        &'a self,
+        auth: &'a AuthSession,
+        request: GroupRomHandoffJoinRequest,
+    ) -> session::CloudFuture<'a, GroupRomHandoffStatus> {
+        Box::pin(async move {
+            let url = self
+                .url(&format!("v1/groups/{}/rom-handoff/join", request.group_id))
+                .map_err(map_cloud_error)?;
+            let response: GroupRomHandoffStatus = self
+                .send_json(
+                    self.authenticated_with_fence(Method::POST, url, auth, request.fence)
+                        .map_err(map_cloud_error)?
+                        .json(&request),
+                    MAX_JSON_RESPONSE_BYTES,
+                )
+                .await
+                .map_err(map_cloud_error)?;
+            validate_group_rom_handoff_status(
+                &response,
+                request.group_id,
+                None,
+                request.fence.character_id,
+            )?;
+            if matches!(
+                &response,
+                GroupRomHandoffStatus::Pending { portal_id, .. }
+                    if portal_id != &request.portal_id
+            ) {
+                return Err(SessionError::Cloud);
+            }
+            Ok(response)
+        })
+    }
+    fn status_group_rom_handoff<'a>(
+        &'a self,
+        auth: &'a AuthSession,
+        request: GroupRomHandoffStatusRequest,
+    ) -> session::CloudFuture<'a, GroupRomHandoffStatus> {
+        Box::pin(async move {
+            let url = self
+                .url(&format!(
+                    "v1/groups/{}/rom-handoff/status",
+                    request.group_id
+                ))
+                .map_err(map_cloud_error)?;
+            let response: GroupRomHandoffStatus = self
+                .send_json(
+                    self.authenticated_with_fence(Method::POST, url, auth, request.fence)
+                        .map_err(map_cloud_error)?
+                        .json(&request),
+                    MAX_JSON_RESPONSE_BYTES,
+                )
+                .await
+                .map_err(map_cloud_error)?;
+            validate_group_rom_handoff_status(
+                &response,
+                request.group_id,
+                Some(request.idempotency_key),
+                request.fence.character_id,
+            )?;
+            Ok(response)
+        })
+    }
+    fn arrive_group_rom_handoff<'a>(
+        &'a self,
+        auth: &'a AuthSession,
+        request: GroupRomHandoffArrivalRequest,
+    ) -> session::CloudFuture<'a, GroupRomHandoffStatus> {
+        Box::pin(async move {
+            let url = self
+                .url(&format!(
+                    "v1/groups/{}/rom-handoff/arrive",
+                    request.group_id
+                ))
+                .map_err(map_cloud_error)?;
+            let response: GroupRomHandoffStatus = self
+                .send_json(
+                    self.authenticated_with_fence(Method::POST, url, auth, request.fence)
+                        .map_err(map_cloud_error)?
+                        .json(&request),
+                    MAX_JSON_RESPONSE_BYTES,
+                )
+                .await
+                .map_err(map_cloud_error)?;
+            validate_group_rom_handoff_status(
+                &response,
+                request.group_id,
+                Some(request.idempotency_key),
+                request.fence.character_id,
+            )?;
+            Ok(response)
+        })
+    }
+    fn abort_group_rom_handoff<'a>(
+        &'a self,
+        auth: &'a AuthSession,
+        request: GroupRomHandoffAbortRequest,
+    ) -> session::CloudFuture<'a, GroupRomHandoffStatus> {
+        Box::pin(async move {
+            let url = self
+                .url(&format!("v1/groups/{}/rom-handoff/abort", request.group_id))
+                .map_err(map_cloud_error)?;
+            let response: GroupRomHandoffStatus = self
+                .send_json(
+                    self.authenticated_with_fence(Method::POST, url, auth, request.fence)
+                        .map_err(map_cloud_error)?
+                        .json(&request),
+                    MAX_JSON_RESPONSE_BYTES,
+                )
+                .await
+                .map_err(map_cloud_error)?;
+            validate_group_rom_handoff_status(
+                &response,
+                request.group_id,
+                Some(request.idempotency_key),
+                request.fence.character_id,
+            )?;
+            Ok(response)
+        })
+    }
     fn group_travel_create(
         &self,
         token: coop_cloud::AccessToken,
@@ -919,14 +1091,17 @@ impl CloudApi for ReqwestCloudApi {
 mod tests {
     use super::{
         HttpClientError, ReqwestCloudApi, bounded_body, map_acquire_error, map_cloud_error,
+        validate_group_rom_handoff_status,
     };
     use crate::{AuthError, AuthSession, CloudApi, RefreshTokenStore, SessionError};
     use coop_cloud::{
         AccessToken, ArtifactIdentity as CloudArtifactIdentity, CharacterId, ClientInstanceId,
-        HeartbeatLeaseRequest, LeaseContract, LeaseFence, LoginResponse, Password, RefreshFamilyId,
-        RefreshToken, RomHandoffCommitRequest, RomHandoffPrepareRequest, RomHandoffPrepareResponse,
-        RomHandoffRecoveryStatus, SessionEpoch, SessionId, SnapshotFence, SnapshotFile, SnapshotId,
-        SnapshotRecord, UnixTimestampMillis, UploadTarget, UserId,
+        GroupId, GroupRomHandoffJoinRequest, GroupRomHandoffStatus, GroupRomHandoffStatusRequest,
+        HeartbeatLeaseRequest, IdempotencyKey, LeaseContract, LeaseFence, LoginResponse, Password,
+        RefreshFamilyId, RefreshToken, RomHandoffCommitRequest, RomHandoffPrepareRequest,
+        RomHandoffPrepareResponse, RomHandoffRecoveryStatus, SessionEpoch, SessionId,
+        SnapshotFence, SnapshotFile, SnapshotId, SnapshotRecord, UnixTimestampMillis, UploadTarget,
+        UserId,
     };
     use reqwest::StatusCode;
     use std::sync::Arc;
@@ -1079,6 +1254,121 @@ mod tests {
             ClientInstanceId::new(Uuid::from_u128(204)).unwrap(),
             RefreshFamilyId::new(Uuid::from_u128(205)).unwrap(),
         )
+    }
+
+    #[tokio::test]
+    async fn paired_handoff_join_and_status_use_distinct_fenced_routes() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let (user_id, character_id, session_id, client_instance_id, family_id) = test_ids();
+        let group_id = GroupId::new(Uuid::from_u128(206)).unwrap();
+        let source_snapshot_id = SnapshotId::new(Uuid::from_u128(207)).unwrap();
+        let key = IdempotencyKey::new(Uuid::from_u128(208)).unwrap();
+        let client_key = IdempotencyKey::new(Uuid::from_u128(209)).unwrap();
+        let fence = LeaseFence::new(
+            session_id,
+            character_id,
+            coop_cloud::Revision::new(5),
+            SessionEpoch::new(2).unwrap(),
+            client_instance_id,
+        );
+        let login = LoginResponse::new(
+            user_id,
+            character_id,
+            AccessToken::new("group-access").unwrap(),
+            RefreshToken::new("group-refresh").unwrap(),
+            family_id,
+            UnixTimestampMillis::new(4_000_000_000_000),
+            UnixTimestampMillis::new(4_000_000_100_000),
+        )
+        .unwrap();
+        let response = GroupRomHandoffStatus::Pending {
+            group_id,
+            idempotency_key: key,
+            portal_id: "to_cormoria".into(),
+            submitted_by: [true, false],
+        };
+        let server_response = response.clone();
+        let server = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            assert!(
+                read_http_request(&mut stream)
+                    .await
+                    .starts_with("POST /v1/auth/login ")
+            );
+            write_response(&mut stream, "200 OK", &serde_json::to_vec(&login).unwrap()).await;
+            for (suffix, expected_body) in [
+                ("join", "source_snapshot_id"),
+                ("status", "idempotency_key"),
+            ] {
+                let (mut stream, _) = listener.accept().await.unwrap();
+                let request = read_http_request(&mut stream).await;
+                assert!(request.starts_with(&format!(
+                    "POST /v1/groups/{group_id}/rom-handoff/{suffix} HTTP/1.1"
+                )));
+                let lower = request.to_ascii_lowercase();
+                assert!(lower.contains("authorization: bearer group-access"));
+                assert!(lower.contains(&format!("x-coop-session-id: {session_id}")));
+                assert!(lower.contains("x-coop-session-epoch: 2"));
+                assert!(
+                    lower.contains(&format!("x-coop-client-instance-id: {client_instance_id}"))
+                );
+                assert!(request.contains(expected_body));
+                write_response(
+                    &mut stream,
+                    "200 OK",
+                    &serde_json::to_vec(&server_response).unwrap(),
+                )
+                .await;
+            }
+        });
+        let api = ReqwestCloudApi::new(&format!("http://127.0.0.1:{}", address.port())).unwrap();
+        let auth = AuthSession::login(
+            &api,
+            &TestKeychain,
+            "ash",
+            Password::new("password").unwrap(),
+        )
+        .await
+        .unwrap();
+        let joined = api
+            .join_group_rom_handoff(
+                &auth,
+                GroupRomHandoffJoinRequest {
+                    api_version: coop_cloud::ApiVersion::V1,
+                    group_id,
+                    fence,
+                    source_snapshot_id,
+                    portal_id: "to_cormoria".into(),
+                    client_intent_key: client_key,
+                },
+            )
+            .await
+            .unwrap();
+        assert_eq!(joined, response);
+        let status = api
+            .status_group_rom_handoff(
+                &auth,
+                GroupRomHandoffStatusRequest {
+                    api_version: coop_cloud::ApiVersion::V1,
+                    group_id,
+                    fence,
+                    idempotency_key: key,
+                },
+            )
+            .await
+            .unwrap();
+        assert_eq!(status, response);
+        assert!(
+            validate_group_rom_handoff_status(
+                &status,
+                group_id,
+                Some(IdempotencyKey::new(Uuid::from_u128(209)).unwrap()),
+                character_id,
+            )
+            .is_err()
+        );
+        server.await.unwrap();
     }
 
     #[tokio::test]

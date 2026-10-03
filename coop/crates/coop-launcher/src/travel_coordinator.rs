@@ -10,9 +10,9 @@ use std::{
 };
 
 use coop_cloud::{
-    AcquireWorldLeaseResponse, ApiVersion, ArtifactIdentity, IdempotencyKey, RomHandoffCommitRequest,
-    RomHandoffPrepareRequest, RomHandoffPrepareResponse, RomHandoffRecoveryRequest,
-    RomHandoffRecoveryStatus, Sha256Digest, SnapshotId, SnapshotRecord,
+    AcquireWorldLeaseResponse, ApiVersion, ArtifactIdentity, GroupId, GroupRomHandoffStatus,
+    IdempotencyKey, RomHandoffCommitRequest, RomHandoffPrepareRequest, RomHandoffPrepareResponse,
+    RomHandoffRecoveryRequest, RomHandoffRecoveryStatus, Sha256Digest, SnapshotId, SnapshotRecord,
 };
 use coop_protocol::{IDENTITY_REGISTRY_DIGEST, IDENTITY_REGISTRY_VERSION, RomWorldId};
 use coop_save::{RegistryContract, parse_v2};
@@ -56,6 +56,88 @@ pub struct StagedDestination {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct CheckedResponse;
+
+/// A member-scoped destination from an authenticated paired rendezvous. The
+/// caller must still journal a nonce and run the destination ROM verifier
+/// before acknowledging arrival to the server.
+pub struct PairedStagedDestination {
+    destination: StagedDestination,
+    group_id: GroupId,
+    attempt_key: IdempotencyKey,
+    arrival_challenge: Sha256Digest,
+}
+
+impl PairedStagedDestination {
+    #[must_use]
+    pub fn destination(&self) -> &StagedDestination {
+        &self.destination
+    }
+
+    #[must_use]
+    pub const fn group_id(&self) -> GroupId {
+        self.group_id
+    }
+
+    #[must_use]
+    pub const fn attempt_key(&self) -> IdempotencyKey {
+        self.attempt_key
+    }
+
+    #[must_use]
+    pub const fn arrival_challenge(&self) -> Sha256Digest {
+        self.arrival_challenge
+    }
+}
+
+/// Validate the staged member save against the signed catalog and shared V2
+/// registry before any destination ROM is launched.
+pub fn checked_paired_destination(
+    status: GroupRomHandoffStatus,
+    group_id: GroupId,
+    attempt_key: IdempotencyKey,
+    source_world: RomWorldId,
+    source: &PortalTravelSource,
+    catalog: &TrustedRomCatalog,
+) -> Result<PairedStagedDestination, TravelCoordinatorError> {
+    let GroupRomHandoffStatus::Staged {
+        group_id: returned_group,
+        idempotency_key,
+        stage_id,
+        destination_world_id,
+        arrival_portal_id,
+        destination_save_sha256,
+        destination_save,
+        arrival_challenge,
+        ..
+    } = status
+    else {
+        return Err(TravelCoordinatorError::ResponseMismatch);
+    };
+    if returned_group != group_id || idempotency_key != attempt_key {
+        return Err(TravelCoordinatorError::ResponseMismatch);
+    }
+    let destination = checked_response(
+        RomHandoffPrepareResponse {
+            api_version: ApiVersion::V1,
+            stage_id,
+            destination_world_id,
+            arrival_portal_id,
+            destination_save_sha256,
+            destination_save,
+        },
+        stage_id,
+        source_world,
+        source,
+        catalog,
+        source.source_revision.value(),
+    )?;
+    Ok(PairedStagedDestination {
+        destination,
+        group_id,
+        attempt_key,
+        arrival_challenge,
+    })
+}
 
 impl StagedDestination {
     #[must_use]
@@ -405,47 +487,78 @@ pub async fn commit_acknowledged_handoff<A: CloudApi>(
     journal: &RomTravelJournal,
     workspace: Option<&SessionWorkspace>,
 ) -> Result<TravelRecord, TravelCoordinatorError> {
+    return_diagnostic("commit_started");
     let current = journal
-        .read()?
-        .ok_or(TravelCoordinatorError::ResponseMismatch)?;
+        .read()
+        .inspect_err(|_| return_diagnostic("journal_read_error"))?
+        .ok_or_else(|| {
+            return_diagnostic("journal_missing");
+            TravelCoordinatorError::ResponseMismatch
+        })?;
     if current.phase == TravelPhase::Committed {
         return Ok(current);
     }
-    let request = commit_request(&current)?;
-    let local_artifacts = workspace.map(read_commit_artifacts).transpose()?;
+    let request = commit_request(&current).inspect_err(|_| return_diagnostic("request_invalid"))?;
+    let local_artifacts = workspace
+        .map(read_commit_artifacts)
+        .transpose()
+        .inspect_err(|_| return_diagnostic("local_artifact_read"))?;
     if let Some((sav, pending)) = local_artifacts.as_ref() {
-        validate_local_commit_artifacts(&current, sav, pending)?;
+        validate_local_commit_artifacts(&current, sav, pending)
+            .inspect_err(|_| return_diagnostic("local_artifact_mismatch"))?;
     }
 
     let response = api
         .commit_rom_handoff(auth, request.clone())
         .await
-        .map_err(TravelCoordinatorError::Commit)?;
+        .map_err(|error| {
+            return_diagnostic("commit_api_error");
+            TravelCoordinatorError::Commit(error)
+        })?;
 
     if let Some(workspace) = workspace {
         // Read again after the network boundary. A workspace mutation must
         // never be silently published merely because the preflight copy was
         // valid.
-        let (sav, pending) = read_commit_artifacts(workspace)?;
-        validate_local_commit_artifacts(&current, &sav, &pending)?;
-        validate_commit_response(&current, &request, &response, Some((&sav, &pending)))?;
+        let (sav, pending) = read_commit_artifacts(workspace)
+            .inspect_err(|_| return_diagnostic("post_api_artifact_read"))?;
+        validate_local_commit_artifacts(&current, &sav, &pending)
+            .inspect_err(|_| return_diagnostic("post_api_artifact_mismatch"))?;
+        validate_commit_response(&current, &request, &response, Some((&sav, &pending)))
+            .inspect_err(|_| return_diagnostic("commit_response_mismatch"))?;
     } else {
         // A restart can discard the temporary workspace after the server has
         // committed. The immutable response still has to prove the durable
         // stage, world, lineage, save digest, and empty pending-commit state.
-        validate_commit_response(&current, &request, &response, None)?;
+        validate_commit_response(&current, &request, &response, None)
+            .inspect_err(|_| return_diagnostic("commit_response_mismatch"))?;
     }
 
     // This is the first local active-world pointer change. Every failure above
     // leaves ArrivalAcknowledged durable and therefore replayable.
-    Ok(journal.commit(
-        current.checkpoint,
-        request.stage_id,
-        request.destination_save_sha256,
-        current
-            .lease_fence
-            .ok_or(TravelCoordinatorError::ResponseMismatch)?,
-    )?)
+    let committed = journal
+        .commit(
+            current.checkpoint,
+            request.stage_id,
+            request.destination_save_sha256,
+            current
+                .lease_fence
+                .ok_or(TravelCoordinatorError::ResponseMismatch)?,
+        )
+        .inspect_err(|_| return_diagnostic("journal_commit_error"))?;
+    return_diagnostic("commit_complete");
+    Ok(committed)
+}
+
+// The local signed debug fixture sets this to an isolated scratch file. The
+// marker contains only a fixed category and is absent from release builds.
+fn return_diagnostic(category: &'static str) {
+    #[cfg(debug_assertions)]
+    if let Some(path) = std::env::var_os("HOENN_LOCAL_RETURN_DIAGNOSTIC") {
+        let _ = std::fs::write(path, category.as_bytes());
+    }
+    #[cfg(not(debug_assertions))]
+    let _ = category;
 }
 
 const MAX_HANDOFF_ARTIFACT_BYTES: u64 = 64 * 1024 * 1024;

@@ -282,6 +282,9 @@ pub(super) fn lease_matches(
     fence: LeaseFence,
     now: u64,
 ) -> Result<(), Phase2Error> {
+    if state.paired_handoff_for_member(character_id) {
+        return Err(Phase2Error::Conflict);
+    }
     let lease = state
         .leases
         .get(&character_id)
@@ -477,6 +480,10 @@ pub(super) fn create_invitation_with_fingerprint(
             || state
                 .active_group_by_member
                 .contains_key(&request.invitee_character_id)
+            || state.rom_handoff_staging.contains_key(&actor.character_id)
+            || state
+                .rom_handoff_staging
+                .contains_key(&request.invitee_character_id)
         {
             return Err(Phase2Error::Conflict);
         }
@@ -588,6 +595,8 @@ pub(crate) fn accept_invitation(
         }
         if state.active_group_by_member.contains_key(&initiator)
             || state.active_group_by_member.contains_key(&recipient)
+            || state.rom_handoff_staging.contains_key(&initiator)
+            || state.rom_handoff_staging.contains_key(&recipient)
         {
             return Err(Phase2Error::Conflict);
         }
@@ -1422,7 +1431,7 @@ mod tests {
     use coop_cloud::CharacterCloudState;
     use coop_cloud::{
         AcquireLeaseRequest, ClientInstanceId, CreateGroupInvitationRequest, IdempotencyKey,
-        InvitationCode, Password, RegisterRequest,
+        InvitationCode, Password, RegisterRequest, SnapshotId,
     };
     use coop_protocol::{RegionalProgress, WorldZone};
     use std::sync::{
@@ -1588,6 +1597,88 @@ mod tests {
             second_lease,
             accepted.group.group_id,
         )
+    }
+
+    fn stage_solo_handoff(
+        app: &super::super::Phase2App,
+        actor: AuthenticatedActor,
+        lease: &coop_cloud::LeaseContract,
+    ) {
+        let request = coop_cloud::RomHandoffPrepareRequest {
+            api_version: coop_cloud::ApiVersion::V1,
+            character_id: actor.character_id,
+            session_id: lease.session_id,
+            session_epoch: lease.session_epoch,
+            client_instance_id: lease.client_instance_id,
+            expected_revision: lease.current_revision,
+            source_snapshot_id: SnapshotId::new(Uuid::new_v4()).expect("source"),
+            portal_id: "hoenn_to_cormoria".to_owned(),
+            idempotency_key: IdempotencyKey::new(Uuid::new_v4()).expect("key"),
+        };
+        app.store
+            .write_transaction(|state| {
+                state.rom_handoff_staging.insert(
+                    actor.character_id,
+                    super::super::storage::RomHandoffStage {
+                        request,
+                        stage_id: SnapshotId::new(Uuid::new_v4()).expect("stage"),
+                        source_world_id: coop_protocol::RomWorldId::new(1).expect("world"),
+                        destination_world_id: coop_protocol::RomWorldId::new(2).expect("world"),
+                        arrival_portal_id: "cormoria_harbor".to_owned(),
+                        destination_save_sha256: coop_cloud::Sha256Digest::of_bytes(b"stage"),
+                        expires_at: app.store.now() + 60_000,
+                    },
+                );
+                Ok::<(), Phase2Error>(())
+            })
+            .expect("stage");
+    }
+
+    #[test]
+    fn invitation_cannot_form_group_while_either_member_has_a_staged_rom_handoff() {
+        let (app, _) = app_with_clock();
+        let (first, first_lease) = account(&app, "first", "first-invite");
+        let (second, second_lease) = account(&app, "second", "second-invite");
+        let invite = || {
+            CreateGroupInvitationRequest::new(
+                first_lease.fence(),
+                second.character_id,
+                IdempotencyKey::new(Uuid::new_v4()).expect("key"),
+            )
+        };
+
+        stage_solo_handoff(&app, first, &first_lease);
+        assert!(matches!(
+            create_invitation(&app.store, first, &invite()),
+            Err(Phase2Error::Conflict)
+        ));
+        app.store
+            .write_transaction(|state| {
+                state.rom_handoff_staging.remove(&first.character_id);
+                Ok::<(), Phase2Error>(())
+            })
+            .unwrap();
+        let invitation = create_invitation(&app.store, first, &invite()).unwrap();
+        stage_solo_handoff(&app, second, &second_lease);
+        assert!(matches!(
+            accept_invitation(
+                &app.store,
+                second,
+                invitation.invitation_id,
+                &AcceptGroupInvitationRequest::new(
+                    second_lease.fence(),
+                    IdempotencyKey::new(Uuid::new_v4()).expect("key"),
+                ),
+            ),
+            Err(Phase2Error::Conflict)
+        ));
+        app.store
+            .read_transaction(|state| {
+                assert!(state.active_group_by_member.is_empty());
+                assert!(!state.group_invitations[&invitation.invitation_id].consumed);
+                Ok::<(), Phase2Error>(())
+            })
+            .unwrap();
     }
 
     fn set_progress(
@@ -2298,6 +2389,20 @@ mod tests {
                 coop_cloud::HeartbeatLeaseRequest::new(second_lease.fence()),
             )
             .expect("second heartbeat");
+        // Exercise proposal expiry while both leases remain live. Invitation
+        // and consent TTLs may change independently of this revalidation test.
+        let expiry = app.store.now() + 10_000;
+        app.store
+            .write_transaction(|state| {
+                state
+                    .group_travel_proposals
+                    .get_mut(&proposal.proposal_id)
+                    .ok_or(Phase2Error::Internal)?
+                    .view
+                    .expires_at = Store::unix_timestamp(expiry)?;
+                Ok::<(), Phase2Error>(())
+            })
+            .expect("advance proposal expiry");
         clock.advance(10_001);
         assert_eq!(
             current_travel_proposal(&app.store, first, group_id, first_heartbeat.fence()),

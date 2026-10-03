@@ -1,9 +1,9 @@
 //! Fail-closed discovery and restart reconciliation for interrupted saves.
 //!
 //! Recovery evidence is deliberately smaller than a session workspace.  A
-//! preserved directory may contain only a bounded SAV and a marker.  The
-//! marker never contains credentials, bridge secrets, or paths; it is merely
-//! the proof needed to decide whether a fresh lease may retry one snapshot.
+//! preserved directory may contain only a bounded SAV and an optional marker.
+//! A marker never contains credentials, bridge secrets, or paths; without one,
+//! a save stays on disk even when it matches the signed cloud head.
 
 use std::{
     fs::{File, OpenOptions},
@@ -129,6 +129,9 @@ impl RecoveryMarkerV2 {
 pub enum RecoveryMarker {
     LegacyV1,
     V2(RecoveryMarkerV2),
+    /// A save left behind before shutdown could write its recovery marker.
+    /// It remains blocked until handle-bound retirement is available.
+    OrphanSave,
 }
 
 impl RecoveryMarker {
@@ -190,6 +193,8 @@ pub struct RecoveryCandidate {
     save_sha256: Sha256Digest,
     #[cfg(windows)]
     _identity_guards: Vec<File>,
+    #[cfg(windows)]
+    save_identity_guard: Option<File>,
 }
 
 impl std::fmt::Debug for RecoveryCandidate {
@@ -233,23 +238,50 @@ impl RecoveryCandidate {
     }
 
     fn verify_identity(&self) -> Result<(), RecoveryError> {
-        let marker = read_bounded_regular(&self.path.join(RECOVERY_MARKER_NAME))?;
-        let parsed = RecoveryMarker::decode(&marker)?;
+        let shape = validate_candidate_directory(&self.path)?;
+        let parsed = match shape {
+            CandidateShape::SaveOnly => RecoveryMarker::OrphanSave,
+            CandidateShape::Marked => RecoveryMarker::decode(&read_bounded_regular(
+                &self.path.join(RECOVERY_MARKER_NAME),
+            )?)?,
+            CandidateShape::Empty => return Err(RecoveryError::Replaced),
+        };
         if parsed != self.marker {
             return Err(RecoveryError::Replaced);
         }
         let _ = self.read_save()?;
-        validate_candidate_directory(&self.path)?;
         Ok(())
     }
 
-    fn retire(self) -> Result<(), RecoveryError> {
+    fn retire(mut self) -> Result<(), RecoveryError> {
+        // A markerless save has no handle-bound retirement capability. Never
+        // path-unlink it after releasing the Windows identity guard: an
+        // atomic replacement could otherwise cause unsynced data loss.
+        if self.marker == RecoveryMarker::OrphanSave {
+            return Err(RecoveryError::Blocked);
+        }
         self.verify_identity()?;
+        let path = self.path.clone();
         let save = self.path.join(CHARACTER_SAVE_NAME);
         let marker = self.path.join(RECOVERY_MARKER_NAME);
+        #[cfg(windows)]
+        {
+            // The discovery handle denies write and delete sharing, so the
+            // save path cannot be replaced during cloud verification. Windows
+            // requires releasing that handle before unlink. Recheck the exact
+            // path and digest immediately after release before deleting it.
+            drop(self.save_identity_guard.take());
+            self.verify_identity()?;
+        }
         std::fs::remove_file(save).map_err(|_| RecoveryError::Cleanup)?;
-        std::fs::remove_file(marker).map_err(|_| RecoveryError::Cleanup)?;
-        std::fs::remove_dir(&self.path).map_err(|_| RecoveryError::Cleanup)
+        if self.marker != RecoveryMarker::OrphanSave {
+            std::fs::remove_file(marker).map_err(|_| RecoveryError::Cleanup)?;
+        }
+        // Windows directory identity guards deny deletion. Keep them while
+        // removing the verified files, then release them for the final empty
+        // directory removal. A replacement with any content fails closed.
+        drop(self);
+        std::fs::remove_dir(path).map_err(|_| RecoveryError::Cleanup)
     }
 }
 
@@ -289,10 +321,9 @@ impl RecoveryDiscovery {
             if metadata.file_type().is_symlink() || !metadata.is_dir() {
                 return Err(RecoveryError::Malformed);
             }
-            // A completed session may leave a non-recovery workspace behind
-            // when Windows still holds one of its generated files during
-            // TempDir cleanup. It cannot authorize recovery without either
-            // the SAV or marker. A partial pair remains malformed.
+            // A completed session can leave generated files behind on Windows
+            // when TempDir cleanup races an open handle. Such a directory has
+            // no recovery evidence until it contains a SAV or marker.
             if name.starts_with("coop-session-")
                 && !recovery_material_present(&path, CHARACTER_SAVE_NAME)?
                 && !recovery_material_present(&path, RECOVERY_MARKER_NAME)?
@@ -303,7 +334,9 @@ impl RecoveryDiscovery {
             if launcher_candidates > MAX_RECOVERY_CANDIDATES {
                 return Err(RecoveryError::Ambiguous);
             }
-            candidates.push(discover_candidate(path)?);
+            if let Some(candidate) = discover_candidate(path)? {
+                candidates.push(candidate);
+            }
             if candidates.len() > 1 {
                 return Err(RecoveryError::Ambiguous);
             }
@@ -403,6 +436,17 @@ impl RecoveryReconciler {
         let cloud_digest = lifecycle.active_save_digest()?;
         let cloud_generation = lifecycle.save_generation();
         match marker {
+            RecoveryMarker::OrphanSave => {
+                if cloud_digest != Some(candidate.save_sha256()) {
+                    return Err(RecoveryError::Blocked);
+                }
+                let signed_head = lifecycle
+                    .verify_current_head(api)
+                    .await
+                    .map(|(digest, _)| digest)
+                    .map_err(RecoveryError::from);
+                classify_orphan_signed_head(candidate, signed_head)
+            }
             RecoveryMarker::LegacyV1 => {
                 let Some(cloud_digest) = cloud_digest else {
                     return Err(RecoveryError::Blocked);
@@ -453,25 +497,60 @@ impl RecoveryReconciler {
     }
 }
 
-fn discover_candidate(path: PathBuf) -> Result<RecoveryCandidate, RecoveryError> {
-    validate_candidate_directory(&path)?;
+fn classify_orphan_signed_head(
+    candidate: RecoveryCandidate,
+    signed_head: Result<Sha256Digest, RecoveryError>,
+) -> Result<RecoveryOutcome, RecoveryError> {
+    let signed_digest = signed_head?;
+    if signed_digest != candidate.save_sha256() {
+        return Err(RecoveryError::Blocked);
+    }
+    // Exact signed equality proves the local bytes have been uploaded, but
+    // cannot authorize path-based deletion while a replacement can race the
+    // final unlink. Keep the evidence for an operator or a future native
+    // handle-bound retirement path.
+    Ok(RecoveryOutcome::AuthorizationMissing)
+}
+
+fn discover_candidate(path: PathBuf) -> Result<Option<RecoveryCandidate>, RecoveryError> {
+    let shape = validate_candidate_directory(&path)?;
+    if shape == CandidateShape::Empty {
+        return Ok(None);
+    }
     #[cfg(windows)]
     let identity_guards = open_identity_guards(&path)?;
-    let marker = RecoveryMarker::decode(&read_bounded_regular(&path.join(RECOVERY_MARKER_NAME))?)?;
+    #[cfg(windows)]
+    let save_identity_guard = open_save_identity_guard(&path.join(CHARACTER_SAVE_NAME))?;
+    let marker = match shape {
+        CandidateShape::SaveOnly => RecoveryMarker::OrphanSave,
+        CandidateShape::Marked => {
+            RecoveryMarker::decode(&read_bounded_regular(&path.join(RECOVERY_MARKER_NAME))?)?
+        }
+        CandidateShape::Empty => unreachable!(),
+    };
     let save = read_bounded_regular(&path.join(CHARACTER_SAVE_NAME))?;
     if save.is_empty() {
         return Err(RecoveryError::Malformed);
     }
-    Ok(RecoveryCandidate {
+    Ok(Some(RecoveryCandidate {
         path,
         marker,
         save_sha256: Sha256Digest::of_bytes(&save),
         #[cfg(windows)]
         _identity_guards: identity_guards,
-    })
+        #[cfg(windows)]
+        save_identity_guard: Some(save_identity_guard),
+    }))
 }
 
-fn validate_candidate_directory(path: &Path) -> Result<(), RecoveryError> {
+#[derive(Clone, Copy, Eq, PartialEq)]
+enum CandidateShape {
+    Empty,
+    SaveOnly,
+    Marked,
+}
+
+fn validate_candidate_directory(path: &Path) -> Result<CandidateShape, RecoveryError> {
     reject_symlink_ancestors(path)?;
     let metadata = std::fs::symlink_metadata(path).map_err(|_| RecoveryError::Malformed)?;
     if metadata.file_type().is_symlink() || !metadata.is_dir() {
@@ -499,13 +578,15 @@ fn validate_candidate_directory(path: &Path) -> Result<(), RecoveryError> {
         }
         names.push(name);
     }
-    if names.len() != 2
-        || !names.iter().any(|name| name == CHARACTER_SAVE_NAME)
-        || !names.iter().any(|name| name == RECOVERY_MARKER_NAME)
-    {
-        return Err(RecoveryError::Malformed);
+    match (
+        names.iter().any(|name| name == CHARACTER_SAVE_NAME),
+        names.iter().any(|name| name == RECOVERY_MARKER_NAME),
+    ) {
+        (false, false) => Ok(CandidateShape::Empty),
+        (true, false) => Ok(CandidateShape::SaveOnly),
+        (true, true) => Ok(CandidateShape::Marked),
+        (false, true) => Err(RecoveryError::Malformed),
     }
-    Ok(())
 }
 
 fn read_bounded_regular(path: &Path) -> Result<Vec<u8>, RecoveryError> {
@@ -593,6 +674,20 @@ fn open_identity_guards(path: &Path) -> Result<Vec<File>, RecoveryError> {
         current = parent;
     }
     Ok(guards)
+}
+
+#[cfg(windows)]
+fn open_save_identity_guard(path: &Path) -> Result<File, RecoveryError> {
+    use std::os::windows::fs::OpenOptionsExt;
+    let mut options = OpenOptions::new();
+    // Deny both write and delete sharing while cloud verification runs. An
+    // already-open writer or a process preparing atomic path replacement
+    // makes discovery fail closed.
+    options
+        .read(true)
+        .share_mode(0x0000_0001)
+        .custom_flags(0x0020_0000);
+    options.open(path).map_err(|_| RecoveryError::Malformed)
 }
 
 #[cfg(test)]
@@ -691,5 +786,101 @@ mod tests {
                 .candidate()
                 .is_some()
         );
+    }
+
+    #[test]
+    fn orphan_retirement_fails_closed_even_for_an_identical_save() {
+        let root = tempdir().unwrap();
+        let path = root.path().join("coop-session-orphan");
+        std::fs::create_dir(&path).unwrap();
+        std::fs::write(path.join(CHARACTER_SAVE_NAME), b"synced-save").unwrap();
+        let candidate = RecoveryDiscovery::discover(root.path())
+            .unwrap()
+            .candidate()
+            .unwrap();
+        assert_eq!(candidate.retire().unwrap_err(), RecoveryError::Blocked);
+        assert_eq!(
+            std::fs::read(path.join(CHARACTER_SAVE_NAME)).unwrap(),
+            b"synced-save"
+        );
+    }
+
+    fn orphan_candidate(root: &Path, save: &[u8]) -> RecoveryCandidate {
+        let path = root.join("coop-session-orphan");
+        std::fs::create_dir(&path).unwrap();
+        std::fs::write(path.join(CHARACTER_SAVE_NAME), save).unwrap();
+        RecoveryDiscovery::discover(root)
+            .unwrap()
+            .candidate()
+            .unwrap()
+    }
+
+    #[test]
+    fn matching_signed_head_keeps_orphan_until_safe_retirement_exists() {
+        let root = tempdir().unwrap();
+        let candidate = orphan_candidate(root.path(), b"synced-save");
+        let path = candidate.path().to_owned();
+        assert_eq!(
+            classify_orphan_signed_head(candidate, Ok(Sha256Digest::of_bytes(b"synced-save")),)
+                .unwrap(),
+            RecoveryOutcome::AuthorizationMissing
+        );
+        assert_eq!(
+            std::fs::read(path.join(CHARACTER_SAVE_NAME)).unwrap(),
+            b"synced-save"
+        );
+    }
+
+    #[test]
+    fn orphan_survives_changed_or_unavailable_signed_head() {
+        for signed_head in [
+            Ok(Sha256Digest::of_bytes(b"newer-cloud-save")),
+            Err(RecoveryError::Session(SessionError::MissingPackage)),
+        ] {
+            let root = tempdir().unwrap();
+            let candidate = orphan_candidate(root.path(), b"unsynced-save");
+            let path = candidate.path().to_owned();
+            let unavailable = signed_head.is_err();
+            let error = classify_orphan_signed_head(candidate, signed_head).unwrap_err();
+            if unavailable {
+                assert!(matches!(
+                    error,
+                    RecoveryError::Session(SessionError::MissingPackage)
+                ));
+            } else {
+                assert_eq!(error, RecoveryError::Blocked);
+            }
+            assert_eq!(
+                std::fs::read(path.join(CHARACTER_SAVE_NAME)).unwrap(),
+                b"unsynced-save"
+            );
+        }
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn discovered_orphan_denies_an_emulator_writer_until_reconciled() {
+        let root = tempdir().unwrap();
+        let candidate = orphan_candidate(root.path(), b"synced-save");
+        let path = candidate.path().join(CHARACTER_SAVE_NAME);
+        assert!(std::fs::write(&path, b"unsynced-save").is_err());
+        assert_eq!(std::fs::read(&path).unwrap(), b"synced-save");
+        drop(candidate);
+        std::fs::write(&path, b"unsynced-save").unwrap();
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn discovered_orphan_denies_atomic_path_replacement() {
+        let root = tempdir().unwrap();
+        let candidate = orphan_candidate(root.path(), b"synced-save");
+        let path = candidate.path().join(CHARACTER_SAVE_NAME);
+        let displaced = candidate.path().join("displaced.sav");
+        assert!(std::fs::rename(&path, &displaced).is_err());
+        assert!(std::fs::remove_file(&path).is_err());
+        assert_eq!(std::fs::read(&path).unwrap(), b"synced-save");
+        assert!(!displaced.exists());
+        drop(candidate);
+        std::fs::rename(&path, &displaced).unwrap();
     }
 }

@@ -100,6 +100,11 @@ pub enum ArrivalVerificationError {
         verification: Box<Self>,
         cleanup: ProcessError,
     },
+    #[error("verification failed ({verification}) and staged save restoration failed ({restore})")]
+    VerificationRestore {
+        verification: Box<Self>,
+        restore: SessionError,
+    },
 }
 
 #[derive(Clone, Copy)]
@@ -222,9 +227,7 @@ pub async fn verify_arrival(
     if !input.sidecar.is_arrival_verifier() || !input.mgba.owns_staged_rom() {
         return Err(ArrivalVerificationError::InvalidProcessSpec);
     }
-    input
-        .workspace
-        .write_atomic("character.sav", input.staged_sav)?;
+    input.workspace.restore_character_save(input.staged_sav)?;
     let mut children = SupervisedChildren::start_arrival_verifier_with_bridge(
         input.sidecar,
         input.mgba,
@@ -258,14 +261,34 @@ pub async fn verify_arrival(
     .await;
 
     let cleanup = children.stop_in_place().await;
-    match (verification, cleanup) {
-        (Ok(evidence), Ok(())) => Ok(evidence),
-        (Err(verification), Ok(())) => Err(verification),
-        (Ok(_), Err(cleanup)) => Err(ArrivalVerificationError::Process(cleanup)),
-        (Err(verification), Err(cleanup)) => Err(ArrivalVerificationError::Cleanup {
-            verification: Box::new(verification),
-            cleanup,
-        }),
+    finish_arrival_verification(input.workspace, input.staged_sav, verification, cleanup)
+}
+
+fn finish_arrival_verification(
+    workspace: &SessionWorkspace,
+    staged_sav: &[u8],
+    verification: Result<AuthenticatedArrivalEvidence, ArrivalVerificationError>,
+    cleanup: Result<(), ProcessError>,
+) -> Result<AuthenticatedArrivalEvidence, ArrivalVerificationError> {
+    match cleanup {
+        Err(cleanup) => match verification {
+            Ok(_) => Err(ArrivalVerificationError::Process(cleanup)),
+            Err(verification) => Err(ArrivalVerificationError::Cleanup {
+                verification: Box::new(verification),
+                cleanup,
+            }),
+        },
+        Ok(()) => match (verification, workspace.restore_character_save(staged_sav)) {
+            (Ok(evidence), Ok(_)) => Ok(evidence),
+            (Ok(_), Err(restore)) => Err(ArrivalVerificationError::Workspace(restore)),
+            (Err(verification), Ok(_)) => Err(verification),
+            (Err(verification), Err(restore)) => {
+                Err(ArrivalVerificationError::VerificationRestore {
+                    verification: Box::new(verification),
+                    restore,
+                })
+            }
+        },
     }
 }
 
@@ -525,5 +548,66 @@ mod tests {
             std::fs::read(workspace.path().join("character.sav")).unwrap(),
             staged
         );
+    }
+
+    #[test]
+    fn restored_character_save_replaces_deleted_and_changed_artifacts() {
+        let root = tempfile::tempdir().unwrap();
+        let workspace = SessionWorkspace::create(root.path()).unwrap();
+        let staged = fixture_v2(7);
+        workspace.write_atomic("character.sav", &staged).unwrap();
+
+        std::fs::remove_file(workspace.path().join("character.sav")).unwrap();
+        workspace.restore_character_save(&staged).unwrap();
+        assert_eq!(
+            std::fs::read(workspace.path().join("character.sav")).unwrap(),
+            staged
+        );
+
+        std::fs::write(workspace.path().join("character.sav"), b"changed").unwrap();
+        workspace.restore_character_save(&staged).unwrap();
+        assert_eq!(
+            std::fs::read(workspace.path().join("character.sav")).unwrap(),
+            staged
+        );
+    }
+
+    #[test]
+    fn restored_character_save_rejects_non_regular_artifact() {
+        let root = tempfile::tempdir().unwrap();
+        let workspace = SessionWorkspace::create(root.path()).unwrap();
+        let staged = fixture_v2(7);
+        std::fs::create_dir(workspace.path().join("character.sav")).unwrap();
+
+        assert!(matches!(
+            workspace.restore_character_save(&staged),
+            Err(SessionError::Package)
+        ));
+    }
+
+    #[test]
+    fn failed_proof_restores_save_for_same_workspace_retry() {
+        let root = tempfile::tempdir().unwrap();
+        let workspace = SessionWorkspace::create(root.path()).unwrap();
+        let staged = fixture_v2(7);
+        workspace.write_atomic("character.sav", &staged).unwrap();
+        std::fs::write(workspace.path().join("character.sav"), b"changed").unwrap();
+
+        let result = finish_arrival_verification(
+            &workspace,
+            &staged,
+            Err(ArrivalVerificationError::FlashDigestMismatch),
+            Ok(()),
+        );
+        assert!(matches!(
+            result,
+            Err(ArrivalVerificationError::FlashDigestMismatch)
+        ));
+        assert_eq!(
+            std::fs::read(workspace.path().join("character.sav")).unwrap(),
+            staged
+        );
+
+        workspace.restore_character_save(&staged).unwrap();
     }
 }

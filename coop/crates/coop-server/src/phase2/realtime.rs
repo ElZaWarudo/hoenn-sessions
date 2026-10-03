@@ -660,6 +660,9 @@ fn validate_runtime_state_in_state(
     now: u64,
     build: &coop_cloud::RuntimeBuildIdentity,
 ) -> Result<(), Phase2Error> {
+    if state.paired_handoff_for_member(actor.character_id) {
+        return Err(Phase2Error::Conflict);
+    }
     let user = state
         .users_by_id
         .get(&actor.user_id)

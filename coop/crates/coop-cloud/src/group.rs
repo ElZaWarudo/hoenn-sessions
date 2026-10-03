@@ -11,7 +11,7 @@ use thiserror::Error;
 /// Maximum JSON body accepted by group and invitation endpoints.
 pub const GROUP_REQUEST_BODY_MAX_BYTES: usize = 8 * 1024;
 /// Invitation lifetime, measured from the server's clock.
-pub const GROUP_INVITATION_TTL_MS: u64 = 30_000;
+pub const GROUP_INVITATION_TTL_MS: u64 = 120_000;
 /// Maximum route identifier size on the wire.
 pub const GROUP_ROUTE_ID_MAX_BYTES: usize = 128;
 pub const MAX_WORLD_REVISION: u64 = i64::MAX as u64;
