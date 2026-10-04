@@ -1496,6 +1496,104 @@ TEST("First Briney scripted save requires online checkpoint before local flash")
     ResetGroupTravelFixture();
 }
 
+/* A ready cloud session with the first Briney voyage's receipt pending, so
+ * the landing script's SaveGame needs a cloud checkpoint. */
+static void BeginBrineyCloudSave(void)
+{
+    struct CoopGroupTravelRecord marker = Record(
+        COOP_GROUP_TRAVEL_SERVER_SCENE_MARKER_ACCEPTED,
+        COOP_GROUP_TRAVEL_ROUTE_BRINEY_HOUSE_DEWFORD, 347, 10);
+    struct CoopBridgeMessage message;
+
+    ResetGroupTravelFixture();
+    CoopSave_InitializeCurrent();
+    CoopNetBridge_Init();
+    EXPECT(CoopBridgeMessage_Seal(&message, COOP_BRIDGE_MESSAGE_SESSION_READY, 1, 17, NULL, 0));
+    EXPECT(CoopNetBridge_EnqueueNetworkToGame(&message));
+    CoopNetBridge_Poll();
+    gCoopNetBridge.status_flags &= ~COOP_BRIDGE_STATUS_WORLD_NOT_READY;
+    while (CoopNetBridge_DequeueGameToNetwork(&message));
+    EXPECT(CoopNetBridge_IsCloudMode());
+    EXPECT_EQ(CoopNetBridge_GetCheckpointState(), COOP_CHECKPOINT_STATE_IDLE);
+
+    CoopGroupTravel_TestSeedSceneMarkerAccepted(&marker);
+    CoopGroupTravel_TestSetSceneStarted(TRUE);
+    MaterializeDeparture(MAP_DEWFORD_TOWN);
+    Special_CoopGroupTravelFirstBrineySceneComplete();
+    EXPECT(CoopGroupTravel_IsFirstBrineyReceiptPending());
+    while (CoopNetBridge_DequeueGameToNetwork(&message));
+    EXPECT(CoopBridgeQueue_IsEmpty(&gCoopNetBridge.network_to_game));
+    EXPECT_EQ(CoopNetBridge_GetCheckpointState(), COOP_CHECKPOINT_STATE_IDLE);
+}
+
+static void EndBrineyCloudSave(void)
+{
+    struct CoopBridgeMessage message;
+
+    CoopStartMenu_TestSetSaveDryRun(FALSE);
+    ResetTasks();
+    CoopNetBridge_Init();
+    while (CoopNetBridge_DequeueGameToNetwork(&message));
+    ResetGroupTravelFixture();
+}
+
+TEST("First Briney scripted save retries a busy bridge frame before its checkpoint")
+{
+    struct CoopBridgeMessage message;
+    u8 status[COOP_ONLINE_STATUS_SIZE] = {0};
+
+    BeginBrineyCloudSave();
+    /* Partner traffic handed over at VBlank, not yet consumed by Poll. */
+    status[0] = 99;
+    EXPECT(CoopBridgeMessage_Seal(&message, COOP_BRIDGE_MESSAGE_ONLINE_STATUS, 2, 17,
+                                  status, sizeof(status)));
+    EXPECT(CoopNetBridge_EnqueueNetworkToGame(&message));
+    EXPECT_EQ(CoopNetBridge_RequestCheckpoint(), COOP_CHECKPOINT_REQUEST_REJECTED);
+
+    CoopStartMenu_TestSetSaveDryRun(TRUE);
+    SaveGame();
+    EXPECT_EQ(CoopStartMenu_TestRunSaveSavingMessageCallback(), COOP_START_MENU_TEST_SAVE_IN_PROGRESS);
+    EXPECT_EQ(CoopStartMenu_TestRunSaveDoSaveCallback(), COOP_START_MENU_TEST_SAVE_IN_PROGRESS);
+    EXPECT(CoopStartMenu_TestIsSaveCheckpointRetrying());
+    EXPECT(CoopBridgeQueue_IsEmpty(&gCoopNetBridge.game_to_network));
+
+    CoopNetBridge_Poll();
+    gCoopNetBridge.status_flags &= ~COOP_BRIDGE_STATUS_WORLD_NOT_READY;
+    EXPECT_EQ(CoopStartMenu_TestRunCurrentSaveCallback(), COOP_START_MENU_TEST_SAVE_IN_PROGRESS);
+    EXPECT_EQ(CoopNetBridge_GetCheckpointState(), COOP_CHECKPOINT_STATE_WAITING_FOR_GRANT);
+    EXPECT(CoopNetBridge_DequeueGameToNetwork(&message));
+    EXPECT_EQ(message.type, COOP_BRIDGE_MESSAGE_CHECKPOINT_READY);
+    EXPECT(CoopBridgeQueue_IsEmpty(&gCoopNetBridge.game_to_network));
+
+    CoopNetBridge_NotifySaveResult(FALSE);
+    EndBrineyCloudSave();
+}
+
+TEST("First Briney scripted save is refused after the bounded retry window")
+{
+    struct CoopBridgeMessage message;
+    u32 attempts;
+
+    BeginBrineyCloudSave();
+    /* An outbound frame Lua never drains blocks every frame of the window. */
+    EXPECT(CoopNetBridge_EnqueueGameToNetwork(COOP_BRIDGE_MESSAGE_PLAYER_STATE, NULL, 0));
+    CoopStartMenu_TestSetSaveDryRun(TRUE);
+    SaveGame();
+    EXPECT_EQ(CoopStartMenu_TestRunSaveSavingMessageCallback(), COOP_START_MENU_TEST_SAVE_IN_PROGRESS);
+    EXPECT_EQ(CoopStartMenu_TestRunSaveDoSaveCallback(), COOP_START_MENU_TEST_SAVE_IN_PROGRESS);
+    for (attempts = 1; CoopStartMenu_TestIsSaveCheckpointRetrying() && attempts < 1000; attempts++)
+        EXPECT_EQ(CoopStartMenu_TestRunCurrentSaveCallback(), COOP_START_MENU_TEST_SAVE_IN_PROGRESS);
+    EXPECT_EQ(attempts, COOP_NET_BRIDGE_CHECKPOINT_REQUEST_FRAMES);
+    EXPECT(CoopStartMenu_TestIsSaveAborting());
+    EXPECT_EQ(CoopStartMenu_TestRunCurrentSaveCallback(), COOP_START_MENU_TEST_SAVE_CANCELED);
+    EXPECT_EQ(CoopNetBridge_GetCheckpointState(), COOP_CHECKPOINT_STATE_IDLE);
+    EXPECT(CoopNetBridge_DequeueGameToNetwork(&message));
+    EXPECT_EQ(message.type, COOP_BRIDGE_MESSAGE_PLAYER_STATE);
+    EXPECT(CoopBridgeQueue_IsEmpty(&gCoopNetBridge.game_to_network));
+    EXPECT(CoopGroupTravel_IsFirstBrineyReceiptPending());
+    EndBrineyCloudSave();
+}
+
 TEST("Dewford to Route 109 follows the Steven letter gate before Devon Goods delivery")
 {
     bool8 hadLetter = FlagGet(FLAG_DELIVERED_STEVEN_LETTER);

@@ -1037,6 +1037,13 @@ enum CoopCheckpointRequestResult CoopNetBridge_RequestCheckpoint(void)
     return RequestCheckpoint(NULL);
 }
 
+bool8 CoopNetBridge_ShouldRetryCheckpointRequest(u16 *attempts)
+{
+    if (attempts == NULL || !CoopNetBridge_IsCloudMode())
+        return FALSE;
+    return ++*attempts < COOP_NET_BRIDGE_CHECKPOINT_REQUEST_FRAMES;
+}
+
 enum CoopCheckpointRequestResult CoopNetBridge_RequestPortalTravel(const char *portal_id)
 {
     if (portal_id == NULL || !IsPortalAvailable())
@@ -1069,7 +1076,7 @@ static bool8 TryScriptPortalTravel(void)
         gSpecialVar_Result = TRUE;
     }
     else if (sScriptPortalId != NULL && IsPortalAvailable()
-          && ++sScriptPortalAttempts < COOP_NET_BRIDGE_PORTAL_REQUEST_FRAMES)
+          && CoopNetBridge_ShouldRetryCheckpointRequest(&sScriptPortalAttempts))
     {
         return FALSE;
     }

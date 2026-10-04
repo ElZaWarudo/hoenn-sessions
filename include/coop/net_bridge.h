@@ -99,7 +99,11 @@ enum CoopBridgeStatus
 #define COOP_NET_BRIDGE_PLAYER_STATE_INTERVAL 6
 #define COOP_NET_BRIDGE_SIDECAR_STALE_INTERVAL 180
 #define COOP_NET_BRIDGE_CHECKPOINT_TIMEOUT_FRAMES 180
-#define COOP_NET_BRIDGE_PORTAL_REQUEST_FRAMES 120
+/* A checkpoint request refused by the single-frame gate (usually ordinary
+ * bridge traffic in flight) is retried once per frame, for this many attempts
+ * in all, before the player sees the refusal. */
+#define COOP_NET_BRIDGE_CHECKPOINT_REQUEST_FRAMES 120
+#define COOP_NET_BRIDGE_PORTAL_REQUEST_FRAMES COOP_NET_BRIDGE_CHECKPOINT_REQUEST_FRAMES
 
 /* Checkpoint coordination is deliberately kept outside the wire structure.
  * The structure above is an ABI shared with Lua and changing it would make
@@ -226,6 +230,11 @@ enum CoopCheckpointState CoopNetBridge_GetCheckpointState(void);
 bool8 CoopNetBridge_IsCloudMode(void);
 bool8 CoopNetBridge_IsRecoveryRequired(void);
 enum CoopCheckpointRequestResult CoopNetBridge_RequestCheckpoint(void);
+/* Call after a REJECTED request the player is waiting on. Counts that attempt
+ * and returns TRUE while one more request may be made on the next frame:
+ * cloud mode still holds and fewer than COOP_NET_BRIDGE_CHECKPOINT_REQUEST_FRAMES
+ * attempts were made. FALSE means refuse now; callers never queue late. */
+bool8 CoopNetBridge_ShouldRetryCheckpointRequest(u16 *attempts);
 /* Begins a cloud checkpoint for travel through a catalog portal. The ID is
  * [a-z][a-z0-9_]*, 1..96 bytes. A successful request queues the portal intent
  * before CHECKPOINT_READY; no travel occurs before the saved checkpoint is
@@ -271,6 +280,9 @@ void CoopStartMenu_TestSetCheckpointRequired(bool8 required);
 u8 CoopStartMenu_TestRunSaveSavingMessageCallback(void);
 u8 CoopStartMenu_TestRunSaveDoSaveCallback(void);
 u8 CoopStartMenu_TestRunCheckpointWaitCallback(void);
+u8 CoopStartMenu_TestRunCurrentSaveCallback(void);
+bool8 CoopStartMenu_TestIsSaveCheckpointRetrying(void);
+bool8 CoopStartMenu_TestIsSaveAborting(void);
 u8 CoopStartMenu_TestRunCheckpointAbortCallback(void);
 u8 CoopStartMenu_TestRunAuthorizedSaveCallback(void);
 #endif

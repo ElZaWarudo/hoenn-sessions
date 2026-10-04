@@ -3287,6 +3287,8 @@ TEST("Cloud Coop production save callback waits for grant after confirmation")
 TEST("Cloud Coop rejected production save callback returns through interactive recovery")
 {
     u32 i;
+    u32 attempts;
+    struct CoopBridgeMessage message;
 
     EstablishTestCloudSession();
     for (i = 0; i < COOP_NET_BRIDGE_QUEUE_CAPACITY; i++)
@@ -3297,7 +3299,132 @@ TEST("Cloud Coop rejected production save callback returns through interactive r
     EXPECT_EQ(CoopStartMenu_TestRunSaveSavingMessageCallback(), COOP_START_MENU_TEST_SAVE_IN_PROGRESS);
     EXPECT_EQ(CoopStartMenu_TestRunSaveDoSaveCallback(), COOP_START_MENU_TEST_SAVE_IN_PROGRESS);
     EXPECT_EQ(CoopNetBridge_GetCheckpointState(), COOP_CHECKPOINT_STATE_IDLE);
-    EXPECT_EQ(CoopStartMenu_TestRunCheckpointAbortCallback(), COOP_START_MENU_TEST_SAVE_CANCELED);
+    /* The outbound ring never drains: the bounded window expires after
+     * exactly COOP_NET_BRIDGE_CHECKPOINT_REQUEST_FRAMES requests (one per
+     * frame) and the save returns through the normal cancellation path. */
+    for (attempts = 1; CoopStartMenu_TestIsSaveCheckpointRetrying() && attempts < 1000; attempts++)
+        EXPECT_EQ(CoopStartMenu_TestRunCurrentSaveCallback(), COOP_START_MENU_TEST_SAVE_IN_PROGRESS);
+    EXPECT_EQ(attempts, COOP_NET_BRIDGE_CHECKPOINT_REQUEST_FRAMES);
+    EXPECT(CoopStartMenu_TestIsSaveAborting());
+    EXPECT_EQ(CoopNetBridge_GetCheckpointState(), COOP_CHECKPOINT_STATE_IDLE);
+    EXPECT_EQ(CoopStartMenu_TestRunCurrentSaveCallback(), COOP_START_MENU_TEST_SAVE_CANCELED);
+    /* Nothing was queued late: only the filler frames are outbound. */
+    for (i = 0; i < COOP_NET_BRIDGE_QUEUE_CAPACITY; i++)
+    {
+        EXPECT(CoopNetBridge_DequeueGameToNetwork(&message));
+        EXPECT_EQ(message.type, COOP_BRIDGE_MESSAGE_ROM_READY);
+    }
+    EXPECT(CoopBridgeQueue_IsEmpty(&gCoopNetBridge.game_to_network));
+    EXPECT_EQ(CoopNetBridge_GetCheckpointState(), COOP_CHECKPOINT_STATE_IDLE);
+    CoopStartMenu_TestSetSaveDryRun(FALSE);
+}
+
+TEST("Start-menu save with an in-flight inbound frame starts on the next frame")
+{
+    struct CoopBridgeMessage message;
+
+    EstablishTestCloudSession();
+    HostDeliverInboundBeforeScript(2);
+    /* The single-frame gate itself still refuses this frame. */
+    EXPECT_EQ(CoopNetBridge_RequestCheckpoint(), COOP_CHECKPOINT_REQUEST_REJECTED);
+
+    CoopStartMenu_TestSetSaveDryRun(TRUE);
+    CoopStartMenu_TestSetCheckpointRequired(TRUE);
+    EXPECT_EQ(CoopStartMenu_TestRunSaveSavingMessageCallback(), COOP_START_MENU_TEST_SAVE_IN_PROGRESS);
+    EXPECT_EQ(CoopStartMenu_TestRunSaveDoSaveCallback(), COOP_START_MENU_TEST_SAVE_IN_PROGRESS);
+    /* Held for a retry, not cancelled, and nothing queued yet. */
+    EXPECT(CoopStartMenu_TestIsSaveCheckpointRetrying());
+    EXPECT(!CoopStartMenu_TestIsSaveAborting());
+    EXPECT_EQ(CoopNetBridge_GetCheckpointState(), COOP_CHECKPOINT_STATE_IDLE);
+    EXPECT(CoopBridgeQueue_IsEmpty(&gCoopNetBridge.game_to_network));
+
+    RunTestBridgeFrame();
+    EXPECT_EQ(CoopStartMenu_TestRunCurrentSaveCallback(), COOP_START_MENU_TEST_SAVE_IN_PROGRESS);
+    EXPECT_EQ(CoopNetBridge_GetCheckpointState(), COOP_CHECKPOINT_STATE_WAITING_FOR_GRANT);
+    EXPECT(CoopNetBridge_DequeueGameToNetwork(&message));
+    EXPECT_EQ(message.type, COOP_BRIDGE_MESSAGE_CHECKPOINT_READY);
+    EXPECT(CoopBridgeQueue_IsEmpty(&gCoopNetBridge.game_to_network));
+
+    DeliverTestGrant(3, 17, 0);
+    EXPECT_EQ(CoopStartMenu_TestRunCurrentSaveCallback(), COOP_START_MENU_TEST_SAVE_SUCCESS);
+    EXPECT_EQ(CoopNetBridge_GetCheckpointState(), COOP_CHECKPOINT_STATE_SAVING);
+    CoopNetBridge_NotifySaveResult(FALSE);
+    CoopStartMenu_TestSetSaveDryRun(FALSE);
+}
+
+TEST("Start-menu save with an undrained outbound frame starts once Lua drains it")
+{
+    struct CoopBridgeMessage message;
+
+    EstablishTestCloudSession();
+    EXPECT(CoopNetBridge_EnqueueGameToNetwork(COOP_BRIDGE_MESSAGE_PLAYER_STATE, NULL, 0));
+    CoopStartMenu_TestSetSaveDryRun(TRUE);
+    CoopStartMenu_TestSetCheckpointRequired(TRUE);
+    EXPECT_EQ(CoopStartMenu_TestRunSaveSavingMessageCallback(), COOP_START_MENU_TEST_SAVE_IN_PROGRESS);
+    EXPECT_EQ(CoopStartMenu_TestRunSaveDoSaveCallback(), COOP_START_MENU_TEST_SAVE_IN_PROGRESS);
+    EXPECT(CoopStartMenu_TestIsSaveCheckpointRetrying());
+
+    /* A frame on which Lua has not sent yet keeps the save waiting. */
+    EXPECT_EQ(CoopStartMenu_TestRunCurrentSaveCallback(), COOP_START_MENU_TEST_SAVE_IN_PROGRESS);
+    EXPECT(CoopStartMenu_TestIsSaveCheckpointRetrying());
+
+    EXPECT(CoopNetBridge_DequeueGameToNetwork(&message));
+    EXPECT_EQ(message.type, COOP_BRIDGE_MESSAGE_PLAYER_STATE);
+    EXPECT_EQ(CoopStartMenu_TestRunCurrentSaveCallback(), COOP_START_MENU_TEST_SAVE_IN_PROGRESS);
+    EXPECT_EQ(CoopNetBridge_GetCheckpointState(), COOP_CHECKPOINT_STATE_WAITING_FOR_GRANT);
+    EXPECT(CoopNetBridge_DequeueGameToNetwork(&message));
+    EXPECT_EQ(message.type, COOP_BRIDGE_MESSAGE_CHECKPOINT_READY);
+    EXPECT(CoopBridgeQueue_IsEmpty(&gCoopNetBridge.game_to_network));
+    CoopStartMenu_TestSetSaveDryRun(FALSE);
+}
+
+TEST("Start-menu save retry fails closed when cloud mode is lost")
+{
+    EstablishTestCloudSession();
+    HostDeliverInboundBeforeScript(2);
+    CoopStartMenu_TestSetSaveDryRun(TRUE);
+    CoopStartMenu_TestSetCheckpointRequired(TRUE);
+    EXPECT_EQ(CoopStartMenu_TestRunSaveSavingMessageCallback(), COOP_START_MENU_TEST_SAVE_IN_PROGRESS);
+    EXPECT_EQ(CoopStartMenu_TestRunSaveDoSaveCallback(), COOP_START_MENU_TEST_SAVE_IN_PROGRESS);
+    EXPECT(CoopStartMenu_TestIsSaveCheckpointRetrying());
+
+    /* An OFFLINE answer after a cloud refusal never falls back to a local
+     * save: the save is cancelled and nothing is queued. */
+    InitTestBridge();
+    PopInitialRomReady();
+    EXPECT(!CoopNetBridge_IsCloudMode());
+    EXPECT_EQ(CoopStartMenu_TestRunCurrentSaveCallback(), COOP_START_MENU_TEST_SAVE_IN_PROGRESS);
+    EXPECT(CoopStartMenu_TestIsSaveAborting());
+    EXPECT_EQ(CoopStartMenu_TestRunCurrentSaveCallback(), COOP_START_MENU_TEST_SAVE_CANCELED);
+    EXPECT(CoopBridgeQueue_IsEmpty(&gCoopNetBridge.game_to_network));
+    CoopStartMenu_TestSetSaveDryRun(FALSE);
+}
+
+TEST("Start-menu save after an expired retry window starts a fresh window")
+{
+    u32 attempts;
+    struct CoopBridgeMessage message;
+
+    EstablishTestCloudSession();
+    HostDeliverInboundBeforeScript(2);
+    CoopStartMenu_TestSetSaveDryRun(TRUE);
+    CoopStartMenu_TestSetCheckpointRequired(TRUE);
+    EXPECT_EQ(CoopStartMenu_TestRunSaveDoSaveCallback(), COOP_START_MENU_TEST_SAVE_IN_PROGRESS);
+    for (attempts = 1; CoopStartMenu_TestIsSaveCheckpointRetrying() && attempts < 1000; attempts++)
+        EXPECT_EQ(CoopStartMenu_TestRunCurrentSaveCallback(), COOP_START_MENU_TEST_SAVE_IN_PROGRESS);
+    EXPECT_EQ(attempts, COOP_NET_BRIDGE_CHECKPOINT_REQUEST_FRAMES);
+    EXPECT(CoopStartMenu_TestIsSaveAborting());
+    EXPECT(CoopBridgeQueue_IsEmpty(&gCoopNetBridge.game_to_network));
+
+    /* The player saves again; the inbound frame is still pending on the
+     * first try and is consumed before the next one. */
+    EXPECT_EQ(CoopStartMenu_TestRunSaveDoSaveCallback(), COOP_START_MENU_TEST_SAVE_IN_PROGRESS);
+    EXPECT(CoopStartMenu_TestIsSaveCheckpointRetrying());
+    RunTestBridgeFrame();
+    EXPECT_EQ(CoopStartMenu_TestRunCurrentSaveCallback(), COOP_START_MENU_TEST_SAVE_IN_PROGRESS);
+    EXPECT_EQ(CoopNetBridge_GetCheckpointState(), COOP_CHECKPOINT_STATE_WAITING_FOR_GRANT);
+    EXPECT(CoopNetBridge_DequeueGameToNetwork(&message));
+    EXPECT_EQ(message.type, COOP_BRIDGE_MESSAGE_CHECKPOINT_READY);
     CoopStartMenu_TestSetSaveDryRun(FALSE);
 }
 

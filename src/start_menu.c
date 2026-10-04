@@ -115,6 +115,7 @@ EWRAM_DATA static u8 sSaveDialogTimer = 0;
 EWRAM_DATA static bool8 sSavingComplete = FALSE;
 EWRAM_DATA static u8 sSaveInfoWindowId = 0;
 EWRAM_DATA static bool8 sSaveCheckpointRequired = FALSE;
+EWRAM_DATA static u16 sSaveCheckpointRequestAttempts = 0;
 #if TESTING
 static bool8 sSaveCheckpointDryRun;
 #endif
@@ -160,6 +161,7 @@ static u8 SaveSavingMessageCallback(void);
 static u8 SaveDoSaveCallback(void);
 static u8 SaveDoSaveAuthorizedCallback(void);
 static u8 SaveCheckpointWaitCallback(void);
+static u8 SaveCheckpointRetryCallback(void);
 static u8 SaveCheckpointAbortCallback(void);
 static u8 SaveSuccessCallback(void);
 static u8 SaveReturnSuccessCallback(void);
@@ -1339,6 +1341,7 @@ static u8 SaveDoSaveCallback(void)
         sSaveDialogCallback = SaveCheckpointAbortCallback;
         return SAVE_IN_PROGRESS;
     }
+    sSaveCheckpointRequestAttempts = 0;
     switch (CoopNetBridge_RequestCheckpoint())
     {
     case COOP_CHECKPOINT_REQUEST_STARTED:
@@ -1347,9 +1350,15 @@ static u8 SaveDoSaveCallback(void)
         sSaveDialogCallback = SaveCheckpointWaitCallback;
         return SAVE_IN_PROGRESS;
     case COOP_CHECKPOINT_REQUEST_REJECTED:
-        /* Never spin in this callback: return through the normal cancellation
-         * path so the player can interact with the menu again. */
-        sSaveDialogCallback = SaveCheckpointAbortCallback;
+        /* The single-frame gate refuses while any bridge frame is in flight,
+         * and Lua hands the ROM inbound traffic at VBlank, before this
+         * callback and before CoopNetBridge_Poll consumes it. Ask again on
+         * the following frames (bounded) rather than refusing a ready
+         * session; never spin within one frame. */
+        if (CoopNetBridge_ShouldRetryCheckpointRequest(&sSaveCheckpointRequestAttempts))
+            sSaveDialogCallback = SaveCheckpointRetryCallback;
+        else
+            sSaveDialogCallback = SaveCheckpointAbortCallback;
         return SAVE_IN_PROGRESS;
     case COOP_CHECKPOINT_REQUEST_OFFLINE:
         if (CoopGroupTravel_IsFirstBrineyReceiptPending())
@@ -1361,6 +1370,38 @@ static u8 SaveDoSaveCallback(void)
     }
 
     return SaveDoSaveAuthorizedCallback();
+}
+
+/* One more checkpoint request per frame after a refusal. Ends in the grant
+ * wait once a request is queued, or in the normal cancellation path when the
+ * bounded window expires or cloud mode is lost (fail closed: an OFFLINE answer
+ * here never falls back to a local save). Nothing is queued after giving up. */
+static u8 SaveCheckpointRetryCallback(void)
+{
+    if (JohtoBugContest_IsSerializationBlocked())
+    {
+        CoopNetBridge_NotifySaveResult(FALSE);
+        sSaveDialogCallback = SaveCheckpointAbortCallback;
+        return SAVE_IN_PROGRESS;
+    }
+    switch (CoopNetBridge_RequestCheckpoint())
+    {
+    case COOP_CHECKPOINT_REQUEST_STARTED:
+        sSaveCheckpointRequestAttempts = 0;
+        sSaveDialogCallback = SaveCheckpointWaitCallback;
+        return SAVE_IN_PROGRESS;
+    case COOP_CHECKPOINT_REQUEST_REJECTED:
+        if (CoopNetBridge_ShouldRetryCheckpointRequest(&sSaveCheckpointRequestAttempts))
+            return SAVE_IN_PROGRESS;
+        break;
+    case COOP_CHECKPOINT_REQUEST_OFFLINE:
+    default:
+        break;
+    }
+
+    sSaveCheckpointRequestAttempts = 0;
+    sSaveDialogCallback = SaveCheckpointAbortCallback;
+    return SAVE_IN_PROGRESS;
 }
 
 static u8 SaveCheckpointWaitCallback(void)
@@ -1476,6 +1517,21 @@ u8 CoopStartMenu_TestRunSaveDoSaveCallback(void)
 u8 CoopStartMenu_TestRunCheckpointWaitCallback(void)
 {
     return SaveCheckpointWaitCallback();
+}
+
+u8 CoopStartMenu_TestRunCurrentSaveCallback(void)
+{
+    return sSaveDialogCallback();
+}
+
+bool8 CoopStartMenu_TestIsSaveCheckpointRetrying(void)
+{
+    return sSaveDialogCallback == SaveCheckpointRetryCallback;
+}
+
+bool8 CoopStartMenu_TestIsSaveAborting(void)
+{
+    return sSaveDialogCallback == SaveCheckpointAbortCallback;
 }
 
 u8 CoopStartMenu_TestRunCheckpointAbortCallback(void)
