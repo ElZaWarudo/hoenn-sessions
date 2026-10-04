@@ -1,0 +1,6 @@
+#ifndef GUARD_CORMORIA_PACHINKO_H
+#define GUARD_CORMORIA_PACHINKO_H
+
+void PlayPachinko(void);
+
+#endif // GUARD_CORMORIA_PACHINKO_H

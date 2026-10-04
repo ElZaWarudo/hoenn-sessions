@@ -214,6 +214,9 @@ static bool8 TryResolveLocationRegion(enum CoopRegion *out, u16 mapGroup, u16 ma
     case COOP_MAP_ENGINE_REGION_JOHTO:
         engineRegion = REGION_JOHTO;
         break;
+    case COOP_MAP_ENGINE_REGION_CORMORIA:
+        engineRegion = REGION_CORMORIA;
+        break;
     default:
         return FALSE;
     }

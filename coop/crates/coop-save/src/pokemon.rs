@@ -5,7 +5,7 @@
 
 use thiserror::Error;
 
-use crate::ValidatedSave;
+use crate::{ValidatedSave, ValidatedSaveV2};
 
 /// Serialized `BoxPokemon` size.
 pub const BOX_POKEMON_SIZE: usize = 80;
@@ -111,97 +111,105 @@ pub enum PokemonError {
     MissingSpecies,
 }
 
-impl ValidatedSave {
-    /// Reads the saved active-party count. A trade offer must use an index
-    /// below this count as well as an occupied, checksum-valid record.
-    pub fn party_count(&self) -> Result<u8, PokemonError> {
-        let count = self
-            .save_block1_range(PARTY_COUNT_OFFSET, 1)
-            .expect("party count fits SaveBlock1")[0];
-        if usize::from(count) > PARTY_SIZE {
-            return Err(PokemonError::PartyCount { count });
-        }
-        Ok(count)
-    }
-
-    /// Reads one saved party position, including its exact 100-byte record.
-    pub fn party_pokemon(
-        &self,
-        index: usize,
-    ) -> Result<PokemonSlot<PARTY_POKEMON_SIZE>, PokemonError> {
-        if index >= PARTY_SIZE {
-            return Err(PokemonError::PartyIndex { index });
-        }
-        let offset = PARTY_OFFSET + index * PARTY_POKEMON_SIZE;
-        let raw: [u8; PARTY_POKEMON_SIZE] = self
-            .save_block1_range(offset, PARTY_POKEMON_SIZE)
-            .expect("bounded party layout fits SaveBlock1")
-            .try_into()
-            .unwrap();
-        decode_record(raw)
-    }
-
-    /// Reads one PC position, including its exact 80-byte record.
-    pub fn pc_pokemon(
-        &self,
-        box_index: usize,
-        position: usize,
-    ) -> Result<PokemonSlot<BOX_POKEMON_SIZE>, PokemonError> {
-        if box_index >= BOX_COUNT {
-            return Err(PokemonError::BoxIndex { index: box_index });
-        }
-        if position >= BOX_SIZE {
-            return Err(PokemonError::BoxPosition { index: position });
-        }
-        let offset = PC_BOXES_OFFSET + (box_index * BOX_SIZE + position) * BOX_POKEMON_SIZE;
-        let raw: [u8; BOX_POKEMON_SIZE] = self
-            .pc_storage_range(offset, BOX_POKEMON_SIZE)
-            .expect("bounded PC layout fits storage sectors")
-            .try_into()
-            .unwrap();
-        decode_record(raw)
-    }
-}
-
-impl ValidatedSave {
-    /// Finds every stored copy of the Pokémon with this personality and
-    /// original-trainer ID across the active party and all PC boxes. Species
-    /// is deliberately not part of the key, so an evolution still matches.
-    ///
-    /// # Errors
-    ///
-    /// Propagates a corrupt record anywhere in the searched storage.
-    pub fn locate_pokemon(
-        &self,
-        personality: u32,
-        ot_id: u32,
-    ) -> Result<Vec<PokemonLocation>, PokemonError> {
-        let matches = |identity: &PokemonIdentity| {
-            identity.personality == personality && identity.ot_id == ot_id
-        };
-        let mut found = Vec::new();
-        for index in 0..usize::from(self.party_count()?) {
-            if let PokemonSlot::Occupied(record) = self.party_pokemon(index)?
-                && matches(&record.identity)
-            {
-                found.push(PokemonLocation::Party(index));
-            }
-        }
-        for box_index in 0..BOX_COUNT {
-            for position in 0..BOX_SIZE {
-                if let PokemonSlot::Occupied(record) = self.pc_pokemon(box_index, position)?
-                    && matches(&record.identity)
-                {
-                    found.push(PokemonLocation::Pc {
-                        box_index,
-                        position,
-                    });
+// Schema version changes co-op progress, not the stored Pokemon layout.
+macro_rules! impl_pokemon_views {
+    ($save:ty) => {
+        impl $save {
+            /// Reads the saved active-party count. A trade offer must use an index
+            /// below this count as well as an occupied, checksum-valid record.
+            pub fn party_count(&self) -> Result<u8, PokemonError> {
+                let count = self
+                    .save_block1_range(PARTY_COUNT_OFFSET, 1)
+                    .expect("party count fits SaveBlock1")[0];
+                if usize::from(count) > PARTY_SIZE {
+                    return Err(PokemonError::PartyCount { count });
                 }
+                Ok(count)
+            }
+
+            /// Reads one saved party position, including its exact 100-byte record.
+            pub fn party_pokemon(
+                &self,
+                index: usize,
+            ) -> Result<PokemonSlot<PARTY_POKEMON_SIZE>, PokemonError> {
+                if index >= PARTY_SIZE {
+                    return Err(PokemonError::PartyIndex { index });
+                }
+                let offset = PARTY_OFFSET + index * PARTY_POKEMON_SIZE;
+                let raw: [u8; PARTY_POKEMON_SIZE] = self
+                    .save_block1_range(offset, PARTY_POKEMON_SIZE)
+                    .expect("bounded party layout fits SaveBlock1")
+                    .try_into()
+                    .unwrap();
+                decode_record(raw)
+            }
+
+            /// Reads one PC position, including its exact 80-byte record.
+            pub fn pc_pokemon(
+                &self,
+                box_index: usize,
+                position: usize,
+            ) -> Result<PokemonSlot<BOX_POKEMON_SIZE>, PokemonError> {
+                if box_index >= BOX_COUNT {
+                    return Err(PokemonError::BoxIndex { index: box_index });
+                }
+                if position >= BOX_SIZE {
+                    return Err(PokemonError::BoxPosition { index: position });
+                }
+                let offset = PC_BOXES_OFFSET + (box_index * BOX_SIZE + position) * BOX_POKEMON_SIZE;
+                let raw: [u8; BOX_POKEMON_SIZE] = self
+                    .pc_storage_range(offset, BOX_POKEMON_SIZE)
+                    .expect("bounded PC layout fits storage sectors")
+                    .try_into()
+                    .unwrap();
+                decode_record(raw)
             }
         }
-        Ok(found)
-    }
+
+        impl $save {
+            /// Finds every stored copy of the Pokémon with this personality and
+            /// original-trainer ID across the active party and all PC boxes. Species
+            /// is deliberately not part of the key, so an evolution still matches.
+            ///
+            /// # Errors
+            ///
+            /// Propagates a corrupt record anywhere in the searched storage.
+            pub fn locate_pokemon(
+                &self,
+                personality: u32,
+                ot_id: u32,
+            ) -> Result<Vec<PokemonLocation>, PokemonError> {
+                let matches = |identity: &PokemonIdentity| {
+                    identity.personality == personality && identity.ot_id == ot_id
+                };
+                let mut found = Vec::new();
+                for index in 0..usize::from(self.party_count()?) {
+                    if let PokemonSlot::Occupied(record) = self.party_pokemon(index)?
+                        && matches(&record.identity)
+                    {
+                        found.push(PokemonLocation::Party(index));
+                    }
+                }
+                for box_index in 0..BOX_COUNT {
+                    for position in 0..BOX_SIZE {
+                        if let PokemonSlot::Occupied(record) =
+                            self.pc_pokemon(box_index, position)?
+                            && matches(&record.identity)
+                        {
+                            found.push(PokemonLocation::Pc {
+                                box_index,
+                                position,
+                            });
+                        }
+                    }
+                }
+                Ok(found)
+            }
+        }
+    };
 }
+impl_pokemon_views!(ValidatedSave);
+impl_pokemon_views!(ValidatedSaveV2);
 
 /// Decodes one standalone 100-byte party record exactly as a saved party
 /// slot is decoded: checksum-verified decryption, species presence, and the

@@ -8,6 +8,7 @@
 #include "constants/opponents.h"
 #include "constants/region_map_sections.h"
 #include "fieldmap.h"
+#include "malloc.h"
 #include "pokemon.h"
 #include "test/test.h"
 
@@ -657,12 +658,18 @@ TEST("Cloud Coop abort is retained when battle cleanup loses transport")
 
 TEST("Cloud Coop startup plan accepts catalogued Kanto Brock")
 {
-    struct Pokemon local[PARTY_SIZE] = {0};
+    /* A party plus a startup plan on the ~3 KiB IWRAM test stack ran into
+     * gTasks below it; the other startup-plan tests keep them off the stack. */
+    struct Pokemon *local;
     struct Pokemon peer;
-    struct CoopBattleStartupPlan plan;
+    struct CoopBattleStartupPlan *plan;
     u8 id[COOP_BATTLE_ID_SIZE] = {35};
     u8 i;
 
+    local = AllocZeroed(sizeof(*local) * PARTY_SIZE);
+    plan = AllocZeroed(sizeof(*plan));
+    EXPECT(local != NULL);
+    EXPECT(plan != NULL);
     SetActiveRegion(COOP_MAP_ENGINE_REGION_KANTO, MAPSEC_PALLET_TOWN);
     CoopBattleRuntime_Init();
     CoopBattleRuntime_OnSessionReady(35);
@@ -677,11 +684,13 @@ TEST("Cloud Coop startup plan accepts catalogued Kanto Brock")
         EXPECT_EQ(ReceivePeerMon(35, i, COOP_BATTLE_MULTI_PARTY_SIZE, &peer),
                   COOP_BATTLE_INBOUND_ACCEPTED);
     }
-    EXPECT(CoopBattleRuntime_MakeStartupPlan(id, local, PARTY_SIZE, &plan));
-    EXPECT_EQ(plan.opponent_trainer_id, TRAINER_LEADER_BROCK);
-    EXPECT_EQ(plan.local_member_slot, 0);
-    EXPECT_EQ(plan.member_party_trainers[0], B_TRAINER_0);
-    EXPECT_EQ(plan.member_party_trainers[1], B_TRAINER_2);
+    EXPECT(CoopBattleRuntime_MakeStartupPlan(id, local, PARTY_SIZE, plan));
+    EXPECT_EQ(plan->opponent_trainer_id, TRAINER_LEADER_BROCK);
+    EXPECT_EQ(plan->local_member_slot, 0);
+    EXPECT_EQ(plan->member_party_trainers[0], B_TRAINER_0);
+    EXPECT_EQ(plan->member_party_trainers[1], B_TRAINER_2);
+    Free(plan);
+    Free(local);
 }
 
 TEST("Cloud Coop startup plan accepts a catalogued non-Wally trainer with sparse sides")

@@ -7,7 +7,8 @@ use crate::{
     COOP_CRC_OFFSET, COOP_GENERATION_OFFSET, COOP_SAVE_OFFSET, COOP_SAVE_V1_SIZE,
     LOGICAL_SECTOR_DATA_SIZES, PokemonError, PokemonSlot, SAVE_BLOCK3_CHUNK_OFFSET,
     SAVE_BLOCK3_CHUNK_SIZE, SECTOR_CHECKSUM_OFFSET, SECTOR_COUNTER_OFFSET, SECTOR_SIZE,
-    SECTORS_PER_SLOT, SaveError, SaveSlot, ValidatedSave, parse, sector_checksum,
+    SECTORS_PER_SLOT, SaveError, SaveSlot, SaveV2Error, ValidatedSave, ValidatedSaveV2, parse,
+    parse_v2, sector_checksum,
 };
 
 const PARTY_OFFSET: usize = 0x238;
@@ -41,6 +42,11 @@ pub enum TradeError {
         side: &'static str,
         reason: SaveError,
     },
+    #[error("{side} transformed schema-two save did not validate: {reason}")]
+    OutputInvalidV2 {
+        side: &'static str,
+        reason: SaveV2Error,
+    },
 }
 
 /// Swaps exact 100-byte occupied party records and returns two newly validated
@@ -55,8 +61,18 @@ pub fn trade_party_pokemon(
     right: &ValidatedSave,
     right_index: usize,
 ) -> Result<(ValidatedSave, ValidatedSave), TradeError> {
-    let left_record = offered_record(left, left_index, "left")?;
-    let right_record = offered_record(right, right_index, "right")?;
+    let left_record = offered_record(
+        left.party_count(),
+        left.party_pokemon(left_index),
+        left_index,
+        "left",
+    )?;
+    let right_record = offered_record(
+        right.party_count(),
+        right.party_pokemon(right_index),
+        right_index,
+        "right",
+    )?;
     let left_generation = left
         .coop()
         .save_generation
@@ -68,8 +84,22 @@ pub fn trade_party_pokemon(
         .checked_add(1)
         .ok_or(TradeError::GenerationOverflow { side: "right" })?;
 
-    let left_bytes = next_image(left, left_index, &right_record, left_generation);
-    let right_bytes = next_image(right, right_index, &left_record, right_generation);
+    let left_bytes = next_image(
+        left.raw_bytes(),
+        &left.logical_sector_offsets,
+        left.counter(),
+        left_index,
+        &right_record,
+        left_generation,
+    );
+    let right_bytes = next_image(
+        right.raw_bytes(),
+        &right.logical_sector_offsets,
+        right.counter(),
+        right_index,
+        &left_record,
+        right_generation,
+    );
     let left_output =
         parse(&left_bytes, left.coop().registry).map_err(|reason| TradeError::OutputInvalid {
             side: "left",
@@ -83,14 +113,75 @@ pub fn trade_party_pokemon(
     Ok((left_output, right_output))
 }
 
+/// Schema-two exchange of exact party records. The full CSP2 payload is
+/// retained, including Cormoria, flags and status; only generation and CRC change.
+/// Neither result is returned unless both selected records and outputs validate.
+pub fn trade_party_pokemon_v2(
+    left: &ValidatedSaveV2,
+    left_index: usize,
+    right: &ValidatedSaveV2,
+    right_index: usize,
+) -> Result<(ValidatedSaveV2, ValidatedSaveV2), TradeError> {
+    let left_record = offered_record(
+        left.party_count(),
+        left.party_pokemon(left_index),
+        left_index,
+        "left",
+    )?;
+    let right_record = offered_record(
+        right.party_count(),
+        right.party_pokemon(right_index),
+        right_index,
+        "right",
+    )?;
+    let left_generation = left
+        .coop()
+        .save_generation
+        .checked_add(1)
+        .ok_or(TradeError::GenerationOverflow { side: "left" })?;
+    let right_generation = right
+        .coop()
+        .save_generation
+        .checked_add(1)
+        .ok_or(TradeError::GenerationOverflow { side: "right" })?;
+    let left_bytes = next_image(
+        left.raw_bytes(),
+        &left.logical_sector_offsets,
+        left.counter(),
+        left_index,
+        &right_record,
+        left_generation,
+    );
+    let right_bytes = next_image(
+        right.raw_bytes(),
+        &right.logical_sector_offsets,
+        right.counter(),
+        right_index,
+        &left_record,
+        right_generation,
+    );
+    let left_output = parse_v2(&left_bytes, left.coop().registry).map_err(|reason| {
+        TradeError::OutputInvalidV2 {
+            side: "left",
+            reason,
+        }
+    })?;
+    let right_output = parse_v2(&right_bytes, right.coop().registry).map_err(|reason| {
+        TradeError::OutputInvalidV2 {
+            side: "right",
+            reason,
+        }
+    })?;
+    Ok((left_output, right_output))
+}
+
 fn offered_record(
-    save: &ValidatedSave,
+    count: Result<u8, PokemonError>,
+    slot: Result<PokemonSlot<PARTY_POKEMON_SIZE>, PokemonError>,
     index: usize,
     side: &'static str,
 ) -> Result<[u8; PARTY_POKEMON_SIZE], TradeError> {
-    let count = save
-        .party_count()
-        .map_err(|reason| TradeError::Pokemon { side, reason })?;
+    let count = count.map_err(|reason| TradeError::Pokemon { side, reason })?;
     if index >= PARTY_SIZE {
         return Err(TradeError::Pokemon {
             side,
@@ -100,9 +191,7 @@ fn offered_record(
     if index >= usize::from(count) {
         return Err(TradeError::OutsideParty { side, index, count });
     }
-    let slot = save
-        .party_pokemon(index)
-        .map_err(|reason| TradeError::Pokemon { side, reason })?;
+    let slot = slot.map_err(|reason| TradeError::Pokemon { side, reason })?;
     let PokemonSlot::Occupied(record) = slot else {
         return Err(TradeError::Empty { side, index });
     };
@@ -122,16 +211,18 @@ pub fn party_record_holds_mail(record: &PartyPokemon) -> bool {
 }
 
 fn next_image(
-    save: &ValidatedSave,
+    raw: &[u8],
+    logical_sector_offsets: &[usize; SECTORS_PER_SLOT],
+    counter: u32,
     index: usize,
     incoming: &[u8; PARTY_POKEMON_SIZE],
     generation: u32,
 ) -> Vec<u8> {
-    let mut image = save.raw_bytes().to_vec();
-    let next_counter = save.counter().wrapping_add(1);
+    let mut image = raw.to_vec();
+    let next_counter = counter.wrapping_add(1);
     let next_slot = SaveSlot::from_counter(next_counter);
-    let selected_base = save.selected_slot().index() * SECTORS_PER_SLOT * SECTOR_SIZE;
-    let current_zero = (save.logical_sector_offsets[0] - selected_base) / SECTOR_SIZE;
+    let selected_base = SaveSlot::from_counter(counter).index() * SECTORS_PER_SLOT * SECTOR_SIZE;
+    let current_zero = (logical_sector_offsets[0] - selected_base) / SECTOR_SIZE;
     let next_zero = (current_zero + 1) % SECTORS_PER_SLOT;
     let destination_base = next_slot.index() * SECTORS_PER_SLOT * SECTOR_SIZE;
     let destination_offsets = std::array::from_fn(|logical| {
@@ -139,9 +230,9 @@ fn next_image(
     });
 
     for (logical, &destination) in destination_offsets.iter().enumerate() {
-        let source = save.logical_sector_offsets[logical];
+        let source = logical_sector_offsets[logical];
         image[destination..destination + SECTOR_SIZE]
-            .copy_from_slice(&save.raw_bytes()[source..source + SECTOR_SIZE]);
+            .copy_from_slice(&raw[source..source + SECTOR_SIZE]);
         image[destination + SECTOR_COUNTER_OFFSET..destination + SECTOR_COUNTER_OFFSET + 4]
             .copy_from_slice(&next_counter.to_le_bytes());
     }

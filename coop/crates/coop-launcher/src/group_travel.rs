@@ -3300,6 +3300,7 @@ mod tests {
         let snapshot = SnapshotRecord {
             api_version: ApiVersion::V1,
             snapshot_id: coop_cloud::SnapshotId::new(Uuid::from_u128(70)).unwrap(),
+            rom_world_id: coop_protocol::RomWorldId::new(1).unwrap(),
             session_id: marker_fence.session_id,
             character_id: own,
             parent_revision: marker_fence.current_revision,

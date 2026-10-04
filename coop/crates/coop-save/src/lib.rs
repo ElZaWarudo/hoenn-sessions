@@ -13,13 +13,34 @@ pub use pokemon::{
     BoxPokemon, PARTY_POKEMON_SIZE, PartyPokemon, PokemonError, PokemonIdentity, PokemonLocation,
     PokemonSlot, decode_party_record, party_record_hp,
 };
-pub use trade::{TradeError, party_record_holds_mail, trade_party_pokemon};
+pub use trade::{TradeError, party_record_holds_mail, trade_party_pokemon, trade_party_pokemon_v2};
 
 use coop_protocol::{
     IdentityKind, ProtocolError, RegionId, TrainerInstanceId,
     identity_catalog::{resolve_badge_bit, resolve_ordinal, trainer},
 };
 use thiserror::Error;
+
+// The high-level arrival projection is deliberately small: callers choose the
+// source and destination saves, but the crate owns every field-level write.
+mod transfer;
+/// Additive parser for the inactive schema-two co-op payload.
+pub mod v2;
+
+pub use transfer::{TransferDescriptorPair, TransferError, project_arrival};
+pub use v2::{SaveV2Error, ValidatedSaveV2};
+
+/// Validates a complete Flash1M image using the explicit schema-two parser.
+///
+/// Existing [`parse`] and [`validate_character_save`] callers remain
+/// schema-one-only; callers must opt into this API when reading a
+/// schema-two save.
+pub fn parse_v2(
+    bytes: &[u8],
+    expected_registry: RegistryContract,
+) -> Result<ValidatedSaveV2, SaveV2Error> {
+    v2::parse_v2(bytes, expected_registry)
+}
 
 /// `Flash1M` save data, excluding mGBA's optional real-time-clock trailer.
 pub const FLASH_IMAGE_SIZE: usize = 128 * 1024;
@@ -51,9 +72,9 @@ const SAVE_BLOCK1_LOCATION_OFFSET: usize = 0x04;
 /// SaveBlock1 layout of this ROM build; mirrored by `include/coop/save_layout.h`,
 /// which the ROM asserts against its structs (see `layout_tests`).
 pub const SAVE_BLOCK1_MONEY_OFFSET: usize = 0x490;
-pub const SAVE_BLOCK1_FLAGS_OFFSET: usize = 0x1270;
+pub const SAVE_BLOCK1_FLAGS_OFFSET: usize = 0x1388;
 pub const SAVE_BLOCK1_FLAG_BYTES: usize = 0x18b;
-pub const SAVE_BLOCK1_VARS_OFFSET: usize = 0x13fc;
+pub const SAVE_BLOCK1_VARS_OFFSET: usize = 0x1514;
 pub const SAVE_BLOCK1_VAR_COUNT: usize = 0x18c;
 pub const SAVE_BLOCK2_ENCRYPTION_KEY_OFFSET: usize = 0xb4;
 pub const TRAINER_FLAGS_START: usize = 0x500;
@@ -138,7 +159,7 @@ const PLAYER_TRAINER_ID_SIZE: usize = 4;
 /// Number of bytes from the normal sector payload covered by the game's
 /// additive checksum for each logical sector.
 pub const LOGICAL_SECTOR_DATA_SIZES: [usize; SECTORS_PER_SLOT] = [
-    3892, 3968, 3968, 3968, 3968, 636, 3968, 3968, 3968, 3968, 3968, 3968, 3968, 3968, 2400,
+    3892, 3968, 3968, 3968, 3968, 2976, 3968, 3968, 3968, 3968, 3968, 3968, 3968, 3968, 2400,
 ];
 
 /// Expected identity-registry metadata embedded in `CoopSaveV1`.
@@ -207,6 +228,16 @@ pub struct CharacterLineage {
     pub player_region: u8,
     /// Four-byte immutable trainer ID generated with the character.
     pub player_trainer_id: [u8; PLAYER_TRAINER_ID_SIZE],
+}
+
+impl CharacterLineage {
+    /// Compare stable trainer identity before an audited projection updates
+    /// the starting-region/avatar choice in another ROM save.
+    pub(crate) fn same_trainer(self, other: Self) -> bool {
+        self.player_name == other.player_name
+            && self.player_gender == other.player_gender
+            && self.player_trainer_id == other.player_trainer_id
+    }
 }
 
 /// Selected-slot `SaveBlock1` evidence for the first Mr. Briney voyage.
@@ -393,8 +424,8 @@ pub struct ValidatedSave {
     raw: Box<[u8]>,
     selected_slot: SaveSlot,
     counter: u32,
-    save_block3: [u8; SAVE_BLOCK3_CAPACITY],
     logical_sector_offsets: [usize; SECTORS_PER_SLOT],
+    save_block3: [u8; SAVE_BLOCK3_CAPACITY],
     character_lineage: CharacterLineage,
     coop: CoopSaveV1,
 }
@@ -438,182 +469,26 @@ impl ValidatedSave {
         self.counter
     }
 
+    /// Returns the checksummed payload for a logical sector in the ROM-selected
+    /// slot.
+    ///
+    /// The returned slice excludes the sector footer and is bounded by the
+    /// frozen payload length for that logical sector. Physical sector order is
+    /// never exposed, and an out-of-range logical ID returns `None`.
+    #[must_use]
+    pub fn logical_sector_payload(&self, logical_id: u8) -> Option<&[u8]> {
+        let logical_index = usize::from(logical_id);
+        let sector_offset = *self.logical_sector_offsets.get(logical_index)?;
+        let payload_size = *LOGICAL_SECTOR_DATA_SIZES.get(logical_index)?;
+        let payload_end = sector_offset.checked_add(payload_size)?;
+        self.raw.get(sector_offset..payload_end)
+    }
+
     /// `SaveBlock3` chunks reassembled by logical sector ID, never by physical
     /// sector order.
     #[must_use]
     pub const fn save_block3(&self) -> &[u8; SAVE_BLOCK3_CAPACITY] {
         &self.save_block3
-    }
-
-    /// Reads a bounded logical range of selected-slot `SaveBlock1` bytes.
-    #[must_use]
-    pub fn save_block1_range(&self, offset: usize, length: usize) -> Option<Vec<u8>> {
-        self.logical_range(1, SAVE_BLOCK1_SIZE, offset, length)
-    }
-
-    /// Reads a bounded logical range of selected-slot `SaveBlock2` bytes.
-    #[must_use]
-    pub fn save_block2_range(&self, offset: usize, length: usize) -> Option<Vec<u8>> {
-        self.logical_range(0, LOGICAL_SECTOR_DATA_SIZES[0], offset, length)
-    }
-
-    /// Money, decoded with the `SaveBlock2` encryption key exactly as
-    /// `GetMoney` does.
-    #[must_use]
-    pub fn money(&self) -> Option<u32> {
-        let stored = self.save_block1_range(SAVE_BLOCK1_MONEY_OFFSET, 4)?;
-        let key = self.save_block2_range(SAVE_BLOCK2_ENCRYPTION_KEY_OFFSET, 4)?;
-        Some(u32::from_le_bytes(stored.try_into().ok()?) ^ u32::from_le_bytes(key.try_into().ok()?))
-    }
-
-    /// Whether the game's own "trainer defeated" flag is set for a vanilla
-    /// trainer ID (`TRAINER_FLAGS_START + id`). `None` for an ID outside the
-    /// trainer flag range.
-    #[must_use]
-    pub fn trainer_flag(&self, trainer_id: u16) -> Option<bool> {
-        let flag = TRAINER_FLAGS_START.checked_add(usize::from(trainer_id))?;
-        if flag > TRAINER_FLAGS_END || flag / 8 >= SAVE_BLOCK1_FLAG_BYTES {
-            return None;
-        }
-        let byte = self.save_block1_range(SAVE_BLOCK1_FLAGS_OFFSET + flag / 8, 1)?[0];
-        Some(byte & (1 << (flag % 8)) != 0)
-    }
-
-    /// Whether a `SaveBlock1` event flag is set. `None` for a flag outside
-    /// the saved flag array.
-    #[must_use]
-    pub fn event_flag(&self, flag: usize) -> Option<bool> {
-        if flag / 8 >= SAVE_BLOCK1_FLAG_BYTES {
-            return None;
-        }
-        let byte = self.save_block1_range(SAVE_BLOCK1_FLAGS_OFFSET + flag / 8, 1)?[0];
-        Some(byte & (1 << (flag % 8)) != 0)
-    }
-
-    /// A `SaveBlock1` script variable (`VAR_*`, `0x4000` and up) as
-    /// `VarGet` reads it. `None` for an ID outside the saved variable array.
-    #[must_use]
-    pub fn event_var(&self, var: usize) -> Option<u16> {
-        let index = var.checked_sub(VARS_START)?;
-        if index >= SAVE_BLOCK1_VAR_COUNT {
-            return None;
-        }
-        let bytes = self.save_block1_range(SAVE_BLOCK1_VARS_OFFSET + 2 * index, 2)?;
-        Some(u16::from_le_bytes(bytes.try_into().ok()?))
-    }
-
-    /// The eight Hoenn badge flags (`FLAG_BADGE01_GET` .. `FLAG_BADGE08_GET`)
-    /// as a mask, bit 0 for the Stone Badge.
-    #[must_use]
-    pub fn hoenn_badges(&self) -> Option<u8> {
-        (0..8).try_fold(0_u8, |mask, badge| {
-            let set = self.event_flag(FLAG_BADGE01_GET + badge)?;
-            Some(if set { mask | (1 << badge) } else { mask })
-        })
-    }
-
-    /// Reads the selected slot's bounded first-voyage evidence.
-    ///
-    /// The range is taken from the already validated, ROM-selected slot. No
-    /// caller-provided raw bytes can reach this parser.
-    #[must_use]
-    pub fn briney_voyage_evidence(&self) -> BrineyVoyageEvidence {
-        let save_block1 = self
-            .save_block1_range(0, SAVE_BLOCK1_EVIDENCE_END)
-            .expect("first-voyage evidence range is inside SaveBlock1");
-        let dewford_flags = save_block1[FLAG_BRINEY_DEWFORD_BYTE_OFFSET];
-
-        BrineyVoyageEvidence {
-            map_group: save_block1[SAVE_BLOCK1_LOCATION_OFFSET],
-            map_num: save_block1[SAVE_BLOCK1_LOCATION_OFFSET + 1],
-            board_briney_boat_state: read_u16(
-                &save_block1,
-                SAVE_BLOCK1_BOARD_BRINEY_BOAT_STATE_OFFSET,
-            ),
-            norman_match_call_enabled: save_block1[FLAG_NORMAN_MATCH_CALL_BYTE_OFFSET]
-                & FLAG_NORMAN_MATCH_CALL_MASK
-                != 0,
-            dewford_briney_hidden: dewford_flags & FLAG_HIDE_MR_BRINEY_DEWFORD_MASK != 0,
-            dewford_boat_hidden: dewford_flags & FLAG_HIDE_MR_BRINEY_BOAT_DEWFORD_MASK != 0,
-            route104_boat_hidden: dewford_flags & FLAG_HIDE_ROUTE_104_MR_BRINEY_BOAT_MASK != 0,
-        }
-    }
-
-    #[must_use]
-    pub fn bill_voyage_evidence(&self) -> BillVoyageEvidence {
-        let block = self
-            .save_block1_range(0, SAVE_BLOCK1_BILL_EVIDENCE_END)
-            .expect("Bill evidence range is inside SaveBlock1");
-        let var = |id: usize| read_u16(&block, SAVE_BLOCK1_VARS_OFFSET + 2 * (id - 0x4000));
-        let flag = |id: usize| block[SAVE_BLOCK1_FLAGS_OFFSET + id / 8] & (1 << (id % 8)) != 0;
-        BillVoyageEvidence {
-            map_group: block[SAVE_BLOCK1_LOCATION_OFFSET],
-            map_num: block[SAVE_BLOCK1_LOCATION_OFFSET + 1],
-            cinnabar_scene: var(0x4171),
-            one_island_harbor_scene: var(0x4175),
-            one_island_center_scene: var(0x4176),
-            sevii_map_123: flag(0x15f),
-            pc_storage_disabled: flag(0x15e),
-            lostelle_hidden_at_game_corner: flag(0x852),
-            lostelle_visible_at_home: !flag(0x853),
-        }
-    }
-
-    /// Reads selected-slot evidence for Wally's Victory Road battle.
-    ///
-    /// The story flag and variables are decoded from the ROM-selected
-    /// `SaveBlock1`; canonical battle completion is read from CSP1 trainer
-    /// ordinal 518 (`HOENN:TRAINER_WALLY_1`) rather than the legacy trainer
-    /// flag range.
-    #[must_use]
-    pub fn wally_victory_road_evidence(&self) -> WallyVictoryRoadEvidence {
-        let block = self
-            .save_block1_range(0, SAVE_BLOCK1_WALLY_EVIDENCE_END)
-            .expect("Wally evidence range is inside SaveBlock1");
-        let flag = |id: usize| block[SAVE_BLOCK1_FLAGS_OFFSET + id / 8] & (1 << (id % 8)) != 0;
-        let ordinal = usize::from(WALLY_VICTORY_ROAD_TRAINER_ORDINAL);
-        let canonical_trainer_defeated =
-            self.coop.defeated_trainers[ordinal / 8] & (1 << (ordinal % 8)) != 0;
-
-        WallyVictoryRoadEvidence {
-            defeated_wally_flag: flag(FLAG_DEFEATED_WALLY_VICTORY_ROAD),
-            victory_road_1f_state: read_u16(
-                &block,
-                SAVE_BLOCK1_VARS_OFFSET + 2 * (VAR_VICTORY_ROAD_1F_STATE - 0x4000),
-            ),
-            entrance_wally_hidden: flag(FLAG_HIDE_VICTORY_ROAD_ENTRANCE_WALLY),
-            canonical_trainer_defeated,
-        }
-    }
-
-    /// Reads a bounded logical range of selected-slot PC-storage bytes.
-    #[must_use]
-    pub fn pc_storage_range(&self, offset: usize, length: usize) -> Option<Vec<u8>> {
-        self.logical_range(6, PC_STORAGE_CAPACITY, offset, length)
-    }
-
-    fn logical_range(
-        &self,
-        first_sector: usize,
-        capacity: usize,
-        offset: usize,
-        length: usize,
-    ) -> Option<Vec<u8>> {
-        let end = offset.checked_add(length)?;
-        if end > capacity {
-            return None;
-        }
-        let mut result = Vec::with_capacity(length);
-        let mut cursor = offset;
-        while cursor < end {
-            let logical = first_sector + cursor / SAVE_BLOCK3_CHUNK_OFFSET;
-            let inside = cursor % SAVE_BLOCK3_CHUNK_OFFSET;
-            let count = (end - cursor).min(SAVE_BLOCK3_CHUNK_OFFSET - inside);
-            let start = self.logical_sector_offsets[logical] + inside;
-            result.extend_from_slice(&self.raw[start..start + count]);
-            cursor += count;
-        }
-        Some(result)
     }
 
     /// In-game identity carried by the selected committed save slot.
@@ -628,6 +503,192 @@ impl ValidatedSave {
         &self.coop
     }
 }
+
+// Both co-op schemas share the ROM's physical SaveBlock layouts.
+macro_rules! impl_physical_save_views {
+    ($save:ty) => {
+        impl $save {
+            /// Reads a bounded logical range of selected-slot `SaveBlock1` bytes.
+            #[must_use]
+            pub fn save_block1_range(&self, offset: usize, length: usize) -> Option<Vec<u8>> {
+                self.logical_range(1, SAVE_BLOCK1_SIZE, offset, length)
+            }
+
+            /// Reads a bounded logical range of selected-slot `SaveBlock2` bytes.
+            #[must_use]
+            pub fn save_block2_range(&self, offset: usize, length: usize) -> Option<Vec<u8>> {
+                self.logical_range(0, LOGICAL_SECTOR_DATA_SIZES[0], offset, length)
+            }
+
+            /// Money, decoded with the `SaveBlock2` encryption key exactly as
+            /// `GetMoney` does.
+            #[must_use]
+            pub fn money(&self) -> Option<u32> {
+                let stored = self.save_block1_range(SAVE_BLOCK1_MONEY_OFFSET, 4)?;
+                let key = self.save_block2_range(SAVE_BLOCK2_ENCRYPTION_KEY_OFFSET, 4)?;
+                Some(
+                    u32::from_le_bytes(stored.try_into().ok()?)
+                        ^ u32::from_le_bytes(key.try_into().ok()?),
+                )
+            }
+
+            /// Whether the game's own "trainer defeated" flag is set for a vanilla
+            /// trainer ID (`TRAINER_FLAGS_START + id`). `None` for an ID outside the
+            /// trainer flag range.
+            #[must_use]
+            pub fn trainer_flag(&self, trainer_id: u16) -> Option<bool> {
+                let flag = TRAINER_FLAGS_START.checked_add(usize::from(trainer_id))?;
+                if flag > TRAINER_FLAGS_END || flag / 8 >= SAVE_BLOCK1_FLAG_BYTES {
+                    return None;
+                }
+                let byte = self.save_block1_range(SAVE_BLOCK1_FLAGS_OFFSET + flag / 8, 1)?[0];
+                Some(byte & (1 << (flag % 8)) != 0)
+            }
+
+            /// Whether a `SaveBlock1` event flag is set. `None` for a flag outside
+            /// the saved flag array.
+            #[must_use]
+            pub fn event_flag(&self, flag: usize) -> Option<bool> {
+                if flag / 8 >= SAVE_BLOCK1_FLAG_BYTES {
+                    return None;
+                }
+                let byte = self.save_block1_range(SAVE_BLOCK1_FLAGS_OFFSET + flag / 8, 1)?[0];
+                Some(byte & (1 << (flag % 8)) != 0)
+            }
+
+            /// A `SaveBlock1` script variable (`VAR_*`, `0x4000` and up) as
+            /// `VarGet` reads it. `None` for an ID outside the saved variable array.
+            #[must_use]
+            pub fn event_var(&self, var: usize) -> Option<u16> {
+                let index = var.checked_sub(VARS_START)?;
+                if index >= SAVE_BLOCK1_VAR_COUNT {
+                    return None;
+                }
+                let bytes = self.save_block1_range(SAVE_BLOCK1_VARS_OFFSET + 2 * index, 2)?;
+                Some(u16::from_le_bytes(bytes.try_into().ok()?))
+            }
+
+            /// The eight Hoenn badge flags (`FLAG_BADGE01_GET` .. `FLAG_BADGE08_GET`)
+            /// as a mask, bit 0 for the Stone Badge.
+            #[must_use]
+            pub fn hoenn_badges(&self) -> Option<u8> {
+                (0..8).try_fold(0_u8, |mask, badge| {
+                    let set = self.event_flag(FLAG_BADGE01_GET + badge)?;
+                    Some(if set { mask | (1 << badge) } else { mask })
+                })
+            }
+
+            /// Reads the selected slot's bounded first-voyage evidence.
+            ///
+            /// The range is taken from the already validated, ROM-selected slot. No
+            /// caller-provided raw bytes can reach this parser.
+            #[must_use]
+            pub fn briney_voyage_evidence(&self) -> BrineyVoyageEvidence {
+                let save_block1 = self
+                    .save_block1_range(0, SAVE_BLOCK1_EVIDENCE_END)
+                    .expect("first-voyage evidence range is inside SaveBlock1");
+                let dewford_flags = save_block1[FLAG_BRINEY_DEWFORD_BYTE_OFFSET];
+
+                BrineyVoyageEvidence {
+                    map_group: save_block1[SAVE_BLOCK1_LOCATION_OFFSET],
+                    map_num: save_block1[SAVE_BLOCK1_LOCATION_OFFSET + 1],
+                    board_briney_boat_state: read_u16(
+                        &save_block1,
+                        SAVE_BLOCK1_BOARD_BRINEY_BOAT_STATE_OFFSET,
+                    ),
+                    norman_match_call_enabled: save_block1[FLAG_NORMAN_MATCH_CALL_BYTE_OFFSET]
+                        & FLAG_NORMAN_MATCH_CALL_MASK
+                        != 0,
+                    dewford_briney_hidden: dewford_flags & FLAG_HIDE_MR_BRINEY_DEWFORD_MASK != 0,
+                    dewford_boat_hidden: dewford_flags & FLAG_HIDE_MR_BRINEY_BOAT_DEWFORD_MASK != 0,
+                    route104_boat_hidden: dewford_flags & FLAG_HIDE_ROUTE_104_MR_BRINEY_BOAT_MASK
+                        != 0,
+                }
+            }
+
+            #[must_use]
+            pub fn bill_voyage_evidence(&self) -> BillVoyageEvidence {
+                let block = self
+                    .save_block1_range(0, SAVE_BLOCK1_BILL_EVIDENCE_END)
+                    .expect("Bill evidence range is inside SaveBlock1");
+                let var = |id: usize| read_u16(&block, SAVE_BLOCK1_VARS_OFFSET + 2 * (id - 0x4000));
+                let flag =
+                    |id: usize| block[SAVE_BLOCK1_FLAGS_OFFSET + id / 8] & (1 << (id % 8)) != 0;
+                BillVoyageEvidence {
+                    map_group: block[SAVE_BLOCK1_LOCATION_OFFSET],
+                    map_num: block[SAVE_BLOCK1_LOCATION_OFFSET + 1],
+                    cinnabar_scene: var(0x4171),
+                    one_island_harbor_scene: var(0x4175),
+                    one_island_center_scene: var(0x4176),
+                    sevii_map_123: flag(0x15f),
+                    pc_storage_disabled: flag(0x15e),
+                    lostelle_hidden_at_game_corner: flag(0x852),
+                    lostelle_visible_at_home: !flag(0x853),
+                }
+            }
+
+            /// Reads selected-slot evidence for Wally's Victory Road battle.
+            ///
+            /// The story flag and variables are decoded from the ROM-selected
+            /// `SaveBlock1`; canonical battle completion is read from CSP1 trainer
+            /// ordinal 518 (`HOENN:TRAINER_WALLY_1`) rather than the legacy trainer
+            /// flag range.
+            #[must_use]
+            pub fn wally_victory_road_evidence(&self) -> WallyVictoryRoadEvidence {
+                let block = self
+                    .save_block1_range(0, SAVE_BLOCK1_WALLY_EVIDENCE_END)
+                    .expect("Wally evidence range is inside SaveBlock1");
+                let flag =
+                    |id: usize| block[SAVE_BLOCK1_FLAGS_OFFSET + id / 8] & (1 << (id % 8)) != 0;
+                let ordinal = usize::from(WALLY_VICTORY_ROAD_TRAINER_ORDINAL);
+                let canonical_trainer_defeated =
+                    self.coop.defeated_trainers[ordinal / 8] & (1 << (ordinal % 8)) != 0;
+
+                WallyVictoryRoadEvidence {
+                    defeated_wally_flag: flag(FLAG_DEFEATED_WALLY_VICTORY_ROAD),
+                    victory_road_1f_state: read_u16(
+                        &block,
+                        SAVE_BLOCK1_VARS_OFFSET + 2 * (VAR_VICTORY_ROAD_1F_STATE - 0x4000),
+                    ),
+                    entrance_wally_hidden: flag(FLAG_HIDE_VICTORY_ROAD_ENTRANCE_WALLY),
+                    canonical_trainer_defeated,
+                }
+            }
+
+            /// Reads a bounded logical range of selected-slot PC-storage bytes.
+            #[must_use]
+            pub fn pc_storage_range(&self, offset: usize, length: usize) -> Option<Vec<u8>> {
+                self.logical_range(6, PC_STORAGE_CAPACITY, offset, length)
+            }
+
+            fn logical_range(
+                &self,
+                first_sector: usize,
+                capacity: usize,
+                offset: usize,
+                length: usize,
+            ) -> Option<Vec<u8>> {
+                let end = offset.checked_add(length)?;
+                if end > capacity {
+                    return None;
+                }
+                let mut result = Vec::with_capacity(length);
+                let mut cursor = offset;
+                while cursor < end {
+                    let logical = first_sector + cursor / SAVE_BLOCK3_CHUNK_OFFSET;
+                    let inside = cursor % SAVE_BLOCK3_CHUNK_OFFSET;
+                    let count = (end - cursor).min(SAVE_BLOCK3_CHUNK_OFFSET - inside);
+                    let start = self.logical_sector_offsets[logical] + inside;
+                    result.extend_from_slice(&self.raw[start..start + count]);
+                    cursor += count;
+                }
+                Some(result)
+            }
+        }
+    };
+}
+impl_physical_save_views!(ValidatedSave);
+impl_physical_save_views!(ValidatedSaveV2);
 
 /// Validated canonical erased image. Its bytes are private so callers cannot
 /// construct a fake revision-zero result without validation.
@@ -889,8 +950,8 @@ pub enum CoopSaveError {
 struct ValidatedSlot {
     slot: SaveSlot,
     counter: u32,
-    save_block3: [u8; SAVE_BLOCK3_CAPACITY],
     logical_sector_offsets: [usize; SECTORS_PER_SLOT],
+    save_block3: [u8; SAVE_BLOCK3_CAPACITY],
     character_lineage: CharacterLineage,
 }
 
@@ -962,8 +1023,8 @@ pub fn parse(
         raw: bytes.into(),
         selected_slot: selected.slot,
         counter: selected.counter,
-        save_block3: selected.save_block3,
         logical_sector_offsets: selected.logical_sector_offsets,
+        save_block3: selected.save_block3,
         character_lineage: selected.character_lineage,
         coop,
     })
@@ -1088,8 +1149,8 @@ fn validate_slot(flash: &[u8], slot: SaveSlot) -> Result<ValidatedSlot, SlotErro
     Ok(ValidatedSlot {
         slot,
         counter,
-        save_block3,
         logical_sector_offsets,
+        save_block3,
         character_lineage,
     })
 }

@@ -143,8 +143,40 @@ enum __attribute__((__packed__)) Flavor
 #define BERRY_TREE_ROUTE_123_SITRUS   88
 #define BERRY_TREE_ROUTE_123_RAWST    89
 
-// Remainder are unused
+// Cormoria's donor IDs 90-118 overlap Johto. Keep their donor order in a
+// separate, append-only range of the regional (world-local) berry save array.
+#define CORMORIA_BERRY_PLOTS_FIRST 125
+#define Cormoria_BERRY_TREE_FENNILAHL_ORAN    125
+#define Cormoria_BERRY_TREE_ROUTE2_ORAN       126
+#define Cormoria_BERRY_TREE_ROUTE2_PECHA      127
+#define Cormoria_BERRY_TREE_ROUTE4_PECHA      128
+#define Cormoria_BERRY_TREE_ROUTE4_RAWST      129
+#define Cormoria_BERRY_TREE_GALECREST_ORAN    130
+#define Cormoria_BERRY_TREE_GALECREST_B       131
+#define Cormoria_BERRY_TREE_GALECREST_C       132
+#define Cormoria_BERRY_TREE_ROUTE5_KEBIA      133
+#define Cormoria_BERRY_TREE_ROUTE5_PECHA      134
+#define Cormoria_BERRY_TREE_ROUTE5_SITRUS_1   135
+#define Cormoria_BERRY_TREE_ROUTE5_SITRUS_2   136
+#define Cormoria_BERRY_TREE_ROUTE5_COLBUR     137
+#define Cormoria_BERRY_TREE_ROUTE5_LIECHI     138
+#define Cormoria_BERRY_TREE_VILETHORN_PECHA   139
+#define Cormoria_BERRY_TREE_VILETHORN_APICOT  140
+#define Cormoria_BERRY_TREE_VILETHORN_MICLE   141
+#define Cormoria_BERRY_TREE_VILETHORN_LEPPA   142
+#define Cormoria_BERRY_TREE_VILETHORN_CHESTO  143
+#define Cormoria_BERRY_TREE_VILETHORN_ORAN    144
+#define Cormoria_BERRY_TREE_PELLUCA_A         145
+#define Cormoria_BERRY_TREE_PELLUCA_B         146
+#define Cormoria_BERRY_TREE_PELLUCA_C         147
+#define Cormoria_BERRY_TREE_RIVETSHORE_A      148
+#define Cormoria_BERRY_TREE_RIVETSHORE_B      149
+#define Cormoria_BERRY_TREE_RIVETSHORE_C      150
+#define Cormoria_BERRY_TREE_HOYA_A            151
+#define Cormoria_BERRY_TREE_HOYA_B            152
+#define Cormoria_BERRY_TREE_HOYA_C            153
+#define CORMORIA_BERRY_PLOTS_LAST 153
 
-#define BERRY_TREES_COUNT 128
+#define BERRY_TREES_COUNT 192
 
 #endif // GUARD_CONSTANTS_BERRY_H

@@ -8,28 +8,30 @@ use std::{
     sync::Arc,
 };
 
-use coop_cloud::TrustedManifestKey;
+use coop_cloud::{AcquireLeaseRequest, AcquireWorldLeaseResponse, TrustedManifestKey};
 use coop_launcher::{
     CommandSpec, ReqwestCloudApi, SupervisedChildren,
     auth::AuthSession,
-    compat::BuildCompatibility,
+    compat::{BuildCompatibility, SelectedRomWorld, TrustedRomCatalog},
     epoch::EpochStore,
     keychain::{OsKeychain, RefreshTokenStore},
     process::{
         ProcessError, cleanup_owned_staged_rom, staged_rom_marker_contents, staged_rom_marker_path,
     },
-    session::{SessionConfig, SessionLifecycle},
+    session::{RomWorldId, SessionConfig, SessionLifecycle},
 };
 use thiserror::Error;
 
 #[derive(Debug, Error)]
 enum CliError {
     #[error(
-        "usage: coop-launcher --api-base <url> --username <name> --manifest <path> --rom <path> --mgba <path> --manifest-key <path> --manifest-key-id <id> [--password-stdin]"
+        "usage: coop-launcher --api-base <url> --username <name> --release-catalog <path> [--world-id <expected id>] --mgba <path> --manifest-key <path> --manifest-key-id <id> [--password-stdin]"
     )]
     Usage,
     #[error("missing or invalid CLI value")]
     Value,
+    #[error("the server's active ROM world differs from --world-id")]
+    WorldMismatch,
     #[cfg(not(windows))]
     #[error("the secure launcher is supported only on Windows")]
     UnsupportedPlatform,
@@ -44,8 +46,10 @@ const MAX_ROM_BYTES: u64 = 64 * 1024 * 1024;
 struct Options {
     api_base: String,
     username: String,
-    manifest: PathBuf,
-    rom: PathBuf,
+    release_catalog: PathBuf,
+    /// Optional equality check; the server's acquire response selects the
+    /// world.
+    world_id: Option<u16>,
     mgba: PathBuf,
     manifest_key: PathBuf,
     manifest_key_id: String,
@@ -60,8 +64,8 @@ fn parse_options() -> Result<Options, CliError> {
     let private_root = env::temp_dir().join("pokecrossroads-coop-launcher");
     let mut api_base = None;
     let mut username = None;
-    let mut manifest = None;
-    let mut rom = None;
+    let mut release_catalog = None;
+    let mut world_id = None;
     let mut mgba = None;
     let mut manifest_key = None;
     let mut manifest_key_id = None;
@@ -81,8 +85,10 @@ fn parse_options() -> Result<Options, CliError> {
         match flag.to_str() {
             Some("--api-base") => api_base = Some(value),
             Some("--username") => username = Some(value),
-            Some("--manifest") => manifest = Some(PathBuf::from(value)),
-            Some("--rom") => rom = Some(PathBuf::from(value)),
+            Some("--release-catalog") => release_catalog = Some(PathBuf::from(value)),
+            Some("--world-id") => {
+                world_id = Some(value.parse::<u16>().map_err(|_| CliError::Value)?)
+            }
             Some("--mgba") => mgba = Some(PathBuf::from(value)),
             Some("--manifest-key") => manifest_key = Some(PathBuf::from(value)),
             Some("--manifest-key-id") => manifest_key_id = Some(value),
@@ -96,8 +102,8 @@ fn parse_options() -> Result<Options, CliError> {
     Ok(Options {
         api_base: api_base.ok_or(CliError::Usage)?,
         username: username.ok_or(CliError::Usage)?,
-        manifest: manifest.ok_or(CliError::Usage)?,
-        rom: rom.ok_or(CliError::Usage)?,
+        release_catalog: release_catalog.ok_or(CliError::Usage)?,
+        world_id,
         mgba: mgba.ok_or(CliError::Usage)?,
         manifest_key: manifest_key.ok_or(CliError::Usage)?,
         manifest_key_id: manifest_key_id.ok_or(CliError::Usage)?,
@@ -107,6 +113,83 @@ fn parse_options() -> Result<Options, CliError> {
         bridge,
         sidecar,
     })
+}
+
+/// Loads the digest-pinned release catalog. The world is not chosen here:
+/// only the server's world-aware acquire response selects it.
+fn load_release_catalog(options: &Options) -> Result<TrustedRomCatalog, CliError> {
+    // Release packaging must compile this digest into the launcher.
+    // A caller-supplied digest would authenticate nothing.
+    let trusted_sha256 = option_env!("COOP_RELEASE_CATALOG_SHA256").ok_or(CliError::Runtime)?;
+    TrustedRomCatalog::load(&options.release_catalog, trusted_sha256).map_err(|_| CliError::Runtime)
+}
+
+fn expected_world(options: &Options) -> Result<Option<RomWorldId>, CliError> {
+    options
+        .world_id
+        .map(|id| RomWorldId::new(id).map_err(|_| CliError::Value))
+        .transpose()
+}
+
+/// Maps the server's active world to the pinned local artifacts. `--world-id`
+/// is only an equality check against the server's choice.
+fn select_acquired_world(
+    catalog: &TrustedRomCatalog,
+    active_world_id: RomWorldId,
+    expected: Option<RomWorldId>,
+) -> Result<SelectedRomWorld, CliError> {
+    check_expected_world(active_world_id, expected)?;
+    catalog
+        .world(active_world_id)
+        .cloned()
+        .map_err(|_| CliError::Runtime)
+}
+
+fn check_expected_world(
+    active_world_id: RomWorldId,
+    expected: Option<RomWorldId>,
+) -> Result<(), CliError> {
+    if expected.is_some_and(|expected| expected != active_world_id) {
+        return Err(CliError::WorldMismatch);
+    }
+    Ok(())
+}
+
+/// Stages the selected world's ROM and binds the emulator to it. Any
+/// failure leaves no owned staged ROM behind.
+fn prepare_selected_world(
+    selected: &SelectedRomWorld,
+    private_root: &Path,
+    mgba: &Path,
+) -> Result<(CommandSpec, BuildCompatibility), CliError> {
+    let (verified_rom, verified_rom_marker) = stage_verified_rom(&selected.rom_path, private_root)?;
+    let prepared = (|| {
+        let mgba_spec = CommandSpec::mgba_owned_staged(mgba, &verified_rom, &verified_rom_marker)
+            .map_err(|_| CliError::Runtime)?;
+        let compatibility =
+            BuildCompatibility::validate(&selected.bridge_path, &verified_rom, mgba)
+                .map_err(|_| CliError::Runtime)?;
+        selected
+            .check_compatibility(&compatibility)
+            .map_err(|_| CliError::Runtime)?;
+        Ok((mgba_spec, compatibility))
+    })();
+    if prepared.is_err() {
+        let _ = cleanup_owned_staged_rom(&verified_rom, &verified_rom_marker);
+    }
+    prepared
+}
+
+/// Releases a world lease whose ROM could not be selected, then fails.
+async fn release_unselected_world(
+    api: &ReqwestCloudApi,
+    auth: &mut AuthSession,
+    response: AcquireWorldLeaseResponse,
+    keychain: &Arc<dyn RefreshTokenStore>,
+    error: CliError,
+) -> CliError {
+    let _ = SessionLifecycle::release_preacquired_world_lease(api, auth, response, keychain).await;
+    error
 }
 
 fn repository_root() -> Result<PathBuf, CliError> {
@@ -378,6 +461,8 @@ async fn run() -> Result<(), CliError> {
         return Err(error);
     }
     let options = parse_options()?;
+    let expected = expected_world(&options)?;
+    let catalog = load_release_catalog(&options)?;
     let repository = repository_root()?;
     let workspace = validate_workspace_parent(&options.workspace, &repository)?;
     let epoch = validate_epoch_path(&options.epoch, &repository)?;
@@ -385,19 +470,12 @@ async fn run() -> Result<(), CliError> {
     let mgba = canonicalize_executable(&options.mgba)?;
     let sidecar = canonicalize_executable(&options.sidecar)?;
     let private_root = private_temp_root()?;
-    let (verified_rom, verified_rom_marker) = stage_verified_rom(&options.rom, &private_root)?;
     // Capture executable identities before any asynchronous authentication or
     // lease work. The process supervisor revalidates these bindings at the
     // exact spawn boundary while retaining the bound file/ancestor handles.
-    let Ok(mgba_spec) = CommandSpec::mgba_owned_staged(&mgba, &verified_rom, &verified_rom_marker)
-    else {
-        let _ = cleanup_owned_staged_rom(&verified_rom, &verified_rom_marker);
-        return Err(CliError::Runtime);
-    };
+    // The ROM is staged only after the server has selected its world.
     let sidecar_template =
         CommandSpec::sidecar_template(&sidecar).map_err(|_| CliError::Runtime)?;
-    let compatibility = BuildCompatibility::validate(&options.manifest, &verified_rom, &mgba)
-        .map_err(|_| CliError::Runtime)?;
     let key = TrustedManifestKey::new(
         options.manifest_key_id,
         parse_public_key(&read_manifest_key(&options.manifest_key)?)?,
@@ -419,21 +497,49 @@ async fn run() -> Result<(), CliError> {
     let password = AuthSession::password(password).map_err(|_| CliError::Runtime)?;
     let api = ReqwestCloudApi::new(&options.api_base).map_err(|_| CliError::Runtime)?;
     let keychain: Arc<dyn RefreshTokenStore> = Arc::new(OsKeychain);
-    let auth = AuthSession::login(&api, keychain.as_ref(), options.username, password)
+    let mut auth = AuthSession::login(&api, keychain.as_ref(), options.username, password)
         .await
         .map_err(|_| CliError::Runtime)?;
+    // A catalog-bound server binds the lease to a ROM world only through the
+    // world-aware route; resume is rejected for an unbound lease.
+    let client_instance_id =
+        coop_cloud::ClientInstanceId::new(uuid::Uuid::new_v4()).map_err(|_| CliError::Runtime)?;
+    let idempotency_key =
+        coop_cloud::IdempotencyKey::new(uuid::Uuid::new_v4()).map_err(|_| CliError::Runtime)?;
+    let request = AcquireLeaseRequest::new(auth.character_id, client_instance_id, idempotency_key);
+    let response =
+        SessionLifecycle::acquire_world_with_keychain(&api, &mut auth, request, &keychain)
+            .await
+            .map_err(|_| CliError::Runtime)?;
+    let selected = match select_acquired_world(&catalog, response.active_world_id, expected) {
+        Ok(selected) => selected,
+        Err(error) => {
+            return Err(
+                release_unselected_world(&api, &mut auth, response, &keychain, error).await,
+            );
+        }
+    };
+    let (mgba_spec, compatibility) = match prepare_selected_world(&selected, &private_root, &mgba) {
+        Ok(prepared) => prepared,
+        Err(error) => {
+            return Err(
+                release_unselected_world(&api, &mut auth, response, &keychain, error).await,
+            );
+        }
+    };
     let config = SessionConfig {
-        client_instance_id: coop_cloud::ClientInstanceId::new(uuid::Uuid::new_v4())
-            .map_err(|_| CliError::Runtime)?,
+        client_instance_id,
+        rom_world_id: response.active_world_id,
         manifest: compatibility,
         trusted_manifest_key: key,
         epoch_store: EpochStore::new(epoch),
         workspace_parent: workspace,
         bridge_lua_dir: bridge.clone(),
     };
-    let mut session = SessionLifecycle::acquire_with_keychain(&api, auth, config, keychain)
-        .await
-        .map_err(|_| CliError::Runtime)?;
+    let mut session =
+        SessionLifecycle::from_world_lease_with_keychain(&api, auth, config, keychain, response)
+            .await
+            .map_err(|_| CliError::Runtime)?;
     if session.renew_lease_before_child_start(&api).await.is_err() {
         let _ = session.release(&api).await;
         return Err(CliError::Runtime);
@@ -521,6 +627,37 @@ fn platform_error() -> Option<CliError> {
 mod tests {
     use super::*;
     use tempfile::tempdir;
+
+    #[test]
+    fn world_id_is_only_an_equality_check_against_the_server_world() {
+        let main = RomWorldId::new(1).unwrap();
+        let cormoria = RomWorldId::new(2).unwrap();
+        assert!(check_expected_world(cormoria, None).is_ok());
+        assert!(check_expected_world(cormoria, Some(cormoria)).is_ok());
+        assert!(matches!(
+            check_expected_world(cormoria, Some(main)),
+            Err(CliError::WorldMismatch)
+        ));
+        let mut options = Options {
+            api_base: String::new(),
+            username: String::new(),
+            release_catalog: PathBuf::from("release_catalog.json"),
+            world_id: None,
+            mgba: PathBuf::new(),
+            manifest_key: PathBuf::new(),
+            manifest_key_id: String::new(),
+            password_stdin: false,
+            workspace: PathBuf::new(),
+            epoch: PathBuf::new(),
+            bridge: PathBuf::new(),
+            sidecar: PathBuf::new(),
+        };
+        assert_eq!(expected_world(&options).unwrap(), None);
+        options.world_id = Some(2);
+        assert_eq!(expected_world(&options).unwrap(), Some(cormoria));
+        options.world_id = Some(0);
+        assert!(matches!(expected_world(&options), Err(CliError::Value)));
+    }
 
     #[test]
     fn epoch_path_is_confined_to_private_temp_root() {

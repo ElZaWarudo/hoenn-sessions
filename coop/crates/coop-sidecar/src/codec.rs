@@ -46,6 +46,8 @@ pub enum MessageType {
     /// The partner's answer to a received offer
     /// (`coop_protocol::TradeOfferDecisionRecord`, 16 bytes).
     TradeOfferDecision = 0x0017,
+    PortalTravelRequest = 0x0018,
+    ArrivalProof = 0x0019,
     SessionReady = 0x0100,
     RemotePlayerSpawn = 0x0101,
     RemotePlayerUpdate = 0x0102,
@@ -81,6 +83,7 @@ pub enum MessageType {
     /// Where an offer stands (`coop_protocol::TradeOfferStatusRecord`, 12
     /// bytes).
     TradeOfferStatus = 0x011B,
+    ArrivalChallenge = 0x011C,
 }
 
 impl MessageType {
@@ -104,6 +107,8 @@ impl MessageType {
             | Self::GroupTravelClient
             | Self::CompanionState
             | Self::SocialSignal
+            | Self::PortalTravelRequest
+            | Self::ArrivalProof
             | Self::ProgressObservation
             | Self::BattleAbortRequest
             | Self::BattleReady
@@ -127,6 +132,7 @@ impl MessageType {
             | Self::GroupTravelServer
             | Self::RemoteCompanion
             | Self::RemoteSocialSignal
+            | Self::ArrivalChallenge
             | Self::RemoteInteraction => Direction::SidecarToRom,
             Self::ProgressEvent => Direction::SidecarToRom,
             Self::PairingStatus => Direction::SidecarToRom,
@@ -170,6 +176,8 @@ impl TryFrom<u16> for MessageType {
             0x0015 => Self::BattleReady,
             0x0016 => Self::TradeOfferRequest,
             0x0017 => Self::TradeOfferDecision,
+            0x0018 => Self::PortalTravelRequest,
+            0x0019 => Self::ArrivalProof,
             0x0100 => Self::SessionReady,
             0x0101 => Self::RemotePlayerSpawn,
             0x0102 => Self::RemotePlayerUpdate,
@@ -198,6 +206,7 @@ impl TryFrom<u16> for MessageType {
             0x0119 => Self::TradeCommit,
             0x011A => Self::TradeOfferReceived,
             0x011B => Self::TradeOfferStatus,
+            0x011C => Self::ArrivalChallenge,
             _ => return Err(FrameCodecError::UnknownMessageType(value)),
         };
         Ok(message_type)
@@ -523,6 +532,38 @@ mod tests {
     }
 
     #[test]
+    fn portal_request_frame_preserves_id_and_rom_direction() {
+        let frame =
+            BridgeFrame::new(MessageType::PortalTravelRequest, 6, 9, b"to_cormoria").unwrap();
+        assert_eq!(frame.direction(), Direction::RomToSidecar);
+        assert_eq!(frame.payload(), b"to_cormoria");
+        assert_eq!(
+            BridgeFrame::decode_for(&frame.encode(), Direction::RomToSidecar).unwrap(),
+            frame
+        );
+        assert!(BridgeFrame::decode_for(&frame.encode(), Direction::SidecarToRom).is_err());
+    }
+
+    #[test]
+    fn protocol_five_travel_extensions_do_not_alias_pairing_or_progress() {
+        for (wire, kind, direction) in [
+            (0x0012, MessageType::PairingRequest, Direction::RomToSidecar),
+            (0x0013, MessageType::ProgressObservation, Direction::RomToSidecar),
+            (0x0018, MessageType::PortalTravelRequest, Direction::RomToSidecar),
+            (0x0019, MessageType::ArrivalProof, Direction::RomToSidecar),
+            (0x0111, MessageType::RemoteInteraction, Direction::SidecarToRom),
+            (0x011C, MessageType::ArrivalChallenge, Direction::SidecarToRom),
+        ] {
+            assert_eq!(MessageType::try_from(wire), Ok(kind));
+            assert_eq!(kind as u16, wire);
+            let frame = BridgeFrame::new(kind, 1, 0, &[]).unwrap();
+            assert_eq!(BridgeFrame::decode_for(&frame.encode(), direction).unwrap(), frame);
+        }
+        assert!(MessageType::try_from(0x001A).is_err());
+        assert!(MessageType::try_from(0x011D).is_err());
+    }
+
+    #[test]
     fn group_travel_message_types_preserve_direction_and_payload_size() {
         let payload = [0_u8; coop_protocol::GROUP_TRAVEL_RECORD_SIZE];
         let client = BridgeFrame::new(MessageType::GroupTravelClient, 3, 9, &payload).unwrap();
@@ -787,8 +828,8 @@ mod tests {
             TradeOfferStatusRecord::decode(&status.encode().unwrap()),
             Ok(status)
         );
-        assert!(MessageType::try_from(0x0018).is_err());
-        assert!(MessageType::try_from(0x011C).is_err());
+        assert!(MessageType::try_from(0x001A).is_err());
+        assert!(MessageType::try_from(0x011D).is_err());
     }
 
     #[test]

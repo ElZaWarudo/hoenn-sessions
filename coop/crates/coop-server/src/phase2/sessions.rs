@@ -2,14 +2,16 @@
 
 use super::storage::{
     ACQUIRE_IDEMPOTENCY_TTL_MS, AcquireRecord, GroupEndNoticeRecord, GroupStatus,
-    HEARTBEAT_INTERVAL_MS, LEASE_TTL_MS, LeaseRecord, MAX_ACQUIRE_HISTORY, MAX_RELEASE_KEYS,
-    RECONNECT_GRACE_MS, Store,
+    HEARTBEAT_INTERVAL_MS, HandoffReacquireRecord, LEASE_TTL_MS, LeaseRecord, MAX_ACQUIRE_HISTORY,
+    MAX_RELEASE_KEYS, RECONNECT_GRACE_MS, ROM_HANDOFF_REACQUIRE_GRACE_MS, State, Store,
 };
 use super::{AuthenticatedActor, Phase2Error};
 use coop_cloud::{
-    AcquireLeaseRequest, CharacterId, GroupId, HeartbeatLeaseRequest, LeaseContract, LeaseFence,
-    LogoutResponse, ReconnectLeaseRequest, ReleaseLeaseRequest, SessionEpoch,
+    AcquireLeaseRequest, AcquireWorldLeaseResponse, CharacterId, GroupId, HeartbeatLeaseRequest,
+    LeaseContract, LeaseFence, LogoutResponse, ReconnectLeaseRequest, ReleaseLeaseRequest,
+    RuntimeBuildIdentity, SessionEpoch, SnapshotId,
 };
+use coop_protocol::RomWorldId;
 
 /// A group closed because one member's reconnect window ended.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -20,8 +22,52 @@ pub(crate) struct ExpiredGroup {
     pub partner_session: Option<coop_cloud::StableRuntimeSession>,
 }
 
+/// Deadline for a member whose source lease a committed ROM handoff releases.
+pub(crate) fn handoff_reacquire_deadline(now: u64) -> Result<u64, Phase2Error> {
+    now.checked_add(ROM_HANDOFF_REACQUIRE_GRACE_MS)
+        .ok_or(Phase2Error::Internal)
+}
+
+/// Marks the lease the caller has just released as part of a committed ROM
+/// handoff. Group expiry treats the member as travelling, not leaving, until
+/// `reacquire_by` or until any new lease for the character supersedes it.
+pub(crate) fn record_handoff_release(
+    state: &mut State,
+    character_id: CharacterId,
+    reacquire_by: u64,
+) {
+    let Some(lease) = state.leases.get(&character_id) else {
+        return;
+    };
+    debug_assert!(lease.released);
+    state.rom_handoff_reacquire.insert(
+        character_id,
+        HandoffReacquireRecord {
+            released_session: lease.contract.stable_runtime_session(),
+            reacquire_by,
+        },
+    );
+}
+
+fn awaiting_handoff_reacquire(state: &State, member: CharacterId, now: u64) -> bool {
+    state
+        .rom_handoff_reacquire
+        .get(&member)
+        .is_some_and(|pending| {
+            now <= pending.reacquire_by
+                && state.leases.get(&member).is_some_and(|lease| {
+                    lease.released
+                        && lease.contract.stable_runtime_session() == pending.released_session
+                })
+        })
+}
+
 /// Close expired groups in one repository transaction. The returned events can
 /// be delivered after the transaction commits, without holding the store lock.
+///
+/// A member leaves when its lease is released or its reconnect grace ends. A
+/// source lease released by a committed ROM handoff is not a departure while
+/// the member is within its bounded window to acquire the destination lease.
 pub(crate) fn expire_groups(store: &Store) -> Result<Vec<ExpiredGroup>, Phase2Error> {
     let now = store.now();
     store.write_transaction(|state| {
@@ -34,10 +80,11 @@ pub(crate) fn expire_groups(store: &Store) -> Result<Vec<ExpiredGroup>, Phase2Er
                 }
                 let members = record.group.members();
                 let expired_member = members.iter().copied().find(|member| {
-                    state
-                        .leases
-                        .get(member)
-                        .is_none_or(|lease| lease.released || lease.grace_until < now)
+                    !awaiting_handoff_reacquire(state, *member, now)
+                        && state
+                            .leases
+                            .get(member)
+                            .is_none_or(|lease| lease.released || lease.grace_until < now)
                 })?;
                 let partner = if members[0] == expired_member {
                     members[1]
@@ -83,6 +130,15 @@ pub(crate) fn expire_groups(store: &Store) -> Result<Vec<ExpiredGroup>, Phase2Er
                     && lease.contract.stable_runtime_session() == notice.session
             })
         });
+        let lapsed: Vec<_> = state
+            .rom_handoff_reacquire
+            .keys()
+            .copied()
+            .filter(|member| !awaiting_handoff_reacquire(state, *member, now))
+            .collect();
+        for member in lapsed {
+            state.rom_handoff_reacquire.remove(&member);
+        }
         // The member cancellation above runs before the group is marked
         // closed so that logout/session replacement cannot discard active
         // scene recovery. Reconcile after all closures are durable; this is
@@ -162,6 +218,9 @@ pub(crate) fn acquire(
     store.write_transaction(|state| {
         if !owns(state, actor, request.character_id) {
             return Err(Phase2Error::NotFound);
+        }
+        if state.paired_handoff_for_member(request.character_id) {
+            return Err(Phase2Error::Conflict);
         }
         state
             .acquire_history
@@ -246,8 +305,12 @@ pub(crate) fn acquire(
                 released: false,
                 reconnect: None,
                 release_keys: Vec::new(),
+                runtime_binding: None,
             },
         );
+        // Any new lease supersedes a pending post-handoff re-acquisition;
+        // ordinary release and grace rules apply to it from here on.
+        state.rom_handoff_reacquire.remove(&request.character_id);
         if let Some(notice) = state.group_end_notices.get_mut(&request.character_id) {
             if previous_session == Some(notice.session) {
                 notice.session = contract.stable_runtime_session();
@@ -264,6 +327,228 @@ pub(crate) fn acquire(
         );
         state.last_seen_at.insert(request.character_id, now);
         Ok(contract)
+    })
+}
+
+fn authoritative_world(
+    state: &super::storage::State,
+    store: &Store,
+    character_id: coop_cloud::CharacterId,
+) -> Result<
+    (
+        RomWorldId,
+        Option<SnapshotId>,
+        RuntimeBuildIdentity,
+        coop_cloud::Revision,
+    ),
+    Phase2Error,
+> {
+    let character = state
+        .characters
+        .get(&character_id)
+        .ok_or(Phase2Error::NotFound)?;
+    let catalog = store
+        .config
+        .release_catalog
+        .as_ref()
+        .ok_or(Phase2Error::Internal)?;
+    if character.revision == coop_cloud::Revision::initial() {
+        if character.active_snapshot.is_some() || !character.world_heads.is_empty() {
+            return Err(Phase2Error::Conflict);
+        }
+        let world_id = RomWorldId::new(1).map_err(|_| Phase2Error::Internal)?;
+        let build = catalog
+            .for_snapshot(Some(world_id), Some(world_id))
+            .map_err(|_| Phase2Error::Internal)?
+            .clone();
+        return Ok((world_id, None, build, character.revision));
+    }
+    let snapshot_id = character.active_snapshot.ok_or(Phase2Error::Conflict)?;
+    let snapshot = state
+        .snapshots
+        .get(&snapshot_id)
+        .ok_or(Phase2Error::Conflict)?;
+    if snapshot.character_id != character_id
+        || snapshot.revision != character.revision
+        || character.world_heads.get(&snapshot.rom_world_id) != Some(&snapshot_id)
+    {
+        return Err(Phase2Error::Conflict);
+    }
+    let build = catalog
+        .for_snapshot(Some(snapshot.rom_world_id), Some(snapshot.rom_world_id))
+        .map_err(|_| Phase2Error::Internal)?
+        .clone();
+    Ok((
+        snapshot.rom_world_id,
+        Some(snapshot_id),
+        build,
+        character.revision,
+    ))
+}
+
+/// Acquires a lease and binds it to the server-authoritative active ROM world
+/// in the same repository transaction. This route is deliberately separate
+/// from the legacy acquire route so old clients retain their behavior while
+/// new clients can safely use resume-package and realtime capabilities before
+/// minting a ticket.
+pub(crate) fn acquire_world(
+    store: &Store,
+    actor: AuthenticatedActor,
+    request: &AcquireLeaseRequest,
+) -> Result<AcquireWorldLeaseResponse, Phase2Error> {
+    if request.api_version.value() != 1 {
+        return Err(Phase2Error::InvalidRequest);
+    }
+    if request.character_id != actor.character_id {
+        return Err(Phase2Error::NotFound);
+    }
+    let now = store.now();
+    let expires = now.checked_add(LEASE_TTL_MS).ok_or(Phase2Error::Internal)?;
+    let grace_until = expires
+        .checked_add(RECONNECT_GRACE_MS)
+        .ok_or(Phase2Error::Internal)?;
+    let history_expires = now
+        .checked_add(ACQUIRE_IDEMPOTENCY_TTL_MS)
+        .ok_or(Phase2Error::Internal)?;
+    store.write_transaction(|state| {
+        if !owns(state, actor, request.character_id) {
+            return Err(Phase2Error::NotFound);
+        }
+        if state.paired_handoff_for_member(request.character_id) {
+            return Err(Phase2Error::Conflict);
+        }
+        let (world_id, snapshot_id, build, revision) =
+            authoritative_world(state, store, request.character_id)?;
+        state
+            .acquire_history
+            .retain(|_, record| record.expires_at > now);
+        if let Some(record) = state.acquire_history.get(&request.idempotency_key) {
+            if record.character_id != request.character_id
+                || record.client_instance_id != request.client_instance_id
+            {
+                return Err(Phase2Error::Conflict);
+            }
+            let lease = state.leases.get(&request.character_id);
+            let binding_matches = lease.is_some_and(|lease| {
+                lease.runtime_binding.as_ref().is_some_and(|binding| {
+                    binding.world_id == world_id
+                        && binding.build == build
+                        && binding.session == lease.contract.stable_runtime_session()
+                })
+            });
+            let Some(lease) = lease else {
+                return Err(Phase2Error::AcquireClosed);
+            };
+            if lease.contract.stable_runtime_session() != record.contract.stable_runtime_session()
+                || lease.released
+            {
+                return Err(Phase2Error::AcquireClosed);
+            }
+            if lease.contract.expires_at.value() <= now || lease.grace_until <= now {
+                return Err(Phase2Error::AcquireClosed);
+            }
+            if lease.contract.current_revision == revision
+                && lease.contract.current_revision.value()
+                    >= record.contract.current_revision.value()
+                && binding_matches
+            {
+                return Ok(AcquireWorldLeaseResponse {
+                    lease: lease.contract,
+                    active_world_id: world_id,
+                    active_snapshot_id: snapshot_id,
+                });
+            }
+            return Err(Phase2Error::Conflict);
+        }
+        if state
+            .leases
+            .get(&request.character_id)
+            .is_some_and(|existing| {
+                !existing.released
+                    && existing.grace_until > now
+                    && !(request.replace_same_client
+                        && existing.contract.client_instance_id == request.client_instance_id)
+            })
+        {
+            return Err(Phase2Error::Conflict);
+        }
+        let history_for_character = state
+            .acquire_history
+            .values()
+            .filter(|record| record.character_id == request.character_id)
+            .count();
+        if history_for_character >= MAX_ACQUIRE_HISTORY {
+            return Err(Phase2Error::Busy);
+        }
+        if request.replace_same_client
+            && state
+                .leases
+                .get(&request.character_id)
+                .is_some_and(|existing| {
+                    !existing.released
+                        && existing.grace_until > now
+                        && existing.contract.client_instance_id == request.client_instance_id
+                })
+        {
+            super::group_travel::cancel_pending_for_member(state, actor.character_id);
+        }
+        let character = state
+            .characters
+            .get_mut(&request.character_id)
+            .ok_or(Phase2Error::NotFound)?;
+        if character.revision != revision {
+            return Err(Phase2Error::Conflict);
+        }
+        let next_epoch = character
+            .last_session_epoch
+            .checked_add(1)
+            .ok_or(Phase2Error::Internal)?;
+        let epoch = SessionEpoch::new(next_epoch).map_err(|_| Phase2Error::Internal)?;
+        let session_id = store.session_id()?;
+        let contract = LeaseContract::new(
+            LeaseFence::new(
+                session_id,
+                request.character_id,
+                revision,
+                epoch,
+                request.client_instance_id,
+            ),
+            Store::unix_timestamp(expires)?,
+            HEARTBEAT_INTERVAL_MS,
+        )
+        .map_err(|_| Phase2Error::Internal)?;
+        character.last_session_epoch = next_epoch;
+        state.leases.insert(
+            request.character_id,
+            LeaseRecord {
+                contract,
+                grace_until,
+                released: false,
+                reconnect: None,
+                release_keys: Vec::new(),
+                runtime_binding: Some(super::storage::RuntimeWorldBinding {
+                    world_id,
+                    build,
+                    session: contract.stable_runtime_session(),
+                }),
+            },
+        );
+        // The destination world lease ends the post-handoff window.
+        state.rom_handoff_reacquire.remove(&request.character_id);
+        state.acquire_history.insert(
+            request.idempotency_key,
+            AcquireRecord {
+                character_id: request.character_id,
+                client_instance_id: request.client_instance_id,
+                contract,
+                expires_at: history_expires,
+            },
+        );
+        Ok(AcquireWorldLeaseResponse {
+            lease: contract,
+            active_world_id: world_id,
+            active_snapshot_id: snapshot_id,
+        })
     })
 }
 
@@ -326,7 +611,10 @@ pub(crate) fn reconnect(
         if !owns(state, actor, request.character_id) {
             return Err(Phase2Error::NotFound);
         }
-        let (lease_contract, grace_until, released, reconnect) = {
+        if state.paired_handoff_for_member(request.character_id) {
+            return Err(Phase2Error::Conflict);
+        }
+        let (lease_contract, grace_until, released, reconnect, runtime_binding) = {
             let lease = state
                 .leases
                 .get(&request.character_id)
@@ -336,6 +624,7 @@ pub(crate) fn reconnect(
                 lease.grace_until,
                 lease.released,
                 lease.reconnect,
+                lease.runtime_binding.clone(),
             )
         };
         if let Some((key, old_fence, rotated)) = reconnect {
@@ -387,6 +676,26 @@ pub(crate) fn reconnect(
             HEARTBEAT_INTERVAL_MS,
         )
         .map_err(|_| Phase2Error::Internal)?;
+        let runtime_binding = runtime_binding
+            .map(|binding| {
+                let catalog = store
+                    .config
+                    .release_catalog
+                    .as_ref()
+                    .ok_or(Phase2Error::Authentication)?;
+                if binding.session != lease_contract.stable_runtime_session()
+                    || catalog.for_snapshot(Some(binding.world_id), Some(binding.world_id))
+                        != Ok(&binding.build)
+                {
+                    return Err(Phase2Error::Authentication);
+                }
+                Ok(super::storage::RuntimeWorldBinding {
+                    world_id: binding.world_id,
+                    build: binding.build,
+                    session: contract.stable_runtime_session(),
+                })
+            })
+            .transpose()?;
         if let Some(character) = state.characters.get_mut(&request.character_id) {
             character.last_session_epoch = next;
         }
@@ -397,6 +706,7 @@ pub(crate) fn reconnect(
         lease.contract = contract;
         lease.grace_until = grace_until;
         lease.reconnect = Some((request.idempotency_key, old_fence, contract));
+        lease.runtime_binding = runtime_binding;
         if let Some(notice) = state.group_end_notices.get_mut(&request.character_id) {
             if notice.session == lease_contract.stable_runtime_session() {
                 notice.session = contract.stable_runtime_session();
@@ -422,6 +732,9 @@ pub(crate) fn release(
     store.write_transaction(|state| {
         if !owns(state, actor, request.character_id) {
             return Err(Phase2Error::NotFound);
+        }
+        if state.paired_handoff_for_member(request.character_id) {
+            return Err(Phase2Error::Conflict);
         }
         let lease = state
             .leases
@@ -463,6 +776,7 @@ pub(crate) fn release(
             .get_mut(&request.character_id)
             .ok_or(Phase2Error::Expired)?;
         lease.released = true;
+        lease.runtime_binding = None;
         lease
             .release_keys
             .push((request.idempotency_key, request_fence));

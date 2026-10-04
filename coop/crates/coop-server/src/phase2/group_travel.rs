@@ -816,7 +816,7 @@ fn story_route_definition(id: &str) -> Option<RouteDefinition> {
     }
 }
 
-fn story_save_matches_route(id: &str, save: &coop_save::ValidatedSave) -> bool {
+fn story_save_matches_route(id: &str, save: &coop_save::ValidatedSaveV2) -> bool {
     match id {
         FIRST_BRINEY_ROUTE_ID => save
             .briney_voyage_evidence()
@@ -991,6 +991,9 @@ pub(super) fn lease_matches(
     fence: LeaseFence,
     now: u64,
 ) -> Result<(), Phase2Error> {
+    if state.handoff_for_member(character_id) {
+        return Err(Phase2Error::Conflict);
+    }
     let lease = state
         .leases
         .get(&character_id)
@@ -1009,6 +1012,10 @@ fn active_member_lease(
     character_id: CharacterId,
     now: u64,
 ) -> Result<(), Phase2Error> {
+    if state.handoff_for_member(character_id) {
+        return Err(Phase2Error::Conflict);
+    }
+
     validate_member(state, character_id)?;
     let lease = state
         .leases
@@ -1279,6 +1286,10 @@ fn create_invitation_with_options(
             || state
                 .active_group_by_member
                 .contains_key(&request.invitee_character_id)
+            || state.rom_handoff_staging.contains_key(&actor.character_id)
+            || state
+                .rom_handoff_staging
+                .contains_key(&request.invitee_character_id)
         {
             return Err(Phase2Error::Conflict);
         }
@@ -1394,6 +1405,8 @@ pub(crate) fn accept_invitation(
         }
         if state.active_group_by_member.contains_key(&initiator)
             || state.active_group_by_member.contains_key(&recipient)
+            || state.rom_handoff_staging.contains_key(&initiator)
+            || state.rom_handoff_staging.contains_key(&recipient)
         {
             return Err(Phase2Error::Conflict);
         }
@@ -2574,7 +2587,7 @@ pub(crate) fn resolve_story_travel_recovery(
             coop_protocol::IDENTITY_REGISTRY_DIGEST,
         );
         let validated =
-            coop_save::parse(&sav_bytes, registry).map_err(|_| Phase2Error::Conflict)?;
+            coop_save::parse_v2(&sav_bytes, registry).map_err(|_| Phase2Error::Conflict)?;
         if !story_save_matches_route(route_id.as_str(), &validated) {
             return Err(Phase2Error::Conflict);
         }
@@ -2867,7 +2880,7 @@ pub(crate) fn receipt_story_scene(
         coop_protocol::IDENTITY_REGISTRY_VERSION,
         coop_protocol::IDENTITY_REGISTRY_DIGEST,
     );
-    let validated = coop_save::parse(&sav_bytes, registry).map_err(|_| Phase2Error::Conflict)?;
+    let validated = coop_save::parse_v2(&sav_bytes, registry).map_err(|_| Phase2Error::Conflict)?;
     if !story_save_matches_route(route_id.as_str(), &validated) {
         return Err(Phase2Error::Conflict);
     }
@@ -3499,7 +3512,7 @@ mod tests {
     use coop_cloud::{
         AcquireLeaseRequest, ClientInstanceId, CreateGroupInvitationRequest, IdempotencyKey,
         InvitationCode, OnlineAction, OnlineActionRequest, OnlineActionResponse,
-        OnlineSnapshotRequest, Password, RegisterRequest,
+        OnlineSnapshotRequest, Password, RegisterRequest, SnapshotId,
     };
     use coop_protocol::{RegionalProgress, WorldZone};
     use std::sync::{
@@ -3665,6 +3678,88 @@ mod tests {
             second_lease,
             accepted.group.group_id,
         )
+    }
+
+    fn stage_solo_handoff(
+        app: &super::super::Phase2App,
+        actor: AuthenticatedActor,
+        lease: &coop_cloud::LeaseContract,
+    ) {
+        let request = coop_cloud::RomHandoffPrepareRequest {
+            api_version: coop_cloud::ApiVersion::V1,
+            character_id: actor.character_id,
+            session_id: lease.session_id,
+            session_epoch: lease.session_epoch,
+            client_instance_id: lease.client_instance_id,
+            expected_revision: lease.current_revision,
+            source_snapshot_id: SnapshotId::new(Uuid::new_v4()).expect("source"),
+            portal_id: "hoenn_to_cormoria".to_owned(),
+            idempotency_key: IdempotencyKey::new(Uuid::new_v4()).expect("key"),
+        };
+        app.store
+            .write_transaction(|state| {
+                state.rom_handoff_staging.insert(
+                    actor.character_id,
+                    super::super::storage::RomHandoffStage {
+                        request,
+                        stage_id: SnapshotId::new(Uuid::new_v4()).expect("stage"),
+                        source_world_id: coop_protocol::RomWorldId::new(1).expect("world"),
+                        destination_world_id: coop_protocol::RomWorldId::new(2).expect("world"),
+                        arrival_portal_id: "cormoria_harbor".to_owned(),
+                        destination_save_sha256: coop_cloud::Sha256Digest::of_bytes(b"stage"),
+                        expires_at: app.store.now() + 60_000,
+                    },
+                );
+                Ok::<(), Phase2Error>(())
+            })
+            .expect("stage");
+    }
+
+    #[test]
+    fn invitation_cannot_form_group_while_either_member_has_a_staged_rom_handoff() {
+        let (app, _) = app_with_clock();
+        let (first, first_lease) = account(&app, "first", "first-invite");
+        let (second, second_lease) = account(&app, "second", "second-invite");
+        let invite = || {
+            CreateGroupInvitationRequest::new(
+                first_lease.fence(),
+                second.character_id,
+                IdempotencyKey::new(Uuid::new_v4()).expect("key"),
+            )
+        };
+
+        stage_solo_handoff(&app, first, &first_lease);
+        assert!(matches!(
+            create_invitation(&app.store, first, &invite()),
+            Err(Phase2Error::Conflict)
+        ));
+        app.store
+            .write_transaction(|state| {
+                state.rom_handoff_staging.remove(&first.character_id);
+                Ok::<(), Phase2Error>(())
+            })
+            .unwrap();
+        let invitation = create_invitation(&app.store, first, &invite()).unwrap();
+        stage_solo_handoff(&app, second, &second_lease);
+        assert!(matches!(
+            accept_invitation(
+                &app.store,
+                second,
+                invitation.invitation_id,
+                &AcceptGroupInvitationRequest::new(
+                    second_lease.fence(),
+                    IdempotencyKey::new(Uuid::new_v4()).expect("key"),
+                ),
+            ),
+            Err(Phase2Error::Conflict)
+        ));
+        app.store
+            .read_transaction(|state| {
+                assert!(state.active_group_by_member.is_empty());
+                assert!(!state.group_invitations[&invitation.invitation_id].consumed);
+                Ok::<(), Phase2Error>(())
+            })
+            .unwrap();
     }
 
     #[test]
@@ -5246,6 +5341,20 @@ mod tests {
                 coop_cloud::HeartbeatLeaseRequest::new(second_lease.fence()),
             )
             .expect("second heartbeat");
+        // Exercise proposal expiry while both leases remain live. Invitation
+        // and consent TTLs may change independently of this revalidation test.
+        let expiry = app.store.now() + 10_000;
+        app.store
+            .write_transaction(|state| {
+                state
+                    .group_travel_proposals
+                    .get_mut(&proposal.proposal_id)
+                    .ok_or(Phase2Error::Internal)?
+                    .view
+                    .expires_at = Store::unix_timestamp(expiry)?;
+                Ok::<(), Phase2Error>(())
+            })
+            .expect("advance proposal expiry");
         clock.advance(10_001);
         assert_eq!(
             current_travel_proposal(&app.store, first, group_id, first_heartbeat.fence()),
@@ -6656,9 +6765,9 @@ mod tests {
     }
 
     fn dewford_first_voyage_sav() -> Vec<u8> {
-        let mut bytes =
-            include_bytes!("../../../coop-save/tests/fixtures/stock-mgba-first-save.sav").to_vec();
-        // The selected stock slot carries the real ROM extension. Only the
+        let mut bytes = super::super::tests::valid_character_sav(false);
+        // A fresh synthetic CSP2 fixture exercises current save admission.
+        // These bytes are never uploaded to the retained live service.
         // SaveBlock1 scene facts change; seal each affected flash sector.
         for (offset, data) in [
             (0x04_usize, &[0_u8, 11][..]),
@@ -6666,8 +6775,8 @@ mod tests {
                 coop_save::SAVE_BLOCK1_VARS_OFFSET + 2 * (0x408e - 0x4000),
                 &[0, 0][..],
             ),
-            (0x1270 + 0x26, &[0x04][..]),
-            (0x1270 + 0x5c, &[0x40][..]),
+            (coop_save::SAVE_BLOCK1_FLAGS_OFFSET + 0x26, &[0x04][..]),
+            (coop_save::SAVE_BLOCK1_FLAGS_OFFSET + 0x5c, &[0x40][..]),
         ] {
             for (index, byte) in data.iter().enumerate() {
                 let position = offset + index;
@@ -6690,14 +6799,14 @@ mod tests {
                 }
             }
         }
-        let validated = coop_save::parse(
+        let validated = coop_save::parse_v2(
             &bytes,
             coop_save::RegistryContract::new(
                 coop_protocol::IDENTITY_REGISTRY_VERSION,
                 coop_protocol::IDENTITY_REGISTRY_DIGEST,
             ),
         )
-        .expect("valid stock SAV");
+        .expect("valid synthetic CSP2 scene SAV");
         assert!(
             validated
                 .briney_voyage_evidence()
@@ -6724,6 +6833,7 @@ mod tests {
         let next_revision = fence.current_revision.next().expect("next revision");
         let snapshot = coop_cloud::SnapshotRecord::new(
             snapshot_id,
+            coop_protocol::RomWorldId::new(1).unwrap(),
             coop_cloud::SnapshotFence::new(
                 fence.session_id,
                 actor.character_id,
@@ -7022,6 +7132,7 @@ mod tests {
             .expect("next revision");
         let snapshot = coop_cloud::SnapshotRecord::new(
             snapshot_id,
+            coop_protocol::RomWorldId::new(1).unwrap(),
             coop_cloud::SnapshotFence::new(
                 first_lease.fence().session_id,
                 first.character_id,
@@ -7223,5 +7334,110 @@ mod tests {
                 Ok::<_, Phase2Error>(())
             })
             .expect("reconciled state");
+    }
+    #[test]
+    fn both_rom_stage_kinds_fence_group_companion_mutations() {
+        for paired in [false, true] {
+            for index in 0..2 {
+                let (app, _) = app_with_clock();
+                let (a, fa, b, fb, group) = two_member_group(&app);
+                let actors = [a, b];
+                let leases = [fa, fb];
+                app.store
+                    .write_transaction(|state| {
+                        super::super::storage::test_stage_handoff(
+                            state,
+                            actors[index].character_id,
+                            paired,
+                            app.store.now(),
+                        );
+                        Ok::<_, Phase2Error>(())
+                    })
+                    .unwrap();
+                let before = app
+                    .store
+                    .inspect_state(|state| {
+                        let mut out = Vec::new();
+                        ciborium::into_writer(state, &mut out).unwrap();
+                        out
+                    })
+                    .unwrap();
+                for actor in 0..2 {
+                    assert_eq!(
+                        app.store.read_transaction(|state| lease_matches(
+                            state,
+                            actors[actor].character_id,
+                            leases[actor].fence(),
+                            app.store.now()
+                        )),
+                        Err(Phase2Error::Conflict)
+                    );
+                    assert_eq!(
+                        app.store.read_transaction(|state| active_member_lease(
+                            state,
+                            actors[actor].character_id,
+                            app.store.now()
+                        )),
+                        Err(Phase2Error::Conflict)
+                    );
+                }
+                let after = app
+                    .store
+                    .inspect_state(|state| {
+                        assert!(state.groups.contains_key(&group));
+                        let mut out = Vec::new();
+                        ciborium::into_writer(state, &mut out).unwrap();
+                        out
+                    })
+                    .unwrap();
+                assert_eq!(before, after);
+            }
+        }
+    }
+
+    #[test]
+    fn pairing_redeem_denies_staged_inviter_without_consuming_code() {
+        for staged_joiner in [false, true] {
+            let (app, _) = app_with_clock();
+            let (a, fa) = account(&app, "first", "first-invite");
+            let (b, fb) = account(&app, "second", "second-invite");
+            let code = super::super::pairing::create_code(
+                &app.store,
+                a,
+                &coop_cloud::CreatePairingCodeRequest::new(fa.fence()),
+            )
+            .unwrap();
+            let actor = if staged_joiner { b } else { a };
+            app.store
+                .write_transaction(|state| {
+                    super::super::storage::test_stage_handoff(
+                        state,
+                        actor.character_id,
+                        false,
+                        app.store.now(),
+                    );
+                    Ok::<_, Phase2Error>(())
+                })
+                .unwrap();
+            assert!(matches!(
+                super::super::pairing::redeem_code(
+                    &app.store,
+                    b,
+                    &coop_cloud::RedeemPairingCodeRequest::new(fb.fence(), code.code)
+                ),
+                Err(Phase2Error::Conflict)
+            ));
+            app.store
+                .inspect_state(|state| {
+                    assert!(state.groups.is_empty());
+                    assert!(
+                        state
+                            .group_pairing_codes
+                            .values()
+                            .all(|code| !code.consumed)
+                    );
+                })
+                .unwrap();
+        }
     }
 }

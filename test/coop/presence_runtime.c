@@ -41,6 +41,10 @@
 #include "metatile_behavior.h"
 #include "test/test.h"
 
+/* Remote presence locations are validated against the running ROM's map
+ * headers. Tests whose fixtures use Hoenn maps are gated to the Main ROM
+ * (ROM_WORLD == 1); the Cormoria ROM does not link those headers. */
+
 _Static_assert(COOP_PRESENCE_RUNTIME_SAMPLE_INTERVAL == 6,
                "presence samples use the ten-Hz six-frame cadence");
 _Static_assert(COOP_PRESENCE_RUNTIME_INTERPOLATION_FRAMES == 6,
@@ -72,6 +76,7 @@ extern u8 CoopPresenceRuntime_TestNameWindow(void);
 extern u8 CoopPresenceRuntime_TestInteractionMenuTask(void);
 extern bool8 CoopPresenceRuntime_TestChooseInteraction(s8 selection);
 
+#if ROM_WORLD == 1
 static struct CoopPresenceSpawn RuntimeSpawn(u64 handle, u32 sequence)
 {
     struct CoopPresenceSpawn spawn = {
@@ -105,13 +110,16 @@ static struct CoopPresenceSpawn RuntimeSpawn(u64 handle, u32 sequence)
     };
     return spawn;
 }
+#endif // ROM_WORLD == 1
 
 static EWRAM_DATA struct MapLayout sRuntimeTestMapLayout;
 static EWRAM_DATA u16 sRuntimeTestMapData[32 * 32];
+#if ROM_WORLD == 1
 static EWRAM_DATA struct MapEvents sRuntimeTestMapEvents;
 static EWRAM_DATA struct ObjectEventTemplate sRuntimeTestObjectTemplates[1];
 static EWRAM_DATA struct MapConnection sRuntimeTestDiveConnection;
 static EWRAM_DATA struct MapConnections sRuntimeTestMapConnections;
+#endif // ROM_WORLD == 1
 
 extern const struct Tileset gTileset_General;
 extern const struct Tileset gTileset_Petalburg;
@@ -126,7 +134,7 @@ struct RuntimeFixtureBackup
     struct LinkPlayerObjectEvent link_player_object_events[4];
     struct PlayerAvatar player_avatar;
     struct SaveBlock1 *save_block1;
-    struct CoopSaveV1 coop_save;
+    struct CoopSaveV2 coop_save;
     struct Coords16 save_position;
     struct WarpData save_location;
     MainCallback callback1;
@@ -345,6 +353,7 @@ TEST("Cloud Coop presence sequence domains remain wrap-safe")
     EXPECT(!CoopPresence_SequenceIsNewer(8, 9));
 }
 
+#if ROM_WORLD == 1
 TEST("Cloud Coop presence runtime keeps the bounded V1 contract")
 {
     struct ObjectEvent remote = {0};
@@ -376,6 +385,7 @@ TEST("Cloud Coop presence runtime keeps the bounded V1 contract")
     EXPECT(!CoopPresenceRuntime_IsRemoteObject(&remote));
     CoopPresenceRuntime_Reset();
 }
+#endif // ROM_WORLD == 1
 
 TEST("Cloud Coop group ended notice displays without a partner sprite")
 {
@@ -413,6 +423,7 @@ TEST("Cloud Coop group ended notice displays without a partner sprite")
     EndRuntimeFixture(&sRuntimeFixtureBackup);
 }
 
+#if ROM_WORLD == 1
 TEST("Cloud Coop presence runtime queues exact lifecycle frames atomically")
 {
     struct CoopPresenceSpawn spawn = RuntimeSpawn(2, 7);
@@ -475,6 +486,7 @@ TEST("Cloud Coop presence runtime queues exact lifecycle frames atomically")
     CoopPresenceRuntime_TransportLost();
     EXPECT(!CoopPresenceReducer_IsActive(CoopPresenceRuntime_GetReducer()));
 }
+#endif // ROM_WORLD == 1
 
 TEST("Cloud Coop presence runtime keeps publication gated by a ready epoch")
 {
@@ -490,6 +502,7 @@ TEST("Cloud Coop presence runtime keeps publication gated by a ready epoch")
     EXPECT(!CoopPresenceRuntime_GetLocalState(&state));
 }
 
+#if ROM_WORLD == 1
 TEST("Cloud Coop presence runtime executes hidden stale and warp lifecycle paths")
 {
     struct CoopPresenceSpawn spawn = RuntimeSpawn(3, 1);
@@ -1362,6 +1375,7 @@ TEST("Cloud Coop dive action takes precedence over remote overlap")
 
     EndRuntimeFixture(&sRuntimeFixtureBackup);
 }
+#endif // ROM_WORLD == 1
 
 /* Partner experience fixtures.  The fixture's own map is group 1, number 3;
  * the edge neighbours are real Hoenn maps so the reducer's region
@@ -1377,6 +1391,7 @@ TEST("Cloud Coop dive action takes precedence over remote overlap")
 #define RUNTIME_EAST_OFFSET 1
 #define RUNTIME_NAME_LABEL_FRAMES 90
 
+#if ROM_WORLD == 1
 static EWRAM_DATA struct MapConnection sRuntimeTestEdgeConnections[5];
 static EWRAM_DATA struct Pokemon sRuntimeTestPartyBackup[PARTY_SIZE];
 
@@ -1509,6 +1524,7 @@ static u8 FindRuntimeObject(u8 localId)
     }
     return OBJECT_EVENTS_COUNT;
 }
+#endif // ROM_WORLD == 1
 
 static void SnapshotRuntimeSprites(bool8 *inUse)
 {
@@ -1530,6 +1546,7 @@ static u8 FindNewRuntimeSprite(const bool8 *before)
     return MAX_SPRITES;
 }
 
+#if ROM_WORLD == 1
 static u32 CountNewSparkleSprites(const bool8 *before)
 {
     u32 i;
@@ -1543,6 +1560,7 @@ static u32 CountNewSparkleSprites(const bool8 *before)
     }
     return count;
 }
+#endif // ROM_WORLD == 1
 
 /* Field effects never run their sprite callbacks in the test runner, so
  * retire the sparkle and emote sprites (and their active-list entries) that
@@ -1570,6 +1588,7 @@ static void BeginPartnerFixture(void)
     CoopPresenceRuntime_SetSessionEpoch(23);
 }
 
+#if ROM_WORLD == 1
 static void ExpectRuntimeNotice(const u8 *expected)
 {
     EXPECT_EQ(GetFieldMessageBoxMode(), FIELD_MESSAGE_BOX_AUTO_SCROLL);
@@ -1807,6 +1826,7 @@ TEST("Cloud Coop partner notices announce leaving the map and the destination")
         ScriptContext_Enable();
     EndRuntimeFixture(&sRuntimeFixtureBackup);
 }
+#endif // ROM_WORLD == 1
 
 TEST("Cloud Coop L plus a direction sends the matching emote")
 {
@@ -1865,6 +1885,7 @@ TEST("Cloud Coop L plus a direction sends the matching emote")
     EndRuntimeFixture(&sRuntimeFixtureBackup);
 }
 
+#if ROM_WORLD == 1
 static void ExpectEdgeRemote(u16 map, s16 x, s16 y, s16 pos_x, s16 pos_y,
                              s16 expected_x, s16 expected_y)
 {
@@ -2152,6 +2173,7 @@ TEST("Cloud Coop companion publishes the lead's form")
     EndRuntimeFixture(&sRuntimeFixtureBackup);
     memcpy(gPlayerParty, sRuntimeTestPartyBackup, sizeof(sRuntimeTestPartyBackup));
 }
+#endif // ROM_WORLD == 1
 
 enum
 {
@@ -2162,6 +2184,7 @@ enum
     RUNTIME_MENU_CHECK,
 };
 
+#if ROM_WORLD == 1
 static bool8 sMenuFixtureScriptWasEnabled;
 
 static void BeginPartnerMenuFixture(u64 handle)
@@ -2323,3 +2346,4 @@ TEST("Cloud Coop partner menu Battle and Trade stay unavailable placeholders")
 
     EndPartnerMenuFixture();
 }
+#endif // ROM_WORLD == 1

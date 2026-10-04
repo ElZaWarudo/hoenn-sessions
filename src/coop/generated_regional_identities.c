@@ -2,6 +2,7 @@
 /* Do not edit; update data/coop/regional_identities.json. */
 #include "global.h"
 #include "constants/flags.h"
+#include "constants/cormoria_event_ids.h"
 #include "constants/opponents.h"
 #include "coop/generated_regional_identities.h"
 
@@ -862,6 +863,200 @@ _Static_assert(TRAINER_LEAF == 852, "regional identity legacy value drift: TRAIN
 _Static_assert(TRAINER_BRENDAN_PLACEHOLDER == 853, "regional identity legacy value drift: TRAINER_BRENDAN_PLACEHOLDER");
 _Static_assert(TRAINER_MAY_PLACEHOLDER == 854, "regional identity legacy value drift: TRAINER_MAY_PLACEHOLDER");
 _Static_assert(TRAINER_LEADER_BROCK == 1168, "regional identity legacy value drift: TRAINER_LEADER_BROCK");
+_Static_assert(Cormoria_TRAINER_CERAMBASECAMPGYM_A == 20480, "regional identity legacy value drift: Cormoria_TRAINER_CERAMBASECAMPGYM_A");
+_Static_assert(Cormoria_TRAINER_CERAMBASECAMPGYM_B == 20481, "regional identity legacy value drift: Cormoria_TRAINER_CERAMBASECAMPGYM_B");
+_Static_assert(Cormoria_TRAINER_CERAMBASECAMPGYM_C == 20482, "regional identity legacy value drift: Cormoria_TRAINER_CERAMBASECAMPGYM_C");
+_Static_assert(Cormoria_TRAINER_CERAMBASECAMPGYM_D == 20483, "regional identity legacy value drift: Cormoria_TRAINER_CERAMBASECAMPGYM_D");
+_Static_assert(Cormoria_TRAINER_CERAMBASECAMPGYM_LEADER == 20484, "regional identity legacy value drift: Cormoria_TRAINER_CERAMBASECAMPGYM_LEADER");
+_Static_assert(Cormoria_TRAINER_CERAMBASECAMP_EVIL_GABRIELLE == 20485, "regional identity legacy value drift: Cormoria_TRAINER_CERAMBASECAMP_EVIL_GABRIELLE");
+_Static_assert(Cormoria_TRAINER_CERAMBASECAMP_GRUNT1 == 20486, "regional identity legacy value drift: Cormoria_TRAINER_CERAMBASECAMP_GRUNT1");
+_Static_assert(Cormoria_TRAINER_CERAMBASECAMP_GRUNT2 == 20487, "regional identity legacy value drift: Cormoria_TRAINER_CERAMBASECAMP_GRUNT2");
+_Static_assert(Cormoria_TRAINER_CERAMBASECAMP_GRUNT3 == 20488, "regional identity legacy value drift: Cormoria_TRAINER_CERAMBASECAMP_GRUNT3");
+_Static_assert(Cormoria_TRAINER_CERAMPEAK_MOXIE == 20489, "regional identity legacy value drift: Cormoria_TRAINER_CERAMPEAK_MOXIE");
+_Static_assert(Cormoria_TRAINER_CHAMPIONSHIP_A == 20490, "regional identity legacy value drift: Cormoria_TRAINER_CHAMPIONSHIP_A");
+_Static_assert(Cormoria_TRAINER_CHAMPIONSHIP_B == 20491, "regional identity legacy value drift: Cormoria_TRAINER_CHAMPIONSHIP_B");
+_Static_assert(Cormoria_TRAINER_CHAMPIONSHIP_C == 20492, "regional identity legacy value drift: Cormoria_TRAINER_CHAMPIONSHIP_C");
+_Static_assert(Cormoria_TRAINER_CHAMPIONSHIP_D == 20493, "regional identity legacy value drift: Cormoria_TRAINER_CHAMPIONSHIP_D");
+_Static_assert(Cormoria_TRAINER_CHAMPIONSHIP_E == 20494, "regional identity legacy value drift: Cormoria_TRAINER_CHAMPIONSHIP_E");
+_Static_assert(Cormoria_TRAINER_CHAMPION_GRETA == 20495, "regional identity legacy value drift: Cormoria_TRAINER_CHAMPION_GRETA");
+_Static_assert(Cormoria_TRAINER_CHAMPION_LYNCH == 20496, "regional identity legacy value drift: Cormoria_TRAINER_CHAMPION_LYNCH");
+_Static_assert(Cormoria_TRAINER_CHAMPION_MARTHA == 20497, "regional identity legacy value drift: Cormoria_TRAINER_CHAMPION_MARTHA");
+_Static_assert(Cormoria_TRAINER_CHAMPION_RAVINE == 20498, "regional identity legacy value drift: Cormoria_TRAINER_CHAMPION_RAVINE");
+_Static_assert(Cormoria_TRAINER_GALECRESTGYM_A == 20499, "regional identity legacy value drift: Cormoria_TRAINER_GALECRESTGYM_A");
+_Static_assert(Cormoria_TRAINER_GALECRESTGYM_B == 20500, "regional identity legacy value drift: Cormoria_TRAINER_GALECRESTGYM_B");
+_Static_assert(Cormoria_TRAINER_GALECRESTGYM_C == 20501, "regional identity legacy value drift: Cormoria_TRAINER_GALECRESTGYM_C");
+_Static_assert(Cormoria_TRAINER_GALECRESTGYM_LEADER == 20502, "regional identity legacy value drift: Cormoria_TRAINER_GALECRESTGYM_LEADER");
+_Static_assert(Cormoria_TRAINER_GALECREST_DETECTIVE_A == 20503, "regional identity legacy value drift: Cormoria_TRAINER_GALECREST_DETECTIVE_A");
+_Static_assert(Cormoria_TRAINER_GALECREST_ROBBER == 20504, "regional identity legacy value drift: Cormoria_TRAINER_GALECREST_ROBBER");
+_Static_assert(Cormoria_TRAINER_GASTREEGYM_JACO == 20505, "regional identity legacy value drift: Cormoria_TRAINER_GASTREEGYM_JACO");
+_Static_assert(Cormoria_TRAINER_GASTREEGYM_LEADER == 20506, "regional identity legacy value drift: Cormoria_TRAINER_GASTREEGYM_LEADER");
+_Static_assert(Cormoria_TRAINER_GASTREEGYM_SKIP == 20507, "regional identity legacy value drift: Cormoria_TRAINER_GASTREEGYM_SKIP");
+_Static_assert(Cormoria_TRAINER_GASTREE_KOHLA == 20508, "regional identity legacy value drift: Cormoria_TRAINER_GASTREE_KOHLA");
+_Static_assert(Cormoria_TRAINER_IVY_RIVER_A == 20509, "regional identity legacy value drift: Cormoria_TRAINER_IVY_RIVER_A");
+_Static_assert(Cormoria_TRAINER_IVY_RIVER_B == 20510, "regional identity legacy value drift: Cormoria_TRAINER_IVY_RIVER_B");
+_Static_assert(Cormoria_TRAINER_IVY_RIVER_C == 20511, "regional identity legacy value drift: Cormoria_TRAINER_IVY_RIVER_C");
+_Static_assert(Cormoria_TRAINER_IVY_RIVER_D == 20512, "regional identity legacy value drift: Cormoria_TRAINER_IVY_RIVER_D");
+_Static_assert(Cormoria_TRAINER_KOHLA_LAB == 20513, "regional identity legacy value drift: Cormoria_TRAINER_KOHLA_LAB");
+_Static_assert(Cormoria_TRAINER_MIRROHBASECAMP_KOHLA == 20514, "regional identity legacy value drift: Cormoria_TRAINER_MIRROHBASECAMP_KOHLA");
+_Static_assert(Cormoria_TRAINER_MIRROHBASECAMP_LEADER == 20515, "regional identity legacy value drift: Cormoria_TRAINER_MIRROHBASECAMP_LEADER");
+_Static_assert(Cormoria_TRAINER_MIRROHEXT_A == 20516, "regional identity legacy value drift: Cormoria_TRAINER_MIRROHEXT_A");
+_Static_assert(Cormoria_TRAINER_MIRROHEXT_B == 20517, "regional identity legacy value drift: Cormoria_TRAINER_MIRROHEXT_B");
+_Static_assert(Cormoria_TRAINER_MIRROHEXT_C == 20518, "regional identity legacy value drift: Cormoria_TRAINER_MIRROHEXT_C");
+_Static_assert(Cormoria_TRAINER_MIRROHEXT_D == 20519, "regional identity legacy value drift: Cormoria_TRAINER_MIRROHEXT_D");
+_Static_assert(Cormoria_TRAINER_MIRROHEXT_E == 20520, "regional identity legacy value drift: Cormoria_TRAINER_MIRROHEXT_E");
+_Static_assert(Cormoria_TRAINER_MIRROHEXT_F == 20521, "regional identity legacy value drift: Cormoria_TRAINER_MIRROHEXT_F");
+_Static_assert(Cormoria_TRAINER_MIRROHEXT_G == 20522, "regional identity legacy value drift: Cormoria_TRAINER_MIRROHEXT_G");
+_Static_assert(Cormoria_TRAINER_MIRROHEXT_H == 20523, "regional identity legacy value drift: Cormoria_TRAINER_MIRROHEXT_H");
+_Static_assert(Cormoria_TRAINER_MIRROHINT2_A == 20524, "regional identity legacy value drift: Cormoria_TRAINER_MIRROHINT2_A");
+_Static_assert(Cormoria_TRAINER_MIRROHINT2_B == 20525, "regional identity legacy value drift: Cormoria_TRAINER_MIRROHINT2_B");
+_Static_assert(Cormoria_TRAINER_MIRROHINT2_C == 20526, "regional identity legacy value drift: Cormoria_TRAINER_MIRROHINT2_C");
+_Static_assert(Cormoria_TRAINER_MIRROHINT2_D == 20527, "regional identity legacy value drift: Cormoria_TRAINER_MIRROHINT2_D");
+_Static_assert(Cormoria_TRAINER_MIRROHINT2_E == 20528, "regional identity legacy value drift: Cormoria_TRAINER_MIRROHINT2_E");
+_Static_assert(Cormoria_TRAINER_MIRROHINT2_F == 20529, "regional identity legacy value drift: Cormoria_TRAINER_MIRROHINT2_F");
+_Static_assert(Cormoria_TRAINER_MIRROHINT2_G == 20530, "regional identity legacy value drift: Cormoria_TRAINER_MIRROHINT2_G");
+_Static_assert(Cormoria_TRAINER_MIRROHINT_A == 20531, "regional identity legacy value drift: Cormoria_TRAINER_MIRROHINT_A");
+_Static_assert(Cormoria_TRAINER_MIRROHINT_B == 20532, "regional identity legacy value drift: Cormoria_TRAINER_MIRROHINT_B");
+_Static_assert(Cormoria_TRAINER_MIRROHINT_C == 20533, "regional identity legacy value drift: Cormoria_TRAINER_MIRROHINT_C");
+_Static_assert(Cormoria_TRAINER_MIRROHINT_D == 20534, "regional identity legacy value drift: Cormoria_TRAINER_MIRROHINT_D");
+_Static_assert(Cormoria_TRAINER_MIRROHINT_E == 20535, "regional identity legacy value drift: Cormoria_TRAINER_MIRROHINT_E");
+_Static_assert(Cormoria_TRAINER_MIRROHPEAK_A == 20536, "regional identity legacy value drift: Cormoria_TRAINER_MIRROHPEAK_A");
+_Static_assert(Cormoria_TRAINER_MIRROHPEAK_B == 20537, "regional identity legacy value drift: Cormoria_TRAINER_MIRROHPEAK_B");
+_Static_assert(Cormoria_TRAINER_MIRROHPEAK_C == 20538, "regional identity legacy value drift: Cormoria_TRAINER_MIRROHPEAK_C");
+_Static_assert(Cormoria_TRAINER_MIRROHPEAK_D == 20539, "regional identity legacy value drift: Cormoria_TRAINER_MIRROHPEAK_D");
+_Static_assert(Cormoria_TRAINER_MIRROHPEAK_MOXIE == 20540, "regional identity legacy value drift: Cormoria_TRAINER_MIRROHPEAK_MOXIE");
+_Static_assert(Cormoria_TRAINER_MTCERAM_A == 20541, "regional identity legacy value drift: Cormoria_TRAINER_MTCERAM_A");
+_Static_assert(Cormoria_TRAINER_MTCERAM_B == 20542, "regional identity legacy value drift: Cormoria_TRAINER_MTCERAM_B");
+_Static_assert(Cormoria_TRAINER_MTCERAM_C == 20543, "regional identity legacy value drift: Cormoria_TRAINER_MTCERAM_C");
+_Static_assert(Cormoria_TRAINER_MTCERAM_D == 20544, "regional identity legacy value drift: Cormoria_TRAINER_MTCERAM_D");
+_Static_assert(Cormoria_TRAINER_MTCERAM_GRUNT1 == 20545, "regional identity legacy value drift: Cormoria_TRAINER_MTCERAM_GRUNT1");
+_Static_assert(Cormoria_TRAINER_MTCERAM_GRUNT2 == 20546, "regional identity legacy value drift: Cormoria_TRAINER_MTCERAM_GRUNT2");
+_Static_assert(Cormoria_TRAINER_MTCERAM_GRUNT_DOUBLE == 20547, "regional identity legacy value drift: Cormoria_TRAINER_MTCERAM_GRUNT_DOUBLE");
+_Static_assert(Cormoria_TRAINER_PELLUCA_CITY_GYM_A == 20549, "regional identity legacy value drift: Cormoria_TRAINER_PELLUCA_CITY_GYM_A");
+_Static_assert(Cormoria_TRAINER_PELLUCA_CITY_GYM_B == 20550, "regional identity legacy value drift: Cormoria_TRAINER_PELLUCA_CITY_GYM_B");
+_Static_assert(Cormoria_TRAINER_PELLUCA_CITY_GYM_C == 20551, "regional identity legacy value drift: Cormoria_TRAINER_PELLUCA_CITY_GYM_C");
+_Static_assert(Cormoria_TRAINER_PELLUCA_CITY_GYM_D == 20552, "regional identity legacy value drift: Cormoria_TRAINER_PELLUCA_CITY_GYM_D");
+_Static_assert(Cormoria_TRAINER_PELLUCA_CITY_GYM_E == 20553, "regional identity legacy value drift: Cormoria_TRAINER_PELLUCA_CITY_GYM_E");
+_Static_assert(Cormoria_TRAINER_PELLUCA_CITY_GYM_F == 20554, "regional identity legacy value drift: Cormoria_TRAINER_PELLUCA_CITY_GYM_F");
+_Static_assert(Cormoria_TRAINER_PELLUCA_CITY_GYM_G == 20555, "regional identity legacy value drift: Cormoria_TRAINER_PELLUCA_CITY_GYM_G");
+_Static_assert(Cormoria_TRAINER_PELLUCA_CITY_GYM_H == 20556, "regional identity legacy value drift: Cormoria_TRAINER_PELLUCA_CITY_GYM_H");
+_Static_assert(Cormoria_TRAINER_PELLUCA_CITY_GYM_I == 20557, "regional identity legacy value drift: Cormoria_TRAINER_PELLUCA_CITY_GYM_I");
+_Static_assert(Cormoria_TRAINER_PELLUCA_CITY_GYM_LEADER == 20558, "regional identity legacy value drift: Cormoria_TRAINER_PELLUCA_CITY_GYM_LEADER");
+_Static_assert(Cormoria_TRAINER_PELLUCA_GAMBLER == 20559, "regional identity legacy value drift: Cormoria_TRAINER_PELLUCA_GAMBLER");
+_Static_assert(Cormoria_TRAINER_PELLUCA_QWILSQUAD_A == 20560, "regional identity legacy value drift: Cormoria_TRAINER_PELLUCA_QWILSQUAD_A");
+_Static_assert(Cormoria_TRAINER_PELLUCA_QWILSQUAD_B == 20561, "regional identity legacy value drift: Cormoria_TRAINER_PELLUCA_QWILSQUAD_B");
+_Static_assert(Cormoria_TRAINER_PELLUCA_QWILSQUAD_BOSS == 20562, "regional identity legacy value drift: Cormoria_TRAINER_PELLUCA_QWILSQUAD_BOSS");
+_Static_assert(Cormoria_TRAINER_PLAYER_EDEN == 20563, "regional identity legacy value drift: Cormoria_TRAINER_PLAYER_EDEN");
+_Static_assert(Cormoria_TRAINER_PLAYER_GOZLIAK == 20564, "regional identity legacy value drift: Cormoria_TRAINER_PLAYER_GOZLIAK");
+_Static_assert(Cormoria_TRAINER_PLAYER_MIKE == 20565, "regional identity legacy value drift: Cormoria_TRAINER_PLAYER_MIKE");
+_Static_assert(Cormoria_TRAINER_PLAYER_SENTRY == 20566, "regional identity legacy value drift: Cormoria_TRAINER_PLAYER_SENTRY");
+_Static_assert(Cormoria_TRAINER_PLAYER_SHERRY == 20567, "regional identity legacy value drift: Cormoria_TRAINER_PLAYER_SHERRY");
+_Static_assert(Cormoria_TRAINER_RIVETSHORE_GYM_A == 20568, "regional identity legacy value drift: Cormoria_TRAINER_RIVETSHORE_GYM_A");
+_Static_assert(Cormoria_TRAINER_RIVETSHORE_GYM_B == 20569, "regional identity legacy value drift: Cormoria_TRAINER_RIVETSHORE_GYM_B");
+_Static_assert(Cormoria_TRAINER_RIVETSHORE_GYM_C == 20570, "regional identity legacy value drift: Cormoria_TRAINER_RIVETSHORE_GYM_C");
+_Static_assert(Cormoria_TRAINER_RIVETSHORE_GYM_D == 20571, "regional identity legacy value drift: Cormoria_TRAINER_RIVETSHORE_GYM_D");
+_Static_assert(Cormoria_TRAINER_RIVETSHORE_GYM_E == 20572, "regional identity legacy value drift: Cormoria_TRAINER_RIVETSHORE_GYM_E");
+_Static_assert(Cormoria_TRAINER_RIVETSHORE_GYM_LEADER == 20573, "regional identity legacy value drift: Cormoria_TRAINER_RIVETSHORE_GYM_LEADER");
+_Static_assert(Cormoria_TRAINER_ROUTE1_A == 20574, "regional identity legacy value drift: Cormoria_TRAINER_ROUTE1_A");
+_Static_assert(Cormoria_TRAINER_ROUTE1_B == 20575, "regional identity legacy value drift: Cormoria_TRAINER_ROUTE1_B");
+_Static_assert(Cormoria_TRAINER_ROUTE1_C == 20576, "regional identity legacy value drift: Cormoria_TRAINER_ROUTE1_C");
+_Static_assert(Cormoria_TRAINER_ROUTE1_STRONG_A == 20577, "regional identity legacy value drift: Cormoria_TRAINER_ROUTE1_STRONG_A");
+_Static_assert(Cormoria_TRAINER_ROUTE1_STRONG_B == 20578, "regional identity legacy value drift: Cormoria_TRAINER_ROUTE1_STRONG_B");
+_Static_assert(Cormoria_TRAINER_ROUTE1_STRONG_C == 20579, "regional identity legacy value drift: Cormoria_TRAINER_ROUTE1_STRONG_C");
+_Static_assert(Cormoria_TRAINER_ROUTE3_CHARA == 20580, "regional identity legacy value drift: Cormoria_TRAINER_ROUTE3_CHARA");
+_Static_assert(Cormoria_TRAINER_ROUTE3_EVIL_GABRIELLE == 20581, "regional identity legacy value drift: Cormoria_TRAINER_ROUTE3_EVIL_GABRIELLE");
+_Static_assert(Cormoria_TRAINER_ROUTE3_EXT_A == 20582, "regional identity legacy value drift: Cormoria_TRAINER_ROUTE3_EXT_A");
+_Static_assert(Cormoria_TRAINER_ROUTE3_EXT_B == 20583, "regional identity legacy value drift: Cormoria_TRAINER_ROUTE3_EXT_B");
+_Static_assert(Cormoria_TRAINER_ROUTE3_EXT_C == 20584, "regional identity legacy value drift: Cormoria_TRAINER_ROUTE3_EXT_C");
+_Static_assert(Cormoria_TRAINER_ROUTE3_JANA == 20585, "regional identity legacy value drift: Cormoria_TRAINER_ROUTE3_JANA");
+_Static_assert(Cormoria_TRAINER_ROUTE3_KIM == 20586, "regional identity legacy value drift: Cormoria_TRAINER_ROUTE3_KIM");
+_Static_assert(Cormoria_TRAINER_ROUTE3_RONNIE == 20587, "regional identity legacy value drift: Cormoria_TRAINER_ROUTE3_RONNIE");
+_Static_assert(Cormoria_TRAINER_ROUTE4_CAMMY == 20588, "regional identity legacy value drift: Cormoria_TRAINER_ROUTE4_CAMMY");
+_Static_assert(Cormoria_TRAINER_ROUTE4_GRUNTS == 20589, "regional identity legacy value drift: Cormoria_TRAINER_ROUTE4_GRUNTS");
+_Static_assert(Cormoria_TRAINER_ROUTE4_JENNY == 20590, "regional identity legacy value drift: Cormoria_TRAINER_ROUTE4_JENNY");
+_Static_assert(Cormoria_TRAINER_ROUTE4_KID1 == 20591, "regional identity legacy value drift: Cormoria_TRAINER_ROUTE4_KID1");
+_Static_assert(Cormoria_TRAINER_ROUTE4_KID2 == 20592, "regional identity legacy value drift: Cormoria_TRAINER_ROUTE4_KID2");
+_Static_assert(Cormoria_TRAINER_ROUTE4_KID3 == 20593, "regional identity legacy value drift: Cormoria_TRAINER_ROUTE4_KID3");
+_Static_assert(Cormoria_TRAINER_ROUTE4_RAHA == 20594, "regional identity legacy value drift: Cormoria_TRAINER_ROUTE4_RAHA");
+_Static_assert(Cormoria_TRAINER_ROUTE4_SONA == 20595, "regional identity legacy value drift: Cormoria_TRAINER_ROUTE4_SONA");
+_Static_assert(Cormoria_TRAINER_ROUTE6_A == 20596, "regional identity legacy value drift: Cormoria_TRAINER_ROUTE6_A");
+_Static_assert(Cormoria_TRAINER_ROUTE6_B == 20597, "regional identity legacy value drift: Cormoria_TRAINER_ROUTE6_B");
+_Static_assert(Cormoria_TRAINER_ROUTE6_C == 20598, "regional identity legacy value drift: Cormoria_TRAINER_ROUTE6_C");
+_Static_assert(Cormoria_TRAINER_ROUTE6_D == 20599, "regional identity legacy value drift: Cormoria_TRAINER_ROUTE6_D");
+_Static_assert(Cormoria_TRAINER_ROUTE6_E == 20600, "regional identity legacy value drift: Cormoria_TRAINER_ROUTE6_E");
+_Static_assert(Cormoria_TRAINER_ROUTE6_F == 20601, "regional identity legacy value drift: Cormoria_TRAINER_ROUTE6_F");
+_Static_assert(Cormoria_TRAINER_ROUTE6_G == 20602, "regional identity legacy value drift: Cormoria_TRAINER_ROUTE6_G");
+_Static_assert(Cormoria_TRAINER_ROUTE6_GRUNT1 == 20603, "regional identity legacy value drift: Cormoria_TRAINER_ROUTE6_GRUNT1");
+_Static_assert(Cormoria_TRAINER_ROUTE6_GRUNT2 == 20604, "regional identity legacy value drift: Cormoria_TRAINER_ROUTE6_GRUNT2");
+_Static_assert(Cormoria_TRAINER_ROUTE6_H == 20605, "regional identity legacy value drift: Cormoria_TRAINER_ROUTE6_H");
+_Static_assert(Cormoria_TRAINER_ROUTE6_I == 20606, "regional identity legacy value drift: Cormoria_TRAINER_ROUTE6_I");
+_Static_assert(Cormoria_TRAINER_ROUTE6_J == 20607, "regional identity legacy value drift: Cormoria_TRAINER_ROUTE6_J");
+_Static_assert(Cormoria_TRAINER_ROUTE6_K == 20608, "regional identity legacy value drift: Cormoria_TRAINER_ROUTE6_K");
+_Static_assert(Cormoria_TRAINER_ROUTE6_KOHLA == 20609, "regional identity legacy value drift: Cormoria_TRAINER_ROUTE6_KOHLA");
+_Static_assert(Cormoria_TRAINER_ROUTE7_A == 20610, "regional identity legacy value drift: Cormoria_TRAINER_ROUTE7_A");
+_Static_assert(Cormoria_TRAINER_ROUTE7_B == 20611, "regional identity legacy value drift: Cormoria_TRAINER_ROUTE7_B");
+_Static_assert(Cormoria_TRAINER_ROUTE7_C == 20612, "regional identity legacy value drift: Cormoria_TRAINER_ROUTE7_C");
+_Static_assert(Cormoria_TRAINER_ROUTE7_D == 20613, "regional identity legacy value drift: Cormoria_TRAINER_ROUTE7_D");
+_Static_assert(Cormoria_TRAINER_ROUTE8_A == 20614, "regional identity legacy value drift: Cormoria_TRAINER_ROUTE8_A");
+_Static_assert(Cormoria_TRAINER_ROUTE8_B == 20615, "regional identity legacy value drift: Cormoria_TRAINER_ROUTE8_B");
+_Static_assert(Cormoria_TRAINER_ROUTE8_C == 20616, "regional identity legacy value drift: Cormoria_TRAINER_ROUTE8_C");
+_Static_assert(Cormoria_TRAINER_ROUTE8_D == 20617, "regional identity legacy value drift: Cormoria_TRAINER_ROUTE8_D");
+_Static_assert(Cormoria_TRAINER_ROUTE8_E == 20618, "regional identity legacy value drift: Cormoria_TRAINER_ROUTE8_E");
+_Static_assert(Cormoria_TRAINER_SEWERS_A == 20619, "regional identity legacy value drift: Cormoria_TRAINER_SEWERS_A");
+_Static_assert(Cormoria_TRAINER_SEWERS_B == 20620, "regional identity legacy value drift: Cormoria_TRAINER_SEWERS_B");
+_Static_assert(Cormoria_TRAINER_SEWERS_C == 20621, "regional identity legacy value drift: Cormoria_TRAINER_SEWERS_C");
+_Static_assert(Cormoria_TRAINER_SILVERSUNGYM_A == 20622, "regional identity legacy value drift: Cormoria_TRAINER_SILVERSUNGYM_A");
+_Static_assert(Cormoria_TRAINER_SILVERSUNGYM_B == 20623, "regional identity legacy value drift: Cormoria_TRAINER_SILVERSUNGYM_B");
+_Static_assert(Cormoria_TRAINER_SILVERSUNGYM_C == 20624, "regional identity legacy value drift: Cormoria_TRAINER_SILVERSUNGYM_C");
+_Static_assert(Cormoria_TRAINER_SILVERSUNGYM_D == 20625, "regional identity legacy value drift: Cormoria_TRAINER_SILVERSUNGYM_D");
+_Static_assert(Cormoria_TRAINER_SILVERSUNGYM_LEADER == 20626, "regional identity legacy value drift: Cormoria_TRAINER_SILVERSUNGYM_LEADER");
+_Static_assert(Cormoria_TRAINER_SOMBERHQ_A == 20627, "regional identity legacy value drift: Cormoria_TRAINER_SOMBERHQ_A");
+_Static_assert(Cormoria_TRAINER_SOMBERHQ_B == 20628, "regional identity legacy value drift: Cormoria_TRAINER_SOMBERHQ_B");
+_Static_assert(Cormoria_TRAINER_SOMBERHQ_C == 20629, "regional identity legacy value drift: Cormoria_TRAINER_SOMBERHQ_C");
+_Static_assert(Cormoria_TRAINER_SOMBERHQ_D == 20630, "regional identity legacy value drift: Cormoria_TRAINER_SOMBERHQ_D");
+_Static_assert(Cormoria_TRAINER_SOMBERHQ_E == 20631, "regional identity legacy value drift: Cormoria_TRAINER_SOMBERHQ_E");
+_Static_assert(Cormoria_TRAINER_SOMBERHQ_F == 20632, "regional identity legacy value drift: Cormoria_TRAINER_SOMBERHQ_F");
+_Static_assert(Cormoria_TRAINER_SOMBERHQ_G == 20633, "regional identity legacy value drift: Cormoria_TRAINER_SOMBERHQ_G");
+_Static_assert(Cormoria_TRAINER_SOMBERHQ_H == 20634, "regional identity legacy value drift: Cormoria_TRAINER_SOMBERHQ_H");
+_Static_assert(Cormoria_TRAINER_SOMBERHQ_MELEA == 20635, "regional identity legacy value drift: Cormoria_TRAINER_SOMBERHQ_MELEA");
+_Static_assert(Cormoria_TRAINER_SSELEGANT_A == 20636, "regional identity legacy value drift: Cormoria_TRAINER_SSELEGANT_A");
+_Static_assert(Cormoria_TRAINER_SSELEGANT_ARIANA == 20637, "regional identity legacy value drift: Cormoria_TRAINER_SSELEGANT_ARIANA");
+_Static_assert(Cormoria_TRAINER_SSELEGANT_INGER == 20638, "regional identity legacy value drift: Cormoria_TRAINER_SSELEGANT_INGER");
+_Static_assert(Cormoria_TRAINER_SSELEGANT_JANIA == 20639, "regional identity legacy value drift: Cormoria_TRAINER_SSELEGANT_JANIA");
+_Static_assert(Cormoria_TRAINER_THEATER_B == 20640, "regional identity legacy value drift: Cormoria_TRAINER_THEATER_B");
+_Static_assert(Cormoria_TRAINER_UNCHARTED_ISLAND_GRUNT_A == 20641, "regional identity legacy value drift: Cormoria_TRAINER_UNCHARTED_ISLAND_GRUNT_A");
+_Static_assert(Cormoria_TRAINER_UNCHARTED_ISLAND_GRUNT_B == 20642, "regional identity legacy value drift: Cormoria_TRAINER_UNCHARTED_ISLAND_GRUNT_B");
+_Static_assert(Cormoria_TRAINER_UNCHARTED_ISLAND_GRUNT_C == 20643, "regional identity legacy value drift: Cormoria_TRAINER_UNCHARTED_ISLAND_GRUNT_C");
+_Static_assert(Cormoria_TRAINER_UNCHARTED_ISLAND_MELEA == 20644, "regional identity legacy value drift: Cormoria_TRAINER_UNCHARTED_ISLAND_MELEA");
+_Static_assert(Cormoria_TRAINER_UNCHARTED_ISLAND_MOXIE == 20645, "regional identity legacy value drift: Cormoria_TRAINER_UNCHARTED_ISLAND_MOXIE");
+_Static_assert(Cormoria_TRAINER_UNCHARTED_ISLAND_RUE == 20646, "regional identity legacy value drift: Cormoria_TRAINER_UNCHARTED_ISLAND_RUE");
+_Static_assert(Cormoria_TRAINER_VICTORYCAPE_A == 20647, "regional identity legacy value drift: Cormoria_TRAINER_VICTORYCAPE_A");
+_Static_assert(Cormoria_TRAINER_VICTORYCAPE_B == 20648, "regional identity legacy value drift: Cormoria_TRAINER_VICTORYCAPE_B");
+_Static_assert(Cormoria_TRAINER_VICTORY_ROAD_A == 20649, "regional identity legacy value drift: Cormoria_TRAINER_VICTORY_ROAD_A");
+_Static_assert(Cormoria_TRAINER_VICTORY_ROAD_B == 20650, "regional identity legacy value drift: Cormoria_TRAINER_VICTORY_ROAD_B");
+_Static_assert(Cormoria_TRAINER_VICTORY_ROAD_C == 20651, "regional identity legacy value drift: Cormoria_TRAINER_VICTORY_ROAD_C");
+_Static_assert(Cormoria_TRAINER_VICTORY_ROAD_D == 20652, "regional identity legacy value drift: Cormoria_TRAINER_VICTORY_ROAD_D");
+_Static_assert(Cormoria_TRAINER_VICTORY_ROAD_E == 20653, "regional identity legacy value drift: Cormoria_TRAINER_VICTORY_ROAD_E");
+_Static_assert(Cormoria_TRAINER_VICTORY_ROAD_F == 20654, "regional identity legacy value drift: Cormoria_TRAINER_VICTORY_ROAD_F");
+_Static_assert(Cormoria_TRAINER_VICTORY_ROAD_G == 20655, "regional identity legacy value drift: Cormoria_TRAINER_VICTORY_ROAD_G");
+_Static_assert(Cormoria_TRAINER_VICTORY_ROAD_H == 20656, "regional identity legacy value drift: Cormoria_TRAINER_VICTORY_ROAD_H");
+_Static_assert(Cormoria_TRAINER_VICTORY_ROAD_I == 20657, "regional identity legacy value drift: Cormoria_TRAINER_VICTORY_ROAD_I");
+_Static_assert(Cormoria_TRAINER_VICTORY_ROAD_J == 20658, "regional identity legacy value drift: Cormoria_TRAINER_VICTORY_ROAD_J");
+_Static_assert(Cormoria_TRAINER_VILETHORN_A == 20659, "regional identity legacy value drift: Cormoria_TRAINER_VILETHORN_A");
+_Static_assert(Cormoria_TRAINER_VILETHORN_B == 20660, "regional identity legacy value drift: Cormoria_TRAINER_VILETHORN_B");
+_Static_assert(Cormoria_TRAINER_VILETHORN_C == 20661, "regional identity legacy value drift: Cormoria_TRAINER_VILETHORN_C");
+_Static_assert(Cormoria_TRAINER_VILETHORN_D == 20662, "regional identity legacy value drift: Cormoria_TRAINER_VILETHORN_D");
+_Static_assert(Cormoria_TRAINER_VILETHORN_E == 20663, "regional identity legacy value drift: Cormoria_TRAINER_VILETHORN_E");
+_Static_assert(Cormoria_TRAINER_VILETHORN_F == 20664, "regional identity legacy value drift: Cormoria_TRAINER_VILETHORN_F");
+_Static_assert(Cormoria_TRAINER_VILETHORN_G == 20665, "regional identity legacy value drift: Cormoria_TRAINER_VILETHORN_G");
+_Static_assert(Cormoria_TRAINER_VILETHORN_H == 20666, "regional identity legacy value drift: Cormoria_TRAINER_VILETHORN_H");
+_Static_assert(Cormoria_TRAINER_VILETHORN_I == 20667, "regional identity legacy value drift: Cormoria_TRAINER_VILETHORN_I");
+_Static_assert(Cormoria_TRAINER_WINTERLILY_HOLLOW_GYM_A == 20668, "regional identity legacy value drift: Cormoria_TRAINER_WINTERLILY_HOLLOW_GYM_A");
+_Static_assert(Cormoria_TRAINER_WINTERLILY_HOLLOW_GYM_B == 20669, "regional identity legacy value drift: Cormoria_TRAINER_WINTERLILY_HOLLOW_GYM_B");
+_Static_assert(Cormoria_TRAINER_WINTERLILY_HOLLOW_GYM_C == 20670, "regional identity legacy value drift: Cormoria_TRAINER_WINTERLILY_HOLLOW_GYM_C");
+_Static_assert(Cormoria_TRAINER_WINTERLILY_HOLLOW_GYM_D == 20671, "regional identity legacy value drift: Cormoria_TRAINER_WINTERLILY_HOLLOW_GYM_D");
+_Static_assert(Cormoria_TRAINER_WINTERLILY_HOLLOW_GYM_E == 20672, "regional identity legacy value drift: Cormoria_TRAINER_WINTERLILY_HOLLOW_GYM_E");
+_Static_assert(Cormoria_TRAINER_WINTERLILY_HOLLOW_GYM_F == 20673, "regional identity legacy value drift: Cormoria_TRAINER_WINTERLILY_HOLLOW_GYM_F");
+_Static_assert(Cormoria_TRAINER_WINTERLILY_HOLLOW_GYM_LEADER == 20674, "regional identity legacy value drift: Cormoria_TRAINER_WINTERLILY_HOLLOW_GYM_LEADER");
 _Static_assert(FLAG_BADGE01_GET == 2909, "regional identity legacy value drift: FLAG_BADGE01_GET");
 _Static_assert(FLAG_BADGE02_GET == 2910, "regional identity legacy value drift: FLAG_BADGE02_GET");
 _Static_assert(FLAG_BADGE03_GET == 2911, "regional identity legacy value drift: FLAG_BADGE03_GET");
@@ -870,6 +1065,14 @@ _Static_assert(FLAG_BADGE05_GET == 2913, "regional identity legacy value drift: 
 _Static_assert(FLAG_BADGE06_GET == 2914, "regional identity legacy value drift: FLAG_BADGE06_GET");
 _Static_assert(FLAG_BADGE07_GET == 2915, "regional identity legacy value drift: FLAG_BADGE07_GET");
 _Static_assert(FLAG_BADGE08_GET == 2916, "regional identity legacy value drift: FLAG_BADGE08_GET");
+_Static_assert(Cormoria_FLAG_BADGE01_GET == 32777, "regional identity legacy value drift: Cormoria_FLAG_BADGE01_GET");
+_Static_assert(Cormoria_FLAG_BADGE02_GET == 32778, "regional identity legacy value drift: Cormoria_FLAG_BADGE02_GET");
+_Static_assert(Cormoria_FLAG_BADGE03_GET == 32779, "regional identity legacy value drift: Cormoria_FLAG_BADGE03_GET");
+_Static_assert(Cormoria_FLAG_BADGE04_GET == 32780, "regional identity legacy value drift: Cormoria_FLAG_BADGE04_GET");
+_Static_assert(Cormoria_FLAG_BADGE05_GET == 32781, "regional identity legacy value drift: Cormoria_FLAG_BADGE05_GET");
+_Static_assert(Cormoria_FLAG_BADGE06_GET == 32782, "regional identity legacy value drift: Cormoria_FLAG_BADGE06_GET");
+_Static_assert(Cormoria_FLAG_BADGE07_GET == 32783, "regional identity legacy value drift: Cormoria_FLAG_BADGE07_GET");
+_Static_assert(Cormoria_FLAG_BADGE08_GET == 32784, "regional identity legacy value drift: Cormoria_FLAG_BADGE08_GET");
 _Static_assert(FLAG_VISITED_LITTLEROOT_TOWN == 2917, "regional identity legacy value drift: FLAG_VISITED_LITTLEROOT_TOWN");
 _Static_assert(FLAG_WORLD_MAP_PALLET_TOWN == 2683, "regional identity legacy value drift: FLAG_WORLD_MAP_PALLET_TOWN");
 _Static_assert(FLAG_WORLD_MAP_ONE_ISLAND == 2694, "regional identity legacy value drift: FLAG_WORLD_MAP_ONE_ISLAND");
@@ -1735,6 +1938,200 @@ const struct CoopIdentityRegistryEntry gCoopTrainerIdentityRegistry[] =
     { 853u, 854u, COOP_REGION_HOENN, COOP_IDENTITY_BADGE_BIT_NONE },
     { 854u, 1168u, COOP_REGION_KANTO, COOP_IDENTITY_BADGE_BIT_NONE },
     { 855u, COOP_IDENTITY_LEGACY_NONE, COOP_REGION_JOHTO, COOP_IDENTITY_BADGE_BIT_NONE },
+    { 856u, 20480u, COOP_REGION_CORMORIA, COOP_IDENTITY_BADGE_BIT_NONE },
+    { 857u, 20481u, COOP_REGION_CORMORIA, COOP_IDENTITY_BADGE_BIT_NONE },
+    { 858u, 20482u, COOP_REGION_CORMORIA, COOP_IDENTITY_BADGE_BIT_NONE },
+    { 859u, 20483u, COOP_REGION_CORMORIA, COOP_IDENTITY_BADGE_BIT_NONE },
+    { 860u, 20484u, COOP_REGION_CORMORIA, COOP_IDENTITY_BADGE_BIT_NONE },
+    { 861u, 20485u, COOP_REGION_CORMORIA, COOP_IDENTITY_BADGE_BIT_NONE },
+    { 862u, 20486u, COOP_REGION_CORMORIA, COOP_IDENTITY_BADGE_BIT_NONE },
+    { 863u, 20487u, COOP_REGION_CORMORIA, COOP_IDENTITY_BADGE_BIT_NONE },
+    { 864u, 20488u, COOP_REGION_CORMORIA, COOP_IDENTITY_BADGE_BIT_NONE },
+    { 865u, 20489u, COOP_REGION_CORMORIA, COOP_IDENTITY_BADGE_BIT_NONE },
+    { 866u, 20490u, COOP_REGION_CORMORIA, COOP_IDENTITY_BADGE_BIT_NONE },
+    { 867u, 20491u, COOP_REGION_CORMORIA, COOP_IDENTITY_BADGE_BIT_NONE },
+    { 868u, 20492u, COOP_REGION_CORMORIA, COOP_IDENTITY_BADGE_BIT_NONE },
+    { 869u, 20493u, COOP_REGION_CORMORIA, COOP_IDENTITY_BADGE_BIT_NONE },
+    { 870u, 20494u, COOP_REGION_CORMORIA, COOP_IDENTITY_BADGE_BIT_NONE },
+    { 871u, 20495u, COOP_REGION_CORMORIA, COOP_IDENTITY_BADGE_BIT_NONE },
+    { 872u, 20496u, COOP_REGION_CORMORIA, COOP_IDENTITY_BADGE_BIT_NONE },
+    { 873u, 20497u, COOP_REGION_CORMORIA, COOP_IDENTITY_BADGE_BIT_NONE },
+    { 874u, 20498u, COOP_REGION_CORMORIA, COOP_IDENTITY_BADGE_BIT_NONE },
+    { 875u, 20499u, COOP_REGION_CORMORIA, COOP_IDENTITY_BADGE_BIT_NONE },
+    { 876u, 20500u, COOP_REGION_CORMORIA, COOP_IDENTITY_BADGE_BIT_NONE },
+    { 877u, 20501u, COOP_REGION_CORMORIA, COOP_IDENTITY_BADGE_BIT_NONE },
+    { 878u, 20502u, COOP_REGION_CORMORIA, COOP_IDENTITY_BADGE_BIT_NONE },
+    { 879u, 20503u, COOP_REGION_CORMORIA, COOP_IDENTITY_BADGE_BIT_NONE },
+    { 880u, 20504u, COOP_REGION_CORMORIA, COOP_IDENTITY_BADGE_BIT_NONE },
+    { 881u, 20505u, COOP_REGION_CORMORIA, COOP_IDENTITY_BADGE_BIT_NONE },
+    { 882u, 20506u, COOP_REGION_CORMORIA, COOP_IDENTITY_BADGE_BIT_NONE },
+    { 883u, 20507u, COOP_REGION_CORMORIA, COOP_IDENTITY_BADGE_BIT_NONE },
+    { 884u, 20508u, COOP_REGION_CORMORIA, COOP_IDENTITY_BADGE_BIT_NONE },
+    { 885u, 20509u, COOP_REGION_CORMORIA, COOP_IDENTITY_BADGE_BIT_NONE },
+    { 886u, 20510u, COOP_REGION_CORMORIA, COOP_IDENTITY_BADGE_BIT_NONE },
+    { 887u, 20511u, COOP_REGION_CORMORIA, COOP_IDENTITY_BADGE_BIT_NONE },
+    { 888u, 20512u, COOP_REGION_CORMORIA, COOP_IDENTITY_BADGE_BIT_NONE },
+    { 889u, 20513u, COOP_REGION_CORMORIA, COOP_IDENTITY_BADGE_BIT_NONE },
+    { 890u, 20514u, COOP_REGION_CORMORIA, COOP_IDENTITY_BADGE_BIT_NONE },
+    { 891u, 20515u, COOP_REGION_CORMORIA, COOP_IDENTITY_BADGE_BIT_NONE },
+    { 892u, 20516u, COOP_REGION_CORMORIA, COOP_IDENTITY_BADGE_BIT_NONE },
+    { 893u, 20517u, COOP_REGION_CORMORIA, COOP_IDENTITY_BADGE_BIT_NONE },
+    { 894u, 20518u, COOP_REGION_CORMORIA, COOP_IDENTITY_BADGE_BIT_NONE },
+    { 895u, 20519u, COOP_REGION_CORMORIA, COOP_IDENTITY_BADGE_BIT_NONE },
+    { 896u, 20520u, COOP_REGION_CORMORIA, COOP_IDENTITY_BADGE_BIT_NONE },
+    { 897u, 20521u, COOP_REGION_CORMORIA, COOP_IDENTITY_BADGE_BIT_NONE },
+    { 898u, 20522u, COOP_REGION_CORMORIA, COOP_IDENTITY_BADGE_BIT_NONE },
+    { 899u, 20523u, COOP_REGION_CORMORIA, COOP_IDENTITY_BADGE_BIT_NONE },
+    { 900u, 20524u, COOP_REGION_CORMORIA, COOP_IDENTITY_BADGE_BIT_NONE },
+    { 901u, 20525u, COOP_REGION_CORMORIA, COOP_IDENTITY_BADGE_BIT_NONE },
+    { 902u, 20526u, COOP_REGION_CORMORIA, COOP_IDENTITY_BADGE_BIT_NONE },
+    { 903u, 20527u, COOP_REGION_CORMORIA, COOP_IDENTITY_BADGE_BIT_NONE },
+    { 904u, 20528u, COOP_REGION_CORMORIA, COOP_IDENTITY_BADGE_BIT_NONE },
+    { 905u, 20529u, COOP_REGION_CORMORIA, COOP_IDENTITY_BADGE_BIT_NONE },
+    { 906u, 20530u, COOP_REGION_CORMORIA, COOP_IDENTITY_BADGE_BIT_NONE },
+    { 907u, 20531u, COOP_REGION_CORMORIA, COOP_IDENTITY_BADGE_BIT_NONE },
+    { 908u, 20532u, COOP_REGION_CORMORIA, COOP_IDENTITY_BADGE_BIT_NONE },
+    { 909u, 20533u, COOP_REGION_CORMORIA, COOP_IDENTITY_BADGE_BIT_NONE },
+    { 910u, 20534u, COOP_REGION_CORMORIA, COOP_IDENTITY_BADGE_BIT_NONE },
+    { 911u, 20535u, COOP_REGION_CORMORIA, COOP_IDENTITY_BADGE_BIT_NONE },
+    { 912u, 20536u, COOP_REGION_CORMORIA, COOP_IDENTITY_BADGE_BIT_NONE },
+    { 913u, 20537u, COOP_REGION_CORMORIA, COOP_IDENTITY_BADGE_BIT_NONE },
+    { 914u, 20538u, COOP_REGION_CORMORIA, COOP_IDENTITY_BADGE_BIT_NONE },
+    { 915u, 20539u, COOP_REGION_CORMORIA, COOP_IDENTITY_BADGE_BIT_NONE },
+    { 916u, 20540u, COOP_REGION_CORMORIA, COOP_IDENTITY_BADGE_BIT_NONE },
+    { 917u, 20541u, COOP_REGION_CORMORIA, COOP_IDENTITY_BADGE_BIT_NONE },
+    { 918u, 20542u, COOP_REGION_CORMORIA, COOP_IDENTITY_BADGE_BIT_NONE },
+    { 919u, 20543u, COOP_REGION_CORMORIA, COOP_IDENTITY_BADGE_BIT_NONE },
+    { 920u, 20544u, COOP_REGION_CORMORIA, COOP_IDENTITY_BADGE_BIT_NONE },
+    { 921u, 20545u, COOP_REGION_CORMORIA, COOP_IDENTITY_BADGE_BIT_NONE },
+    { 922u, 20546u, COOP_REGION_CORMORIA, COOP_IDENTITY_BADGE_BIT_NONE },
+    { 923u, 20547u, COOP_REGION_CORMORIA, COOP_IDENTITY_BADGE_BIT_NONE },
+    { 924u, 20549u, COOP_REGION_CORMORIA, COOP_IDENTITY_BADGE_BIT_NONE },
+    { 925u, 20550u, COOP_REGION_CORMORIA, COOP_IDENTITY_BADGE_BIT_NONE },
+    { 926u, 20551u, COOP_REGION_CORMORIA, COOP_IDENTITY_BADGE_BIT_NONE },
+    { 927u, 20552u, COOP_REGION_CORMORIA, COOP_IDENTITY_BADGE_BIT_NONE },
+    { 928u, 20553u, COOP_REGION_CORMORIA, COOP_IDENTITY_BADGE_BIT_NONE },
+    { 929u, 20554u, COOP_REGION_CORMORIA, COOP_IDENTITY_BADGE_BIT_NONE },
+    { 930u, 20555u, COOP_REGION_CORMORIA, COOP_IDENTITY_BADGE_BIT_NONE },
+    { 931u, 20556u, COOP_REGION_CORMORIA, COOP_IDENTITY_BADGE_BIT_NONE },
+    { 932u, 20557u, COOP_REGION_CORMORIA, COOP_IDENTITY_BADGE_BIT_NONE },
+    { 933u, 20558u, COOP_REGION_CORMORIA, COOP_IDENTITY_BADGE_BIT_NONE },
+    { 934u, 20559u, COOP_REGION_CORMORIA, COOP_IDENTITY_BADGE_BIT_NONE },
+    { 935u, 20560u, COOP_REGION_CORMORIA, COOP_IDENTITY_BADGE_BIT_NONE },
+    { 936u, 20561u, COOP_REGION_CORMORIA, COOP_IDENTITY_BADGE_BIT_NONE },
+    { 937u, 20562u, COOP_REGION_CORMORIA, COOP_IDENTITY_BADGE_BIT_NONE },
+    { 938u, 20563u, COOP_REGION_CORMORIA, COOP_IDENTITY_BADGE_BIT_NONE },
+    { 939u, 20564u, COOP_REGION_CORMORIA, COOP_IDENTITY_BADGE_BIT_NONE },
+    { 940u, 20565u, COOP_REGION_CORMORIA, COOP_IDENTITY_BADGE_BIT_NONE },
+    { 941u, 20566u, COOP_REGION_CORMORIA, COOP_IDENTITY_BADGE_BIT_NONE },
+    { 942u, 20567u, COOP_REGION_CORMORIA, COOP_IDENTITY_BADGE_BIT_NONE },
+    { 943u, 20568u, COOP_REGION_CORMORIA, COOP_IDENTITY_BADGE_BIT_NONE },
+    { 944u, 20569u, COOP_REGION_CORMORIA, COOP_IDENTITY_BADGE_BIT_NONE },
+    { 945u, 20570u, COOP_REGION_CORMORIA, COOP_IDENTITY_BADGE_BIT_NONE },
+    { 946u, 20571u, COOP_REGION_CORMORIA, COOP_IDENTITY_BADGE_BIT_NONE },
+    { 947u, 20572u, COOP_REGION_CORMORIA, COOP_IDENTITY_BADGE_BIT_NONE },
+    { 948u, 20573u, COOP_REGION_CORMORIA, COOP_IDENTITY_BADGE_BIT_NONE },
+    { 949u, 20574u, COOP_REGION_CORMORIA, COOP_IDENTITY_BADGE_BIT_NONE },
+    { 950u, 20575u, COOP_REGION_CORMORIA, COOP_IDENTITY_BADGE_BIT_NONE },
+    { 951u, 20576u, COOP_REGION_CORMORIA, COOP_IDENTITY_BADGE_BIT_NONE },
+    { 952u, 20577u, COOP_REGION_CORMORIA, COOP_IDENTITY_BADGE_BIT_NONE },
+    { 953u, 20578u, COOP_REGION_CORMORIA, COOP_IDENTITY_BADGE_BIT_NONE },
+    { 954u, 20579u, COOP_REGION_CORMORIA, COOP_IDENTITY_BADGE_BIT_NONE },
+    { 955u, 20580u, COOP_REGION_CORMORIA, COOP_IDENTITY_BADGE_BIT_NONE },
+    { 956u, 20581u, COOP_REGION_CORMORIA, COOP_IDENTITY_BADGE_BIT_NONE },
+    { 957u, 20582u, COOP_REGION_CORMORIA, COOP_IDENTITY_BADGE_BIT_NONE },
+    { 958u, 20583u, COOP_REGION_CORMORIA, COOP_IDENTITY_BADGE_BIT_NONE },
+    { 959u, 20584u, COOP_REGION_CORMORIA, COOP_IDENTITY_BADGE_BIT_NONE },
+    { 960u, 20585u, COOP_REGION_CORMORIA, COOP_IDENTITY_BADGE_BIT_NONE },
+    { 961u, 20586u, COOP_REGION_CORMORIA, COOP_IDENTITY_BADGE_BIT_NONE },
+    { 962u, 20587u, COOP_REGION_CORMORIA, COOP_IDENTITY_BADGE_BIT_NONE },
+    { 963u, 20588u, COOP_REGION_CORMORIA, COOP_IDENTITY_BADGE_BIT_NONE },
+    { 964u, 20589u, COOP_REGION_CORMORIA, COOP_IDENTITY_BADGE_BIT_NONE },
+    { 965u, 20590u, COOP_REGION_CORMORIA, COOP_IDENTITY_BADGE_BIT_NONE },
+    { 966u, 20591u, COOP_REGION_CORMORIA, COOP_IDENTITY_BADGE_BIT_NONE },
+    { 967u, 20592u, COOP_REGION_CORMORIA, COOP_IDENTITY_BADGE_BIT_NONE },
+    { 968u, 20593u, COOP_REGION_CORMORIA, COOP_IDENTITY_BADGE_BIT_NONE },
+    { 969u, 20594u, COOP_REGION_CORMORIA, COOP_IDENTITY_BADGE_BIT_NONE },
+    { 970u, 20595u, COOP_REGION_CORMORIA, COOP_IDENTITY_BADGE_BIT_NONE },
+    { 971u, 20596u, COOP_REGION_CORMORIA, COOP_IDENTITY_BADGE_BIT_NONE },
+    { 972u, 20597u, COOP_REGION_CORMORIA, COOP_IDENTITY_BADGE_BIT_NONE },
+    { 973u, 20598u, COOP_REGION_CORMORIA, COOP_IDENTITY_BADGE_BIT_NONE },
+    { 974u, 20599u, COOP_REGION_CORMORIA, COOP_IDENTITY_BADGE_BIT_NONE },
+    { 975u, 20600u, COOP_REGION_CORMORIA, COOP_IDENTITY_BADGE_BIT_NONE },
+    { 976u, 20601u, COOP_REGION_CORMORIA, COOP_IDENTITY_BADGE_BIT_NONE },
+    { 977u, 20602u, COOP_REGION_CORMORIA, COOP_IDENTITY_BADGE_BIT_NONE },
+    { 978u, 20603u, COOP_REGION_CORMORIA, COOP_IDENTITY_BADGE_BIT_NONE },
+    { 979u, 20604u, COOP_REGION_CORMORIA, COOP_IDENTITY_BADGE_BIT_NONE },
+    { 980u, 20605u, COOP_REGION_CORMORIA, COOP_IDENTITY_BADGE_BIT_NONE },
+    { 981u, 20606u, COOP_REGION_CORMORIA, COOP_IDENTITY_BADGE_BIT_NONE },
+    { 982u, 20607u, COOP_REGION_CORMORIA, COOP_IDENTITY_BADGE_BIT_NONE },
+    { 983u, 20608u, COOP_REGION_CORMORIA, COOP_IDENTITY_BADGE_BIT_NONE },
+    { 984u, 20609u, COOP_REGION_CORMORIA, COOP_IDENTITY_BADGE_BIT_NONE },
+    { 985u, 20610u, COOP_REGION_CORMORIA, COOP_IDENTITY_BADGE_BIT_NONE },
+    { 986u, 20611u, COOP_REGION_CORMORIA, COOP_IDENTITY_BADGE_BIT_NONE },
+    { 987u, 20612u, COOP_REGION_CORMORIA, COOP_IDENTITY_BADGE_BIT_NONE },
+    { 988u, 20613u, COOP_REGION_CORMORIA, COOP_IDENTITY_BADGE_BIT_NONE },
+    { 989u, 20614u, COOP_REGION_CORMORIA, COOP_IDENTITY_BADGE_BIT_NONE },
+    { 990u, 20615u, COOP_REGION_CORMORIA, COOP_IDENTITY_BADGE_BIT_NONE },
+    { 991u, 20616u, COOP_REGION_CORMORIA, COOP_IDENTITY_BADGE_BIT_NONE },
+    { 992u, 20617u, COOP_REGION_CORMORIA, COOP_IDENTITY_BADGE_BIT_NONE },
+    { 993u, 20618u, COOP_REGION_CORMORIA, COOP_IDENTITY_BADGE_BIT_NONE },
+    { 994u, 20619u, COOP_REGION_CORMORIA, COOP_IDENTITY_BADGE_BIT_NONE },
+    { 995u, 20620u, COOP_REGION_CORMORIA, COOP_IDENTITY_BADGE_BIT_NONE },
+    { 996u, 20621u, COOP_REGION_CORMORIA, COOP_IDENTITY_BADGE_BIT_NONE },
+    { 997u, 20622u, COOP_REGION_CORMORIA, COOP_IDENTITY_BADGE_BIT_NONE },
+    { 998u, 20623u, COOP_REGION_CORMORIA, COOP_IDENTITY_BADGE_BIT_NONE },
+    { 999u, 20624u, COOP_REGION_CORMORIA, COOP_IDENTITY_BADGE_BIT_NONE },
+    { 1000u, 20625u, COOP_REGION_CORMORIA, COOP_IDENTITY_BADGE_BIT_NONE },
+    { 1001u, 20626u, COOP_REGION_CORMORIA, COOP_IDENTITY_BADGE_BIT_NONE },
+    { 1002u, 20627u, COOP_REGION_CORMORIA, COOP_IDENTITY_BADGE_BIT_NONE },
+    { 1003u, 20628u, COOP_REGION_CORMORIA, COOP_IDENTITY_BADGE_BIT_NONE },
+    { 1004u, 20629u, COOP_REGION_CORMORIA, COOP_IDENTITY_BADGE_BIT_NONE },
+    { 1005u, 20630u, COOP_REGION_CORMORIA, COOP_IDENTITY_BADGE_BIT_NONE },
+    { 1006u, 20631u, COOP_REGION_CORMORIA, COOP_IDENTITY_BADGE_BIT_NONE },
+    { 1007u, 20632u, COOP_REGION_CORMORIA, COOP_IDENTITY_BADGE_BIT_NONE },
+    { 1008u, 20633u, COOP_REGION_CORMORIA, COOP_IDENTITY_BADGE_BIT_NONE },
+    { 1009u, 20634u, COOP_REGION_CORMORIA, COOP_IDENTITY_BADGE_BIT_NONE },
+    { 1010u, 20635u, COOP_REGION_CORMORIA, COOP_IDENTITY_BADGE_BIT_NONE },
+    { 1011u, 20636u, COOP_REGION_CORMORIA, COOP_IDENTITY_BADGE_BIT_NONE },
+    { 1012u, 20637u, COOP_REGION_CORMORIA, COOP_IDENTITY_BADGE_BIT_NONE },
+    { 1013u, 20638u, COOP_REGION_CORMORIA, COOP_IDENTITY_BADGE_BIT_NONE },
+    { 1014u, 20639u, COOP_REGION_CORMORIA, COOP_IDENTITY_BADGE_BIT_NONE },
+    { 1015u, 20640u, COOP_REGION_CORMORIA, COOP_IDENTITY_BADGE_BIT_NONE },
+    { 1016u, 20641u, COOP_REGION_CORMORIA, COOP_IDENTITY_BADGE_BIT_NONE },
+    { 1017u, 20642u, COOP_REGION_CORMORIA, COOP_IDENTITY_BADGE_BIT_NONE },
+    { 1018u, 20643u, COOP_REGION_CORMORIA, COOP_IDENTITY_BADGE_BIT_NONE },
+    { 1019u, 20644u, COOP_REGION_CORMORIA, COOP_IDENTITY_BADGE_BIT_NONE },
+    { 1020u, 20645u, COOP_REGION_CORMORIA, COOP_IDENTITY_BADGE_BIT_NONE },
+    { 1021u, 20646u, COOP_REGION_CORMORIA, COOP_IDENTITY_BADGE_BIT_NONE },
+    { 1022u, 20647u, COOP_REGION_CORMORIA, COOP_IDENTITY_BADGE_BIT_NONE },
+    { 1023u, 20648u, COOP_REGION_CORMORIA, COOP_IDENTITY_BADGE_BIT_NONE },
+    { 1024u, 20649u, COOP_REGION_CORMORIA, COOP_IDENTITY_BADGE_BIT_NONE },
+    { 1025u, 20650u, COOP_REGION_CORMORIA, COOP_IDENTITY_BADGE_BIT_NONE },
+    { 1026u, 20651u, COOP_REGION_CORMORIA, COOP_IDENTITY_BADGE_BIT_NONE },
+    { 1027u, 20652u, COOP_REGION_CORMORIA, COOP_IDENTITY_BADGE_BIT_NONE },
+    { 1028u, 20653u, COOP_REGION_CORMORIA, COOP_IDENTITY_BADGE_BIT_NONE },
+    { 1029u, 20654u, COOP_REGION_CORMORIA, COOP_IDENTITY_BADGE_BIT_NONE },
+    { 1030u, 20655u, COOP_REGION_CORMORIA, COOP_IDENTITY_BADGE_BIT_NONE },
+    { 1031u, 20656u, COOP_REGION_CORMORIA, COOP_IDENTITY_BADGE_BIT_NONE },
+    { 1032u, 20657u, COOP_REGION_CORMORIA, COOP_IDENTITY_BADGE_BIT_NONE },
+    { 1033u, 20658u, COOP_REGION_CORMORIA, COOP_IDENTITY_BADGE_BIT_NONE },
+    { 1034u, 20659u, COOP_REGION_CORMORIA, COOP_IDENTITY_BADGE_BIT_NONE },
+    { 1035u, 20660u, COOP_REGION_CORMORIA, COOP_IDENTITY_BADGE_BIT_NONE },
+    { 1036u, 20661u, COOP_REGION_CORMORIA, COOP_IDENTITY_BADGE_BIT_NONE },
+    { 1037u, 20662u, COOP_REGION_CORMORIA, COOP_IDENTITY_BADGE_BIT_NONE },
+    { 1038u, 20663u, COOP_REGION_CORMORIA, COOP_IDENTITY_BADGE_BIT_NONE },
+    { 1039u, 20664u, COOP_REGION_CORMORIA, COOP_IDENTITY_BADGE_BIT_NONE },
+    { 1040u, 20665u, COOP_REGION_CORMORIA, COOP_IDENTITY_BADGE_BIT_NONE },
+    { 1041u, 20666u, COOP_REGION_CORMORIA, COOP_IDENTITY_BADGE_BIT_NONE },
+    { 1042u, 20667u, COOP_REGION_CORMORIA, COOP_IDENTITY_BADGE_BIT_NONE },
+    { 1043u, 20668u, COOP_REGION_CORMORIA, COOP_IDENTITY_BADGE_BIT_NONE },
+    { 1044u, 20669u, COOP_REGION_CORMORIA, COOP_IDENTITY_BADGE_BIT_NONE },
+    { 1045u, 20670u, COOP_REGION_CORMORIA, COOP_IDENTITY_BADGE_BIT_NONE },
+    { 1046u, 20671u, COOP_REGION_CORMORIA, COOP_IDENTITY_BADGE_BIT_NONE },
+    { 1047u, 20672u, COOP_REGION_CORMORIA, COOP_IDENTITY_BADGE_BIT_NONE },
+    { 1048u, 20673u, COOP_REGION_CORMORIA, COOP_IDENTITY_BADGE_BIT_NONE },
+    { 1049u, 20674u, COOP_REGION_CORMORIA, COOP_IDENTITY_BADGE_BIT_NONE },
 };
 
 const struct CoopIdentityRegistryEntry gCoopGymIdentityRegistry[] =
@@ -1791,6 +2188,14 @@ const struct CoopIdentityRegistryEntry gCoopBadgeIdentityRegistry[] =
     { COOP_IDENTITY_ORDINAL_NONE, COOP_IDENTITY_LEGACY_NONE, COOP_REGION_JOHTO, 5u },
     { COOP_IDENTITY_ORDINAL_NONE, COOP_IDENTITY_LEGACY_NONE, COOP_REGION_JOHTO, 6u },
     { COOP_IDENTITY_ORDINAL_NONE, COOP_IDENTITY_LEGACY_NONE, COOP_REGION_JOHTO, 7u },
+    { COOP_IDENTITY_ORDINAL_NONE, 32777u, COOP_REGION_CORMORIA, 0u },
+    { COOP_IDENTITY_ORDINAL_NONE, 32778u, COOP_REGION_CORMORIA, 1u },
+    { COOP_IDENTITY_ORDINAL_NONE, 32779u, COOP_REGION_CORMORIA, 2u },
+    { COOP_IDENTITY_ORDINAL_NONE, 32780u, COOP_REGION_CORMORIA, 3u },
+    { COOP_IDENTITY_ORDINAL_NONE, 32781u, COOP_REGION_CORMORIA, 4u },
+    { COOP_IDENTITY_ORDINAL_NONE, 32782u, COOP_REGION_CORMORIA, 5u },
+    { COOP_IDENTITY_ORDINAL_NONE, 32783u, COOP_REGION_CORMORIA, 6u },
+    { COOP_IDENTITY_ORDINAL_NONE, 32784u, COOP_REGION_CORMORIA, 7u },
 };
 
 const struct CoopIdentityRegistryEntry gCoopFlyPointIdentityRegistry[] =

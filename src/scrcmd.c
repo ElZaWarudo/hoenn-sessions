@@ -30,6 +30,7 @@
 #include "fieldmap.h"
 #include "follower_npc.h"
 #include "gpu_regs.h"
+#include "heal_location.h"
 #include "item.h"
 #include "lilycove_lady.h"
 #include "main.h"
@@ -2733,7 +2734,7 @@ bool8 ScrCmd_setrespawn(struct ScriptContext *ctx)
 
     Script_RequestEffects(SCREFF_V1 | SCREFF_SAVE);
 
-    SetLastHealLocationWarp(healLocationId);
+    SetLastHealLocationWarp(ResolveScriptHealLocation(healLocationId));
     return FALSE;
 }
 
@@ -3076,8 +3077,9 @@ bool8 ScrCmd_setmonmetlocation(struct ScriptContext *ctx)
 
     Script_RequestEffects(SCREFF_V1 | SCREFF_SAVE);
 
+    // The script operand is a legacy met-location byte (e.g. METLOC_*).
     if (partyIndex < PARTY_SIZE)
-        SetMonData(&gParties[B_TRAINER_0][partyIndex], MON_DATA_MET_LOCATION, &location);
+        SetMonMetLocation(&gParties[B_TRAINER_0][partyIndex], MetLocationFromLegacyByte(location));
     return FALSE;
 }
 

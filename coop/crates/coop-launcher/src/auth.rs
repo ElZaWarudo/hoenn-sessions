@@ -248,6 +248,10 @@ impl AuthSession {
         self.active_fence = Some(fence);
     }
 
+    pub(crate) fn clear_active_fence(&mut self) {
+        self.active_fence = None;
+    }
+
     #[must_use]
     pub(crate) const fn active_fence(&self) -> Option<LeaseFence> {
         self.active_fence

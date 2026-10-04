@@ -530,10 +530,16 @@ fn mint_ticket(
         return Err(Phase2Error::InvalidRequest);
     }
     let runtime = request.runtime().clone();
-    let build = super::saves::current_runtime_build_identity()?;
-    if runtime.build != build {
-        return Err(Phase2Error::Authentication);
-    }
+    let catalog = app
+        .store
+        .config
+        .release_catalog
+        .as_ref()
+        .ok_or(Phase2Error::Internal)?;
+    let build = runtime.build.clone();
+    let world_id = catalog
+        .world_for_build(&build)
+        .ok_or(Phase2Error::Authentication)?;
     let (actor, family_id) = auth::actor_and_family_from_headers(&app.store, headers)?;
     app.realtime.admit_ticket_mint(actor.user_id)?;
     // Entropy is deliberately consumed before entering the runtime gate.
@@ -576,6 +582,44 @@ fn mint_ticket(
 
     app.store.write_transaction(|state| {
         validate_realtime_indexes(state)?;
+        // Release and expiry can change after the earlier read preflight.
+        // Recheck the lease in the same transaction as ticket publication.
+        validate_runtime_state_in_state(state, actor, &runtime, now, &build)?;
+        // A new lease has no runtime binding yet. Its first ticket must still
+        // follow the character's durable active snapshot; otherwise a client
+        // can select another catalog ROM and resume stale regional data.
+        let character = state
+            .characters
+            .get(&actor.character_id)
+            .ok_or(Phase2Error::Authentication)?;
+        let active_world = if let Some(snapshot_id) = character.active_snapshot {
+            state
+                .snapshots
+                .get(&snapshot_id)
+                .ok_or(Phase2Error::Internal)?
+                .rom_world_id
+        } else {
+            // Registration currently creates a new character in the Main ROM.
+            // Future alternate starting worlds require an explicit durable
+            // starting-world choice, not the client's first ticket.
+            coop_protocol::RomWorldId::new(1).map_err(|_| Phase2Error::Internal)?
+        };
+        if world_id != active_world {
+            return Err(Phase2Error::Authentication);
+        }
+        let lease = state
+            .leases
+            .get(&actor.character_id)
+            .ok_or(Phase2Error::Authentication)?;
+        if lease.contract.stable_runtime_session() != runtime.session
+            || lease.runtime_binding.as_ref().is_some_and(|binding| {
+                binding.session != runtime.session
+                    || binding.world_id != world_id
+                    || binding.build != build
+            })
+        {
+            return Err(Phase2Error::Authentication);
+        }
         let existing = state.realtime_by_runtime.get(&key).copied();
         let expired = expired_realtime_tickets(state, now);
         let active_count = state
@@ -607,8 +651,17 @@ fn mint_ticket(
                 return Err(Phase2Error::Internal);
             }
         }
+        let lease = state
+            .leases
+            .get_mut(&actor.character_id)
+            .ok_or(Phase2Error::Internal)?;
         // The repository callback is not rollback-safe on error.  All
         // fallible validation is complete before this mutation-only suffix.
+        lease.runtime_binding = Some(super::storage::RuntimeWorldBinding {
+            world_id,
+            build: build.clone(),
+            session: runtime.session,
+        });
         for expired_fingerprint in expired {
             if let Some(record) = state.realtime_tickets.remove(&expired_fingerprint) {
                 state.realtime_ticket_families.remove(&expired_fingerprint);
@@ -740,6 +793,9 @@ fn validate_runtime_state_in_state(
     now: u64,
     build: &coop_cloud::RuntimeBuildIdentity,
 ) -> Result<(), Phase2Error> {
+    if state.handoff_for_member(actor.character_id) {
+        return Err(Phase2Error::Conflict);
+    }
     let user = state
         .users_by_id
         .get(&actor.user_id)
@@ -762,6 +818,41 @@ fn validate_runtime_state_in_state(
         || lease.contract.expires_at.value() <= now
         || lease.contract.stable_runtime_session() != runtime.session
         || runtime.build != *build
+    {
+        return Err(Phase2Error::Authentication);
+    }
+    Ok(())
+}
+
+pub(super) fn validate_bound_runtime(
+    state: &StorageState,
+    catalog: &super::saves::build_catalog::TrustedBuildCatalog,
+    actor: AuthenticatedActor,
+    runtime: &RuntimeLeaseFence,
+) -> Result<(), Phase2Error> {
+    let lease = state
+        .leases
+        .get(&actor.character_id)
+        .ok_or(Phase2Error::Authentication)?;
+    let binding = lease
+        .runtime_binding
+        .as_ref()
+        .ok_or(Phase2Error::Authentication)?;
+    let character = state
+        .characters
+        .get(&actor.character_id)
+        .ok_or(Phase2Error::Authentication)?;
+    let active_world = character
+        .active_snapshot
+        .and_then(|id| state.snapshots.get(&id))
+        .map(|snapshot| snapshot.rom_world_id)
+        .unwrap_or(coop_protocol::RomWorldId::new(1).expect("Main world"));
+    if active_world != binding.world_id {
+        return Err(Phase2Error::Authentication);
+    }
+    if binding.session != runtime.session
+        || binding.build != runtime.build
+        || catalog.world_for_build(&runtime.build) != Some(binding.world_id)
     {
         return Err(Phase2Error::Authentication);
     }
@@ -830,7 +921,11 @@ fn ticket_from_headers(headers: &HeaderMap) -> Result<RealtimeTicket, Phase2Erro
 
 fn preflight_ticket(store: &Store, ticket: &RealtimeTicket) -> Result<Redemption, Phase2Error> {
     let fingerprint = *ticket.fingerprint().as_bytes();
-    let build = super::saves::current_runtime_build_identity()?;
+    let catalog = store
+        .config
+        .release_catalog
+        .as_ref()
+        .ok_or(Phase2Error::Internal)?;
     let _gate = store.lock_runtime_transition_gate();
     let now = store.now();
     store.read_transaction(|state| {
@@ -862,7 +957,8 @@ fn preflight_ticket(store: &Store, ticket: &RealtimeTicket) -> Result<Redemption
             user_id: record.user_id,
             character_id: record.character_id,
         };
-        validate_runtime_state_in_state(state, actor, &record.runtime, now, &build)?;
+        validate_runtime_state_in_state(state, actor, &record.runtime, now, &record.runtime.build)?;
+        validate_bound_runtime(state, catalog, actor, &record.runtime)?;
         Ok(Redemption {
             actor,
             family_id,
@@ -877,7 +973,11 @@ fn consume_ticket(
     redemption: &Redemption,
 ) -> Result<(), Phase2Error> {
     let fingerprint = *ticket.fingerprint().as_bytes();
-    let build = super::saves::current_runtime_build_identity()?;
+    let catalog = store
+        .config
+        .release_catalog
+        .as_ref()
+        .ok_or(Phase2Error::Internal)?;
     let _gate = store.lock_runtime_transition_gate();
     let now = store.now();
     store.write_transaction(|state| {
@@ -911,7 +1011,14 @@ fn consume_ticket(
         {
             return Err(Phase2Error::Authentication);
         }
-        validate_runtime_state_in_state(state, redemption.actor, &record.runtime, now, &build)?;
+        validate_runtime_state_in_state(
+            state,
+            redemption.actor,
+            &record.runtime,
+            now,
+            &record.runtime.build,
+        )?;
+        validate_bound_runtime(state, catalog, redemption.actor, &record.runtime)?;
         let key = (record.user_id, record.session);
         if state.realtime_by_runtime.get(&key).copied() != Some(fingerprint) {
             return Err(Phase2Error::Internal);
@@ -1658,6 +1765,7 @@ const fn client_frame_cap() -> usize {
 
 #[cfg(test)]
 mod tests {
+    use super::super::{ArgonPasswordEngine, Phase2Config};
     use super::*;
     use coop_cloud::{
         AcquireLeaseRequest, CharacterId, ClientInstanceId, IdempotencyKey, InvitationCode,
@@ -1673,6 +1781,252 @@ mod tests {
     use http_body_util::BodyExt;
     use std::sync::{Arc, Barrier};
     use tower::ServiceExt;
+
+    fn three_world_catalog() -> (Vec<u8>, Vec<coop_cloud::RuntimeBuildIdentity>) {
+        let builds = ["main", "cormoria", "third"]
+            .into_iter()
+            .map(|name| {
+                coop_cloud::RuntimeBuildIdentity::new(
+                    coop_cloud::GameBuildId::new(format!("test-{name}-v2")).unwrap(),
+                    coop_cloud::Sha256Digest::of_bytes(name.as_bytes()),
+                    coop_cloud::MgbaVersion::new("0.10.5").unwrap(),
+                    coop_cloud::BridgeAbiVersion::new(1).unwrap(),
+                    coop_cloud::ProtocolVersion::new(1).unwrap(),
+                )
+            })
+            .collect::<Vec<_>>();
+        let worlds = [1_u16, 2, 7]
+            .into_iter()
+            .zip(&builds)
+            .map(|(world_id, build)| serde_json::json!({"world_id": world_id, "build": build}))
+            .collect::<Vec<_>>();
+        (
+            serde_json::to_vec(&serde_json::json!({"schema_version": 1, "worlds": worlds}))
+                .unwrap(),
+            builds,
+        )
+    }
+
+    #[test]
+    fn missing_release_catalog_cannot_admit_a_runtime() {
+        let (app, headers, request) = ticket_fixture();
+        let mut config = (*app.store.config).clone();
+        config.release_catalog = None;
+        config.fixture_auto_bind = false;
+        let config = config.with_adapters(app.store.repository.clone(), app.store.objects.clone());
+        let unconfigured = Phase2App::new(config).unwrap();
+        assert_eq!(
+            mint_ticket(&unconfigured, &headers, &request),
+            Err(Phase2Error::Internal)
+        );
+    }
+
+    #[test]
+    fn active_main_world_mints_only_main_and_prepare_rejects_spoofed_world() {
+        let (catalog_bytes, builds) = three_world_catalog();
+        for (index, world_number) in [1_u16].into_iter().enumerate() {
+            let config = Phase2Config::local(
+                vec![0x55; 32],
+                coop_cloud::SigningPrivateKey::from_bytes([7; 32]),
+                "world-binding-test",
+            )
+            .unwrap()
+            .with_release_catalog_bytes(
+                &catalog_bytes,
+                coop_cloud::Sha256Digest::of_bytes(&catalog_bytes),
+            )
+            .unwrap()
+            .with_password_engine(Arc::new(ArgonPasswordEngine::new(8_192, 1, 1).unwrap()));
+            let app = Phase2App::new(config).unwrap();
+            app.add_invitation("world-binding-invite").unwrap();
+            let registration = app
+                .register(
+                    RegisterRequest::new(
+                        "WorldBindingUser",
+                        Password::new("world-binding-password").unwrap(),
+                        InvitationCode::new("world-binding-invite").unwrap(),
+                    )
+                    .unwrap(),
+                )
+                .unwrap();
+            let login = app
+                .login(
+                    LoginRequest::new(
+                        "worldbindinguser",
+                        Password::new("world-binding-password").unwrap(),
+                    )
+                    .unwrap(),
+                )
+                .unwrap();
+            let headers = HeaderMap::from_iter([(
+                axum::http::header::AUTHORIZATION,
+                format!("Bearer {}", login.access_token.expose_secret())
+                    .parse()
+                    .unwrap(),
+            )]);
+            let actor = auth::actor_from_headers(&app.store, &headers).unwrap();
+            let client = ClientInstanceId::new(uuid::Uuid::from_u128(101)).unwrap();
+            let lease = app
+                .acquire(
+                    actor,
+                    AcquireLeaseRequest::new(
+                        registration.character_id,
+                        client,
+                        IdempotencyKey::new(uuid::Uuid::from_u128(102)).unwrap(),
+                    ),
+                )
+                .unwrap();
+            let world = coop_protocol::RomWorldId::new(world_number).unwrap();
+            let sav = coop_cloud::SnapshotFile::from_bytes(
+                coop_cloud::ArtifactIdentity::CharacterSav,
+                &vec![0xff; coop_save::FLASH_IMAGE_SIZE],
+            )
+            .unwrap();
+            let pending = coop_cloud::SnapshotFile::from_bytes(
+                coop_cloud::ArtifactIdentity::PendingCommits,
+                b"{}",
+            )
+            .unwrap();
+            let prepare = |claimed_world| {
+                coop_cloud::SnapshotPrepareRequest::new(
+                    coop_cloud::SnapshotId::new(uuid::Uuid::new_v4()).unwrap(),
+                    claimed_world,
+                    coop_cloud::SnapshotPrepareFence::new(
+                        lease.session_id,
+                        actor.character_id,
+                        lease.current_revision,
+                        lease.session_epoch,
+                        client,
+                        IdempotencyKey::new(uuid::Uuid::new_v4()).unwrap(),
+                    ),
+                    vec![sav.clone(), pending.clone()],
+                    pending.sha256,
+                )
+                .unwrap()
+            };
+            assert_eq!(
+                app.prepare(actor, prepare(world)),
+                Err(Phase2Error::Authentication),
+                "world {world_number} requires an authenticated runtime first"
+            );
+            for alternate in &builds[1..] {
+                assert_eq!(
+                    mint_ticket(
+                        &app,
+                        &headers,
+                        &MintRealtimeTicketRequest::v1(RuntimeLeaseFence::new(
+                            lease.stable_runtime_session(),
+                            alternate.clone(),
+                        )),
+                    ),
+                    Err(Phase2Error::Authentication),
+                    "a fresh character must begin in Main"
+                );
+            }
+            assert_eq!(
+                app.store
+                    .inspect_state(|state| {
+                        (
+                            state.leases[&actor.character_id].runtime_binding.is_none(),
+                            state.realtime_tickets.len(),
+                        )
+                    })
+                    .unwrap(),
+                (true, 0)
+            );
+            // A later fresh lease is unbound, but its first ticket must still
+            // follow the last durable snapshot rather than the client's ROM.
+            let snapshot_id = coop_cloud::SnapshotId::new(uuid::Uuid::new_v4()).unwrap();
+            let pending_digest = pending.sha256;
+            let snapshot = coop_cloud::SnapshotRecord::new(
+                snapshot_id,
+                world,
+                coop_cloud::SnapshotFence::new(
+                    lease.session_id,
+                    actor.character_id,
+                    lease.session_epoch,
+                ),
+                coop_cloud::Revision::initial(),
+                coop_cloud::Revision::initial().next().unwrap(),
+                vec![sav.clone(), pending.clone()],
+                pending_digest,
+                None,
+                Store::unix_timestamp(app.store.now()).unwrap(),
+            )
+            .unwrap();
+            app.store
+                .write_transaction(|state| {
+                    state.snapshots.insert(snapshot_id, snapshot);
+                    state
+                        .characters
+                        .get_mut(&actor.character_id)
+                        .unwrap()
+                        .active_snapshot = Some(snapshot_id);
+                    Ok::<_, Phase2Error>(())
+                })
+                .unwrap();
+            for alternate in &builds[1..] {
+                assert_eq!(
+                    mint_ticket(
+                        &app,
+                        &headers,
+                        &MintRealtimeTicketRequest::v1(RuntimeLeaseFence::new(
+                            lease.stable_runtime_session(),
+                            alternate.clone(),
+                        )),
+                    ),
+                    Err(Phase2Error::Authentication),
+                    "a saved Main character cannot bind an alternate world"
+                );
+            }
+            assert_eq!(
+                app.store
+                    .inspect_state(|state| {
+                        (
+                            state.leases[&actor.character_id].runtime_binding.is_none(),
+                            state.realtime_tickets.len(),
+                        )
+                    })
+                    .unwrap(),
+                (true, 0)
+            );
+            let runtime =
+                RuntimeLeaseFence::new(lease.stable_runtime_session(), builds[index].clone());
+            mint_ticket(&app, &headers, &MintRealtimeTicketRequest::v1(runtime)).unwrap();
+            let alternate = builds[(index + 1) % builds.len()].clone();
+            assert_eq!(
+                mint_ticket(
+                    &app,
+                    &headers,
+                    &MintRealtimeTicketRequest::v1(RuntimeLeaseFence::new(
+                        lease.stable_runtime_session(),
+                        alternate,
+                    )),
+                ),
+                Err(Phase2Error::Authentication),
+                "an active lease cannot silently switch ROM worlds"
+            );
+            let wrong =
+                coop_protocol::RomWorldId::new(if world_number == 1 { 2 } else { 1 }).unwrap();
+            assert_eq!(
+                app.prepare(actor, prepare(wrong)),
+                Err(Phase2Error::Authentication),
+                "world {world_number} rejects a client world spoof"
+            );
+            assert!(app.prepare(actor, prepare(world)).is_ok());
+            let bound = app
+                .store
+                .inspect_state(|state| {
+                    state.leases[&actor.character_id]
+                        .runtime_binding
+                        .as_ref()
+                        .unwrap()
+                        .world_id
+                })
+                .unwrap();
+            assert_eq!(bound, world);
+        }
+    }
 
     fn ticket_fixture() -> (Phase2App, HeaderMap, MintRealtimeTicketRequest) {
         let app = Phase2App::test();
@@ -3083,5 +3437,120 @@ mod tests {
         );
         app.realtime
             .unregister_progress_recipient(partner.character_id, socket);
+    }
+    #[test]
+    fn progress_publication_is_fenced_by_either_members_rom_stage() {
+        for paired in [false, true] {
+            for staged in 0..2 {
+                let app = Phase2App::test();
+                let (a, ra) = presence_fixture(&app, "progress-a", "ProgressA", 0x9000);
+                let (b, rb) = presence_fixture(&app, "progress-b", "ProgressB", 0x9100);
+                let actors = [a, b];
+                let runtimes = [ra, rb];
+                let group_id = coop_cloud::GroupId::new(uuid::Uuid::new_v4()).unwrap();
+                app.store
+                    .write_transaction(|state| {
+                        let group = coop_cloud::Group::new(a.character_id, b.character_id).unwrap();
+                        state.groups.insert(
+                            group_id,
+                            super::super::storage::GroupRecord {
+                                group,
+                                zone: state.characters[&a.character_id].state.world_zone.clone(),
+                                status: super::super::storage::GroupStatus::Active,
+                                zone_revision: 0,
+                            },
+                        );
+                        for actor in actors {
+                            state
+                                .active_group_by_member
+                                .insert(actor.character_id, group_id);
+                        }
+                        super::super::storage::test_stage_handoff(
+                            state,
+                            actors[staged].character_id,
+                            paired,
+                            app.store.now(),
+                        );
+                        Ok::<_, Phase2Error>(())
+                    })
+                    .unwrap();
+                let before = app
+                    .store
+                    .inspect_state(|state| {
+                        let mut out = Vec::new();
+                        ciborium::into_writer(state, &mut out).unwrap();
+                        out
+                    })
+                    .unwrap();
+                for caller in 0..2 {
+                    let observation = ProgressObservationV1 {
+                        kind: ProgressKindV1::BadgeEarned,
+                        region_id: coop_protocol::RegionId::Hoenn,
+                        subject_id: 0,
+                        session_epoch: runtimes[caller].session.session_epoch.value(),
+                        source_sequence: 1,
+                    };
+                    assert!(matches!(
+                        progress_feed::accept(
+                            &app.store,
+                            actors[caller],
+                            runtimes[caller].clone(),
+                            observation
+                        ),
+                        Err(Phase2Error::Conflict)
+                    ));
+                }
+                let after = app
+                    .store
+                    .inspect_state(|state| {
+                        let mut out = Vec::new();
+                        ciborium::into_writer(state, &mut out).unwrap();
+                        out
+                    })
+                    .unwrap();
+                assert_eq!(before, after);
+            }
+        }
+    }
+
+    #[test]
+    fn progress_requires_catalog_build_and_exact_active_world_binding() {
+        let (app, headers, request) = ticket_fixture();
+        let actor = auth::actor_from_headers(&app.store, &headers).unwrap();
+        let observation = ProgressObservationV1 {
+            kind: ProgressKindV1::BadgeEarned,
+            region_id: coop_protocol::RegionId::Hoenn,
+            subject_id: 0,
+            session_epoch: request.runtime().session.session_epoch.value(),
+            source_sequence: 1,
+        };
+        let mut wrong_build = request.runtime().clone();
+        wrong_build.build.rom_sha256 = coop_cloud::Sha256Digest::of_bytes(b"wrong build");
+        assert!(matches!(
+            progress_feed::accept(&app.store, actor, wrong_build, observation),
+            Err(Phase2Error::Authentication)
+        ));
+        app.store
+            .write_transaction(|state| {
+                state
+                    .leases
+                    .get_mut(&actor.character_id)
+                    .unwrap()
+                    .runtime_binding
+                    .as_mut()
+                    .unwrap()
+                    .world_id = coop_protocol::RomWorldId::new(2).unwrap();
+                Ok::<_, Phase2Error>(())
+            })
+            .unwrap();
+        assert!(matches!(
+            progress_feed::accept(&app.store, actor, request.runtime().clone(), observation),
+            Err(Phase2Error::Authentication)
+        ));
+        assert!(
+            app.store
+                .inspect_state(|state| state.group_progress_feeds.is_empty())
+                .unwrap()
+        );
     }
 }

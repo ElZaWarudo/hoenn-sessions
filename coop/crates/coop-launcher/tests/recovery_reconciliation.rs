@@ -42,6 +42,67 @@ fn no_evidence_is_not_a_reconciliation_error() {
 }
 
 #[test]
+fn empty_workspaces_do_not_hide_one_orphan_save() {
+    let root = tempdir().unwrap();
+    for index in 0..3 {
+        fs::create_dir(root.path().join(format!("coop-session-empty-{index}"))).unwrap();
+    }
+    let orphan = root.path().join("coop-session-orphan");
+    fs::create_dir(&orphan).unwrap();
+    fs::write(orphan.join("character.sav"), b"unsynced-save").unwrap();
+
+    let found = RecoveryDiscovery::discover(root.path())
+        .unwrap()
+        .candidate()
+        .unwrap();
+    assert_eq!(found.marker(), &RecoveryMarker::OrphanSave);
+    assert_eq!(
+        found.save_sha256(),
+        Sha256Digest::of_bytes(b"unsynced-save")
+    );
+    found.revalidate().unwrap();
+    // Discovery itself never discards an orphan. The reconciler may retire it
+    // only after matching its digest to a fresh signed cloud head.
+    assert_eq!(
+        fs::read(orphan.join("character.sav")).unwrap(),
+        b"unsynced-save"
+    );
+}
+
+#[test]
+fn orphan_save_cannot_be_silently_replaced_or_made_ambiguous() {
+    let root = tempdir().unwrap();
+    let orphan = root.path().join("coop-session-orphan");
+    fs::create_dir(&orphan).unwrap();
+    fs::write(orphan.join("character.sav"), b"unsynced-save").unwrap();
+    let found = RecoveryDiscovery::discover(root.path())
+        .unwrap()
+        .candidate()
+        .unwrap();
+    #[cfg(windows)]
+    {
+        assert!(fs::write(orphan.join("character.sav"), b"different-save").is_err());
+        found.revalidate().unwrap();
+    }
+    #[cfg(not(windows))]
+    {
+        fs::write(orphan.join("character.sav"), b"different-save").unwrap();
+        assert_eq!(found.revalidate().unwrap_err(), RecoveryError::Replaced);
+    }
+    assert!(orphan.join("character.sav").exists());
+
+    let second = root.path().join("coop-session-second");
+    fs::create_dir(&second).unwrap();
+    fs::write(second.join("character.sav"), b"another-save").unwrap();
+    assert_eq!(
+        RecoveryDiscovery::discover(root.path()).unwrap_err(),
+        RecoveryError::Ambiguous
+    );
+    assert!(orphan.join("character.sav").exists());
+    assert!(second.join("character.sav").exists());
+}
+
+#[test]
 fn missing_workspace_root_is_no_evidence() {
     let root = tempdir().unwrap();
     let missing = root.path().join("not-created");
@@ -156,8 +217,8 @@ fn ambiguity_extra_entries_and_replacement_fail_closed() {
         .candidate()
         .unwrap();
     fs::write(
-        root.path().join("coop-session-a").join("character.sav"),
-        b"changed",
+        root.path().join("coop-session-a").join("recovery.marker"),
+        marker().encode().unwrap(),
     )
     .unwrap();
     assert_eq!(found.revalidate().unwrap_err(), RecoveryError::Replaced);

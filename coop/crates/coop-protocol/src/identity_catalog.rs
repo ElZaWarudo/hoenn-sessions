@@ -168,7 +168,7 @@ mod tests {
 
     #[test]
     fn generated_registry_has_unique_bounded_ordinals() {
-        assert_eq!(IDENTITY_REGISTRY_VERSION, 1);
+        assert_eq!(IDENTITY_REGISTRY_VERSION, 3);
         assert_eq!(IDENTITY_REGISTRY_DIGEST.len(), 16);
         assert_eq!(TRAINER_IDENTITY_CAPACITY, 2048);
         assert_eq!(EVENT_IDENTITY_CAPACITY, 2048);
@@ -205,7 +205,7 @@ mod tests {
             .copied()
             .filter(|entry| entry.region == RegionId::Hoenn)
             .collect::<Vec<_>>();
-        assert_eq!(trainers.len(), 856);
+        assert_eq!(trainers.len(), 1050);
         assert_eq!(hoenn.len(), 854);
         assert_eq!(
             (
@@ -227,6 +227,12 @@ mod tests {
         let falkner = resolve_identity(IdentityKind::Trainer, "JOHTO:TRAINER_FALKNER").unwrap();
         assert_eq!(brock.ordinal, Some(854));
         assert_eq!(falkner.ordinal, Some(855));
+        let cormoria =
+            resolve_legacy_identity(IdentityKind::Trainer, RegionId::Cormoria, 0x505e).unwrap();
+        assert_eq!(cormoria.qualified_id, "CORMORIA:TRAINER_ROUTE1_A");
+        assert_eq!(cormoria.ordinal, Some(949));
+        assert!(resolve_legacy_identity(IdentityKind::Trainer, RegionId::Cormoria, 0x5044)
+            .is_err());
     }
 
     #[test]
@@ -242,6 +248,18 @@ mod tests {
         assert_eq!(resolve_badge_bit(RegionId::Hoenn, 0).unwrap(), hoenn);
         assert_eq!(resolve_badge_bit(RegionId::Kanto, 0).unwrap(), kanto);
         assert!(resolve_badge_bit(RegionId::Sevii, 0).is_err());
+    }
+
+    #[test]
+    fn cormoria_badges_keep_donor_flag_order_and_wire_region() {
+        for bit in 0..8 {
+            let badge = resolve_badge_bit(RegionId::Cormoria, bit).unwrap();
+            assert_eq!(badge.qualified_id, format!("CORMORIA:BADGE_{:02}", bit + 1));
+            assert_eq!(badge.legacy_value, Some(0x8009 + u16::from(bit)));
+            assert_eq!(badge.region, RegionId::Cormoria);
+            assert_eq!(badge.ordinal, None);
+        }
+        assert!(resolve_badge_bit(RegionId::Cormoria, 8).is_err());
     }
 
     #[test]

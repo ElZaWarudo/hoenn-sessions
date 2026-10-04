@@ -28,9 +28,9 @@ struct TestFlashSectorMeta
     u8 saveBlock3Chunk[SAVE_BLOCK_3_CHUNK_SIZE];
 };
 
-static EWRAM_DATA u8 sFlashSaveBlock1Tail[NUM_SAVE_SLOTS][JOHTO_SAVE_SERIALIZED_TAIL_SIZE];
+static u8 (*sFlashSaveBlock1Tail)[WORLD_EVENT_SAVE_SERIALIZED_TAIL_SIZE];
 static EWRAM_DATA struct TestFlashSectorMeta sFlashMeta[SECTORS_COUNT];
-static EWRAM_DATA struct SaveSector sPartialWriteBuffer;
+static struct SaveSector *sPartialWriteBuffer;
 static u16 sPartialSector;
 static u32 sFullWriteCount;
 static u16 sFirstFullWriteSector[NUM_SAVE_SLOTS];
@@ -40,13 +40,19 @@ static u32 sEraseCalls;
 static u32 sProgramSectorCalls;
 static u32 sProgramByteCalls;
 
+/* The serialized tails no longer fit in static EWRAM, so each flash test owns
+ * a heap copy for exactly its own duration: TestFlashBegin() allocates it and
+ * TestFlashEnd() frees it (and the partial-write sector) before the runner's
+ * leak check. Pointers never survive into another test, whose heap may have
+ * been reset or moved. */
 static void TestFlashReset(void)
 {
     u16 sector;
 
-    memset(sFlashSaveBlock1Tail, 0, sizeof(sFlashSaveBlock1Tail));
+    EXPECT(sFlashSaveBlock1Tail != NULL);
+    memset(sFlashSaveBlock1Tail, 0, NUM_SAVE_SLOTS * sizeof(*sFlashSaveBlock1Tail));
     memset(sFlashMeta, 0, sizeof(sFlashMeta));
-    memset(&sPartialWriteBuffer, 0xFF, sizeof(sPartialWriteBuffer));
+    TRY_FREE_AND_SET_NULL(sPartialWriteBuffer);
     sPartialSector = 0xFFFF;
     sFullWriteCount = 0;
     sFirstFullWriteSector[0] = 0xFFFF;
@@ -70,6 +76,20 @@ static void TestFlashReset(void)
     }
 }
 
+static void TestFlashBegin(void)
+{
+    /* Anything left by an earlier (failed) test belongs to its heap. */
+    sPartialWriteBuffer = NULL;
+    sFlashSaveBlock1Tail = Alloc(NUM_SAVE_SLOTS * sizeof(*sFlashSaveBlock1Tail));
+    TestFlashReset();
+}
+
+static void TestFlashEnd(void)
+{
+    TRY_FREE_AND_SET_NULL(sPartialWriteBuffer);
+    TRY_FREE_AND_SET_NULL(sFlashSaveBlock1Tail);
+}
+
 static void TestFlashRead(u16 sectorNum, u32 offset, u8 *dest, u32 size)
 {
     struct SaveSector *sector = (struct SaveSector *)dest;
@@ -87,7 +107,7 @@ static void TestFlashRead(u16 sectorNum, u32 offset, u8 *dest, u32 size)
 
     slot = sectorNum / NUM_SECTORS_PER_SLOT;
     if (meta->id == SECTOR_ID_SAVEBLOCK1_END)
-        memcpy(sector->data, sFlashSaveBlock1Tail[slot], JOHTO_SAVE_SERIALIZED_TAIL_SIZE);
+        memcpy(sector->data, sFlashSaveBlock1Tail[slot], WORLD_EVENT_SAVE_SERIALIZED_TAIL_SIZE);
     memcpy(sector->saveBlock3Chunk, meta->saveBlock3Chunk, sizeof(sector->saveBlock3Chunk));
     sector->id = meta->id;
     sector->checksum = meta->checksum;
@@ -107,7 +127,7 @@ static void TestFlashStoreSector(u16 sectorNum, const struct SaveSector *sector)
     slot = sectorNum / NUM_SECTORS_PER_SLOT;
     meta = &sFlashMeta[sectorNum];
     if (sector->id == SECTOR_ID_SAVEBLOCK1_END)
-        memcpy(sFlashSaveBlock1Tail[slot], sector->data, JOHTO_SAVE_SERIALIZED_TAIL_SIZE);
+        memcpy(sFlashSaveBlock1Tail[slot], sector->data, WORLD_EVENT_SAVE_SERIALIZED_TAIL_SIZE);
     memcpy(meta->saveBlock3Chunk, sector->saveBlock3Chunk, sizeof(meta->saveBlock3Chunk));
     meta->id = sector->id;
     /* The fixture stores the production sector-5 bytes.  Other sectors are
@@ -143,9 +163,15 @@ static u16 TestFlashEraseSector(u16 sectorNum)
     if (sectorNum >= SECTORS_COUNT)
         return 1;
 
+    if (sPartialWriteBuffer == NULL)
+    {
+        sPartialWriteBuffer = Alloc(sizeof(*sPartialWriteBuffer));
+        if (sPartialWriteBuffer == NULL)
+            return 1;
+    }
     sEraseCalls++;
     sPartialSector = sectorNum;
-    memset(&sPartialWriteBuffer, 0xFF, sizeof(sPartialWriteBuffer));
+    memset(sPartialWriteBuffer, 0xFF, sizeof(*sPartialWriteBuffer));
     sFlashMeta[sectorNum].valid = FALSE;
     return 0;
 }
@@ -169,9 +195,11 @@ static u16 TestFlashProgramByte(u16 sectorNum, u32 offset, u8 data)
     }
     if (sectorNum != sPartialSector)
         return 1;
-    ((u8 *)&sPartialWriteBuffer)[offset] = data;
+    if (sPartialWriteBuffer == NULL)
+        return 1;
+    ((u8 *)sPartialWriteBuffer)[offset] = data;
     if (offset == SECTOR_SIZE - 1)
-        TestFlashStoreSector(sectorNum, &sPartialWriteBuffer);
+        TestFlashStoreSector(sectorNum, sPartialWriteBuffer);
     return 0;
 }
 
@@ -258,7 +286,8 @@ TEST("Johto save extension has a bounded append-only layout")
     EXPECT_EQ(sizeof(struct JohtoSaveV1), JOHTO_SAVE_V1_SIZE);
     EXPECT_EQ(offsetof(struct SaveBlock1ASLR, johto), sizeof(struct SaveBlock1));
     EXPECT_EQ(offsetof(struct SaveBlock1ASLR, aslr),
-              sizeof(struct SaveBlock1) + sizeof(struct JohtoSaveV1));
+              sizeof(struct SaveBlock1) + sizeof(struct JohtoSaveV1)
+              + sizeof(struct WorldEventSaveV1));
     EXPECT_EQ(JOHTO_SAVE_LEGACY_TAIL_SIZE + sizeof(struct JohtoSaveV1),
               JOHTO_SAVE_SERIALIZED_TAIL_SIZE);
     EXPECT_EQ(offsetof(struct JohtoSaveV1, flag_bits), 0x08);
@@ -270,16 +299,20 @@ TEST("Johto save extension has a bounded append-only layout")
 
 TEST("Johto save preserves old zero tails in both rotating slots")
 {
-    static EWRAM_DATA u8 sLegacyTail[NUM_SAVE_SLOTS][JOHTO_SAVE_SERIALIZED_TAIL_SIZE];
     u16 slot;
+    /* Too large for the test stack; owned by this test only. */
+    u8 (*tails)[WORLD_EVENT_SAVE_SERIALIZED_TAIL_SIZE] =
+        Alloc(NUM_SAVE_SLOTS * sizeof(*tails));
 
+    EXPECT(tails != NULL);
     for (slot = 0; slot < NUM_SAVE_SLOTS; slot++)
     {
-        memset(sLegacyTail[slot], 0, sizeof(sLegacyTail[slot]));
-        memset(sLegacyTail[slot], 0xA5, JOHTO_SAVE_LEGACY_TAIL_SIZE);
-        EXPECT_EQ(ChecksumWords(sLegacyTail[slot], JOHTO_SAVE_LEGACY_TAIL_SIZE),
-                  ChecksumWords(sLegacyTail[slot], JOHTO_SAVE_SERIALIZED_TAIL_SIZE));
+        memset(tails[slot], 0, WORLD_EVENT_SAVE_SERIALIZED_TAIL_SIZE);
+        memset(tails[slot], 0xA5, JOHTO_SAVE_LEGACY_TAIL_SIZE);
+        EXPECT_EQ(ChecksumWords(tails[slot], JOHTO_SAVE_LEGACY_TAIL_SIZE),
+                  ChecksumWords(tails[slot], WORLD_EVENT_SAVE_SERIALIZED_TAIL_SIZE));
     }
+    Free(tails);
 }
 
 TEST("Johto zero tail initializes without changing the old SaveBlock1 prefix")
@@ -361,6 +394,7 @@ TEST("Johto cloud save validates records before erasing special sectors")
     SetSaveBlocksPointers(0);
     CoopSave_InitializeCurrent();
     JohtoSave_InitializeCurrent();
+    WorldEventSave_InitializeCurrent();
     EstablishTestCloudSession();
     AuthorizeTestCloudSave(2);
 
@@ -413,6 +447,7 @@ TEST("Johto cloud save validates records before erasing special sectors")
 }
 
 static EWRAM_DATA struct JohtoSaveV1 sJohtoSnapshot;
+static u32 sWorldEventSnapshotCrc;
 static EWRAM_DATA u8 sLegacyMarkers[2];
 
 TEST("Johto legacy saves load from either rotated slot without losing tail bytes")
@@ -424,6 +459,7 @@ TEST("Johto legacy saves load from either rotated slot without losing tail bytes
     CoopNetBridge_Init();
     gFlashMemoryPresent = TRUE;
     Save_TestSetFlashReadCallback(TestFlashRead);
+    TestFlashBegin();
     for (slot = 0; slot < NUM_SAVE_SLOTS; slot++)
     {
         u16 index;
@@ -454,8 +490,83 @@ TEST("Johto legacy saves load from either rotated slot without losing tail bytes
         EXPECT_EQ(JohtoSave_GetVariable(0), 0);
     }
     Save_TestSetFlashReadCallback(NULL);
+    TestFlashEnd();
     gFlashMemoryPresent = flashMemoryPresent;
     Save_ResetSaveCounters();
+}
+
+TEST("Incremental link save rejects corrupt world state before any flash write")
+{
+    u16 (*programFlashSector)(u16, u8 *) = ProgramFlashSector;
+    u16 (*programFlashByte)(u16, u32, u8) = ProgramFlashByte;
+    u16 (*eraseFlashSector)(u16) = EraseFlashSector;
+    bool32 flashMemoryPresent = gFlashMemoryPresent;
+    MainCallback callback = gMain.callback2;
+    u32 saveCounter;
+
+    SetSaveBlocksPointers(0);
+    CoopNetBridge_Init();
+    TestFlashBegin();
+    Save_ResetSaveCounters();
+    WorldEventSave_InitializeCurrent();
+    gSaveblock1.world_event.flag_bits[0] ^= 1;
+    gFlashMemoryPresent = TRUE;
+    Save_TestSetFlashReadCallback(TestFlashRead);
+    Save_TestSetFlashProgramCallback(TestFlashProgramSector);
+    saveCounter = gSaveCounter;
+
+    EXPECT(WriteSaveBlock2());
+    EXPECT(Save_IsOperationBlocked());
+    EXPECT_EQ(gSaveCounter, saveCounter);
+    EXPECT_EQ(sFullWriteCount, 0);
+    EXPECT_EQ(sPartialByteWrites, 0);
+    EXPECT_EQ(sPartialSectorCommits, 0);
+
+    sEraseCalls = 0;
+    sProgramSectorCalls = 0;
+    sProgramByteCalls = 0;
+    EraseFlashSector = CountFlashErase;
+    ProgramFlashSector = CountFlashProgramSector;
+    ProgramFlashByte = CountFlashProgramByte;
+    HandleSavingData(SAVE_OVERWRITE_DIFFERENT_FILE);
+    EXPECT(Save_IsOperationBlocked());
+    EXPECT_EQ(gDamagedSaveSectors, 0);
+    EXPECT_EQ(sEraseCalls, 0);
+    EXPECT_EQ(sProgramSectorCalls, 0);
+    EXPECT_EQ(sProgramByteCalls, 0);
+
+    EXPECT(LinkFullSave_Init());
+    EXPECT(Save_IsOperationBlocked());
+    EXPECT_EQ(gDamagedSaveSectors, 0);
+    EXPECT_EQ(sEraseCalls, 0);
+    EXPECT_EQ(sProgramSectorCalls, 0);
+    EXPECT_EQ(sProgramByteCalls, 0);
+
+    /* A stale physical-damage bit must not turn a logical rejection into
+     * the sector-wiping repair screen. */
+    gDamagedSaveSectors = 1 << 7;
+    EXPECT(LinkFullSave_Init());
+    EXPECT(Save_HandleBlockedLinkSave());
+    EXPECT(SaveFailedScreen_TestIsLogicalRejection());
+    EXPECT_EQ(gDamagedSaveSectors, 1 << 7);
+    SetMainCallback2(callback);
+    EXPECT_EQ(TrySavingData(SAVE_NORMAL), SAVE_STATUS_ERROR);
+    EXPECT(Save_IsValidationRejected());
+    EXPECT(SaveFailedScreen_TestIsLogicalRejection());
+    EXPECT_EQ(gDamagedSaveSectors, 1 << 7);
+    EXPECT_EQ(sEraseCalls, 0);
+    EXPECT_EQ(sProgramSectorCalls, 0);
+    EXPECT_EQ(sProgramByteCalls, 0);
+    SetMainCallback2(callback);
+    gDamagedSaveSectors = 0;
+
+    Save_TestSetFlashReadCallback(NULL);
+    Save_TestSetFlashProgramCallback(NULL);
+    ProgramFlashSector = programFlashSector;
+    ProgramFlashByte = programFlashByte;
+    EraseFlashSector = eraseFlashSector;
+    TestFlashEnd();
+    gFlashMemoryPresent = flashMemoryPresent;
 }
 
 TEST("Johto extension persists through production full partial saves and heap moves")
@@ -467,7 +578,7 @@ TEST("Johto extension persists through production full partial saves and heap mo
 
     SetSaveBlocksPointers(0);
     CoopNetBridge_Init();
-    TestFlashReset();
+    TestFlashBegin();
     Save_ResetSaveCounters();
     memset(&gSaveblock1, 0, sizeof(gSaveblock1));
     memset(&gSaveblock2, 0, sizeof(gSaveblock2));
@@ -475,6 +586,7 @@ TEST("Johto extension persists through production full partial saves and heap mo
     memset(&gSaveblock3, 0, sizeof(gSaveblock3));
     CoopSave_InitializeCurrent();
     JohtoSave_InitializeCurrent();
+    WorldEventSave_InitializeCurrent();
     gFlashMemoryPresent = TRUE;
     Save_TestSetFlashReadCallback(TestFlashRead);
     Save_TestSetFlashProgramCallback(TestFlashProgramSector);
@@ -492,6 +604,9 @@ TEST("Johto extension persists through production full partial saves and heap mo
     EXPECT(JohtoSave_SetFlag(767, TRUE));
     EXPECT(JohtoSave_SetTrainerDefeated(511, TRUE));
     EXPECT(JohtoSave_SetVariable(95, 0xBEEF));
+    EXPECT(WorldEventSave_SetFlag(4095, TRUE));
+    EXPECT(WorldEventSave_SetTrainerDefeated(4095, TRUE));
+    EXPECT(WorldEventSave_SetVariable(255, 0xCAFE));
 
     HandleSavingData(SAVE_NORMAL);
     EXPECT_EQ(sFullWriteCount, NUM_SECTORS_PER_SLOT);
@@ -499,6 +614,7 @@ TEST("Johto extension persists through production full partial saves and heap mo
     sLegacyMarkers[0] = ((u8 *)&gSaveblock1.block)[sizeof(struct SaveBlock1) - 2];
     sLegacyMarkers[1] = ((u8 *)&gSaveblock1.block)[sizeof(struct SaveBlock1) - 1];
     sJohtoSnapshot = gSaveblock1.johto;
+    sWorldEventSnapshotCrc = gSaveblock1.world_event.crc32;
 
     memset(&gSaveblock1, 0, sizeof(gSaveblock1));
     memset(&gSaveblock2, 0, sizeof(gSaveblock2));
@@ -508,6 +624,8 @@ TEST("Johto extension persists through production full partial saves and heap mo
     EXPECT_EQ(((u8 *)&gSaveblock1.block)[sizeof(struct SaveBlock1) - 2], sLegacyMarkers[0]);
     EXPECT_EQ(((u8 *)&gSaveblock1.block)[sizeof(struct SaveBlock1) - 1], sLegacyMarkers[1]);
     EXPECT_EQ(memcmp(&sJohtoSnapshot, &gSaveblock1.johto, sizeof(sJohtoSnapshot)), 0);
+    EXPECT(WorldEventSave_Validate(&gSaveblock1.world_event));
+    EXPECT_EQ(gSaveblock1.world_event.crc32, sWorldEventSnapshotCrc);
 
     EXPECT(JohtoSave_SetVariable(0, 0xC0DE));
     EXPECT(JohtoSave_SetFlag(31, TRUE));
@@ -517,6 +635,7 @@ TEST("Johto extension persists through production full partial saves and heap mo
     sLegacyMarkers[0] = ((u8 *)&gSaveblock1.block)[sizeof(struct SaveBlock1) - 2];
     sLegacyMarkers[1] = ((u8 *)&gSaveblock1.block)[sizeof(struct SaveBlock1) - 1];
     sJohtoSnapshot = gSaveblock1.johto;
+    sWorldEventSnapshotCrc = gSaveblock1.world_event.crc32;
 
     memset(&gSaveblock1, 0, sizeof(gSaveblock1));
     memset(&gSaveblock2, 0, sizeof(gSaveblock2));
@@ -526,6 +645,8 @@ TEST("Johto extension persists through production full partial saves and heap mo
     EXPECT_EQ(((u8 *)&gSaveblock1.block)[sizeof(struct SaveBlock1) - 2], sLegacyMarkers[0]);
     EXPECT_EQ(((u8 *)&gSaveblock1.block)[sizeof(struct SaveBlock1) - 1], sLegacyMarkers[1]);
     EXPECT_EQ(memcmp(&sJohtoSnapshot, &gSaveblock1.johto, sizeof(sJohtoSnapshot)), 0);
+    EXPECT(WorldEventSave_Validate(&gSaveblock1.world_event));
+    EXPECT_EQ(gSaveblock1.world_event.crc32, sWorldEventSnapshotCrc);
 
     /* SAVE_LINK uses the production byte-at-a-time replacement path for the
      * same six sectors and must carry the appended record with it. */
@@ -538,6 +659,7 @@ TEST("Johto extension persists through production full partial saves and heap mo
     sLegacyMarkers[0] = ((u8 *)&gSaveblock1.block)[sizeof(struct SaveBlock1) - 2];
     sLegacyMarkers[1] = ((u8 *)&gSaveblock1.block)[sizeof(struct SaveBlock1) - 1];
     sJohtoSnapshot = gSaveblock1.johto;
+    sWorldEventSnapshotCrc = gSaveblock1.world_event.crc32;
 
     memset(&gSaveblock1, 0, sizeof(gSaveblock1));
     memset(&gSaveblock2, 0, sizeof(gSaveblock2));
@@ -547,7 +669,13 @@ TEST("Johto extension persists through production full partial saves and heap mo
     EXPECT_EQ(((u8 *)&gSaveblock1.block)[sizeof(struct SaveBlock1) - 2], sLegacyMarkers[0]);
     EXPECT_EQ(((u8 *)&gSaveblock1.block)[sizeof(struct SaveBlock1) - 1], sLegacyMarkers[1]);
     EXPECT_EQ(memcmp(&sJohtoSnapshot, &gSaveblock1.johto, sizeof(sJohtoSnapshot)), 0);
+    EXPECT(WorldEventSave_Validate(&gSaveblock1.world_event));
+    EXPECT_EQ(gSaveblock1.world_event.crc32, sWorldEventSnapshotCrc);
     EXPECT_EQ(JohtoSave_GetVariable(1), 0xFACE);
+
+    /* No flash I/O follows, and the heap reset below would orphan the
+     * fixture buffers, so release them first. */
+    TestFlashEnd();
 
     /* The production operation destroys the heap, including the test harness
      * allocations. Keep its state off-heap during the call and rebuild those
@@ -564,6 +692,8 @@ TEST("Johto extension persists through production full partial saves and heap mo
         *gConfigChangesTestOverride = config;
     }
     EXPECT_EQ(memcmp(&sJohtoSnapshot, &gSaveblock1.johto, sizeof(sJohtoSnapshot)), 0);
+    EXPECT(WorldEventSave_Validate(&gSaveblock1.world_event));
+    EXPECT_EQ(gSaveblock1.world_event.crc32, sWorldEventSnapshotCrc);
 
     Save_TestSetFlashReadCallback(NULL);
     Save_TestSetFlashProgramCallback(NULL);

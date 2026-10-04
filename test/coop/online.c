@@ -4,6 +4,7 @@
 #include "start_menu.h"
 #include "window.h"
 #include "menu.h"
+#include "pokemon.h"
 #include "text.h"
 #include "string_util.h"
 #include "coop/online.h"
@@ -46,6 +47,28 @@ TEST("Cloud Coop Online fully unlocked pause menu fits the screen")
     if (!pokemon) FlagClear(FLAG_SYS_POKEMON_GET);
     if (!nav) FlagClear(FLAG_SYS_POKENAV_GET);
     if (DN_FLAG_DEXNAV_GET != 0 && !dexnav) FlagClear(DN_FLAG_DEXNAV_GET);
+}
+
+TEST("Cloud Coop transferred party unlocks Pokemon pause menu without local flag")
+{
+    bool8 hadPokemonFlag = FlagGet(FLAG_SYS_POKEMON_GET);
+    u8 savedPartyCount = gPlayerPartyCount;
+    u8 emptyMenuCount;
+
+    FlagClear(FLAG_SYS_POKEMON_GET);
+    gPlayerPartyCount = 0;
+    emptyMenuCount = CoopStartMenu_TestBuildNormal();
+
+    gPlayerPartyCount = 1;
+    EXPECT_EQ(CoopStartMenu_TestBuildNormal(), emptyMenuCount + 1);
+
+    gPlayerPartyCount = 0;
+    FlagSet(FLAG_SYS_POKEMON_GET);
+    EXPECT_EQ(CoopStartMenu_TestBuildNormal(), emptyMenuCount + 1);
+
+    gPlayerPartyCount = savedPartyCount;
+    if (!hadPokemonFlag)
+        FlagClear(FLAG_SYS_POKEMON_GET);
 }
 
 TEST("Cloud Coop Character pause label fits without overwriting field tiles")

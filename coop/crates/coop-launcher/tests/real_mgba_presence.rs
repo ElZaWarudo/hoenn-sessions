@@ -290,6 +290,7 @@ async fn player_inner(
     let bridge = inputs.repository.join("bridge");
     let config = SessionConfig {
         client_instance_id: ClientInstanceId::new(Uuid::new_v4())?,
+        rom_world_id: coop_launcher::session::RomWorldId::new(1)?,
         manifest,
         trusted_manifest_key: TrustedManifestKey::new(KEY_ID, inputs.public_key)?,
         epoch_store: EpochStore::new(root.path().join("epoch.json")),

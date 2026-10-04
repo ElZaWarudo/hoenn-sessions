@@ -269,6 +269,36 @@ TEST("Cloud Coop second opponent mon is byte-identical on both ROMs")
     RestoreLocal(&saved);
 }
 
+TEST("Cloud Coop opponent mons record no met location through the V2 codec")
+{
+    struct Pokemon *party = AllocZeroed(PARTY_SIZE * sizeof(struct Pokemon));
+    u8 manifest[COOP_BATTLE_MANIFEST_SIZE];
+    struct LocalSaveFixture saved;
+    const struct Trainer *calvin = &sSingleTrainer;
+    u16 location;
+    u32 i;
+
+    SaveLocal(&saved);
+    MakeManifest(manifest, 0x70, 0x0C, 0);
+    SetLocal(sNameAlice, MALE, MAP_ROUTE102);
+    SeedRng(5);
+    CreateCoopTrainerParty(party, calvin, COOP_OPPONENT_FLAGS,
+                           CoopBattleRuntime_DeriveOpponentSeed(manifest, TRAINER_CALVIN_1));
+    EXPECT_EQ(CountMons(party), 2);
+    for (i = 0; i < 2; i++)
+    {
+        /* Never the local map section, and never MAPSEC_NONE truncated to a
+         * byte (which is a real section): V2 "none" is the low byte 250 with
+         * clear marker bits. */
+        EXPECT(GetBoxMonMetLocationV2(&party[i].box, &location));
+        EXPECT_EQ(location, MET_LOCATION_V2_NONE);
+        EXPECT_EQ(GetMonData(&party[i], MON_DATA_MET_LOCATION), 250);
+        EXPECT_NE(GetMonData(&party[i], MON_DATA_MET_LOCATION), (u8)MAPSEC_NONE);
+    }
+    Free(party);
+    RestoreLocal(&saved);
+}
+
 TEST("Cloud Coop second opponent mon changes with the battle ID")
 {
     struct Pokemon *first = AllocZeroed(PARTY_SIZE * sizeof(struct Pokemon));

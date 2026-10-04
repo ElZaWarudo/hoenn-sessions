@@ -31,6 +31,9 @@ void InitTilesetAnim_MauvilleGym(void);
 void InitTilesetAnim_EliteFour(void);
 void InitTilesetAnim_BattleDome(void);
 void InitTilesetAnim_BattlePyramid(void);
+#if ROM_WORLD == 2
+void InitTilesetAnim_MauvilleGameCorner(void);
+#endif
 
 // FRLG
 void InitTilesetAnim_General_Frlg(void);

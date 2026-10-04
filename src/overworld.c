@@ -1,4 +1,6 @@
 #include "global.h"
+#include "coop/arrival_proof.h"
+#include "coop/save.h"
 #include "coop/presence_runtime.h"
 #include "overworld.h"
 #include "battle_pyramid.h"
@@ -1518,7 +1520,7 @@ enum MapType GetLastUsedWarpMapType(void)
     return GetMapTypeByWarpData(&gLastUsedWarp);
 }
 
-mapsec_u8_t GetLastUsedWarpMapSectionId(void)
+mapsec_u16_t GetLastUsedWarpMapSectionId(void)
 {
     return Overworld_GetMapHeaderByGroupAndId(gLastUsedWarp.mapGroup, gLastUsedWarp.mapNum)->regionMapSectionId;
 }
@@ -1527,6 +1529,8 @@ bool8 IsMapTypeOutdoors(enum MapType mapType)
 {
     if (mapType == MAP_TYPE_ROUTE
      || mapType == MAP_TYPE_TOWN
+     || mapType == MAP_TYPE_SNOW
+     || mapType == MAP_TYPE_HILL
      || mapType == MAP_TYPE_UNDERWATER
      || mapType == MAP_TYPE_CITY
      || mapType == MAP_TYPE_OCEAN_ROUTE)
@@ -1539,6 +1543,8 @@ bool8 Overworld_MapTypeAllowsTeleportAndFly(enum MapType mapType)
 {
     if (mapType == MAP_TYPE_ROUTE
      || mapType == MAP_TYPE_TOWN
+     || mapType == MAP_TYPE_SNOW
+     || mapType == MAP_TYPE_HILL
      || mapType == MAP_TYPE_OCEAN_ROUTE
      || mapType == MAP_TYPE_CITY)
         return TRUE;
@@ -1555,12 +1561,12 @@ bool8 IsMapTypeIndoors(enum MapType mapType)
         return FALSE;
 }
 
-mapsec_u8_t GetSavedWarpRegionMapSectionId(void)
+mapsec_u16_t GetSavedWarpRegionMapSectionId(void)
 {
     return Overworld_GetMapHeaderByGroupAndId(gSaveBlock1Ptr->dynamicWarp.mapGroup, gSaveBlock1Ptr->dynamicWarp.mapNum)->regionMapSectionId;
 }
 
-mapsec_u8_t GetCurrentRegionMapSectionId(void)
+mapsec_u16_t GetCurrentRegionMapSectionId(void)
 {
     return Overworld_GetMapHeaderByGroupAndId(gSaveBlock1Ptr->location.mapGroup, gSaveBlock1Ptr->location.mapNum)->regionMapSectionId;
 }
@@ -1742,6 +1748,8 @@ bool32 MapHasNaturalLight(enum MapType mapType)
          && (mapType == MAP_TYPE_TOWN
           || mapType == MAP_TYPE_CITY
           || mapType == MAP_TYPE_ROUTE
+          || mapType == MAP_TYPE_SNOW
+          || mapType == MAP_TYPE_HILL
           || mapType == MAP_TYPE_OCEAN_ROUTE));
 }
 
@@ -1919,6 +1927,28 @@ void CB2_NewGame(void)
 #endif
 }
 
+#if ROM_WORLD == 2
+/* Dreamstone's Rivetshore storage-bay passage enters the S.S. Elegant hold
+ * through the same field-loading sequence as its original ROM. */
+void CB2_StorageCutscene(void)
+{
+    FieldClearVBlankHBlankCallbacks();
+    StopMapMusic();
+    SetWarpDestination(MAP_GROUP(MAP_CORMORIA_SSELEGANT_INSIDE_STORAGE),
+                       MAP_NUM(MAP_CORMORIA_SSELEGANT_INSIDE_STORAGE),
+                       WARP_ID_NONE, -1, -1);
+    WarpIntoMap();
+    ScriptContext_Init();
+    UnlockPlayerFieldControls();
+    gFieldCallback = ExecuteTruckSequence;
+    gFieldCallback2 = NULL;
+    DoMapLoadLoop(&gMain.state);
+    SetFieldVBlankCallback();
+    SetMainCallback1(CB1_Overworld);
+    SetMainCallback2(CB2_Overworld);
+}
+#endif
+
 void CB2_WhiteOut(void)
 {
     u8 state;
@@ -1958,6 +1988,15 @@ void CB2_LoadMap(void)
 static void CB2_LoadMap2(void)
 {
     DoMapLoadLoop(&gMain.state);
+    /* Continue-game warps bypass FieldCB_FadeTryShowMapPopup. Admit the
+     * verifier only after this saved map has actually finished loading. */
+    CoopArrivalProof_OnFieldEntered(
+        gSaveFileStatus == SAVE_STATUS_OK,
+        gSaveBlock3Ptr != NULL && CoopSave_Validate(&gSaveBlock3Ptr->coop),
+        ROM_WORLD_ID,
+        CoopSave_GetGeneration(),
+        gSaveBlock1Ptr->location.mapGroup,
+        gSaveBlock1Ptr->location.mapNum);
     SetFieldVBlankCallback();
     SetMainCallback1(CB1_Overworld);
     SetMainCallback2(CB2_Overworld);
@@ -2073,6 +2112,13 @@ void CB2_ReturnToFieldFadeFromBlack(void)
 
 static void FieldCB_FadeTryShowMapPopup(void)
 {
+    CoopArrivalProof_OnFieldEntered(
+        gSaveFileStatus == SAVE_STATUS_OK,
+        gSaveBlock3Ptr != NULL && CoopSave_Validate(&gSaveBlock3Ptr->coop),
+        ROM_WORLD_ID,
+        CoopSave_GetGeneration(),
+        gSaveBlock1Ptr->location.mapGroup,
+        gSaveBlock1Ptr->location.mapNum);
     if (gMapHeader.showMapName == TRUE && SecretBaseMapPopupEnabled() == TRUE)
         ShowMapNamePopup();
     FieldCB_WarpExitFadeFromBlack();
@@ -2082,6 +2128,7 @@ void CB2_ContinueSavedGame(void)
 {
     u8 trainerHillMapId;
 
+    CoopArrivalProof_OnContinueSelected();
     FieldClearVBlankHBlankCallbacks();
     StopMapMusic();
     ResetSafariZoneFlag_();

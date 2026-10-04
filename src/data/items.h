@@ -16073,6 +16073,8 @@ const struct ItemInfo gItemsInfo[] =
         .iconPalette = gItemIconPalette_WailmerPail,
     },
 
+#include "items_cormoria.h"
+
 };
 
 #undef ITEM_NAME

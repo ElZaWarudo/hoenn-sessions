@@ -4554,7 +4554,7 @@ static void BufferInGameTradeMonName(void)
 {
     u8 nickname[max(32, POKEMON_NAME_BUFFER_SIZE)];
     const struct InGameTrade *inGameTrade = &sIngameTrades[gSpecialVar_0x8005];
-    GetMonData(&gParties[B_TRAINER_0][gSpecialVar_0x8005], MON_DATA_NICKNAME, nickname);
+    GetMonData(&gParties[B_TRAINER_1][0], MON_DATA_NICKNAME, nickname);
     StringCopy_Nickname(gStringVar1, nickname);
     StringCopy(gStringVar2, GetSpeciesName(inGameTrade->species));
 }
@@ -4566,7 +4566,6 @@ static void CreateInGameTradePokemonInternal(u8 whichPlayerMon, u8 whichInGameTr
     u32 level = GetLevelFromBoxMonExp(boxmon);
 
     struct Mail mail;
-    metloc_u8_t metLocation = METLOC_IN_GAME_TRADE;
     u8 mailNum;
     struct Pokemon *pokemon = &gParties[B_TRAINER_1][0];
 
@@ -4589,7 +4588,7 @@ static void CreateInGameTradePokemonInternal(u8 whichPlayerMon, u8 whichInGameTr
     SetMonData(pokemon, MON_DATA_SMART, &inGameTrade->conditions[3]);
     SetMonData(pokemon, MON_DATA_TOUGH, &inGameTrade->conditions[4]);
     SetMonData(pokemon, MON_DATA_SHEEN, &inGameTrade->sheen);
-    SetMonData(pokemon, MON_DATA_MET_LOCATION, &metLocation);
+    SetMonMetLocation(pokemon, MET_LOCATION_V2_IN_GAME_TRADE);
 
     mailNum = 0;
     if (inGameTrade->heldItem != ITEM_NONE)
@@ -4723,13 +4722,16 @@ static void CB2_SaveAndEndTrade(void)
         DrawTextOnTradeWindow(0, gStringVar4, 0);
         break;
     case 50:
+        SetContinueGameWarpStatusToDynamicWarp();
+        if (LinkFullSave_Init())
+        {
+            (void)Save_HandleBlockedLinkSave();
+            break;
+        }
         if (!InUnionRoom())
             IncrementGameStat(GAME_STAT_POKEMON_TRADES);
         if (gWirelessCommType)
             MysteryGift_TryIncrementStat(CARD_STAT_NUM_TRADES, gLinkPlayers[GetMultiplayerId() ^ 1].trainerId);
-
-        SetContinueGameWarpStatusToDynamicWarp();
-        LinkFullSave_Init();
         gMain.state++;
         sTradeAnim->timer = 0;
         break;
@@ -4740,6 +4742,8 @@ static void CB2_SaveAndEndTrade(void)
     case 52:
         if (LinkFullSave_WriteSector())
         {
+            if (Save_HandleBlockedLinkSave())
+                break;
             ClearContinueGameWarpStatus2();
             gMain.state = 4;
         }
@@ -4752,6 +4756,8 @@ static void CB2_SaveAndEndTrade(void)
         break;
     case 4:
         LinkFullSave_ReplaceLastSector();
+        if (Save_HandleBlockedLinkSave())
+            break;
         gMain.state = 40;
         sTradeAnim->timer = 0;
         break;
@@ -4780,6 +4786,8 @@ static void CB2_SaveAndEndTrade(void)
         if (_IsLinkTaskFinished())
         {
             LinkFullSave_SetLastSectorSignature();
+            if (Save_HandleBlockedLinkSave())
+                break;
             gMain.state = 5;
         }
         break;
@@ -5022,11 +5030,15 @@ static void CB2_SaveAndEndWirelessTrade(void)
     case 2:
         if (_IsLinkTaskFinished())
         {
-            gMain.state = 3;
             StringExpandPlaceholders(gStringVar4, gText_SavingDontTurnOffPower);
             DrawTextOnTradeWindow(0, gStringVar4, 0);
+            if (LinkFullSave_Init())
+            {
+                (void)Save_HandleBlockedLinkSave();
+                break;
+            }
+            gMain.state = 3;
             IncrementGameStat(GAME_STAT_POKEMON_TRADES);
-            LinkFullSave_Init();
             sTradeAnim->timer = 0;
         }
         break;
@@ -5037,6 +5049,8 @@ static void CB2_SaveAndEndWirelessTrade(void)
     case 4:
         if (LinkFullSave_WriteSector())
         {
+            if (Save_HandleBlockedLinkSave())
+                break;
             gMain.state = 5;
         }
         else
@@ -5047,6 +5061,8 @@ static void CB2_SaveAndEndWirelessTrade(void)
         break;
     case 5:
         LinkFullSave_ReplaceLastSector();
+        if (Save_HandleBlockedLinkSave())
+            break;
         gMain.state = 6;
         sTradeAnim->timer = 0;
         break;
@@ -5075,6 +5091,8 @@ static void CB2_SaveAndEndWirelessTrade(void)
         if (_IsLinkTaskFinished())
         {
             LinkFullSave_SetLastSectorSignature();
+            if (Save_HandleBlockedLinkSave())
+                break;
             gMain.state = 9;
         }
         break;

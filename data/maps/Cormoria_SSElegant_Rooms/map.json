@@ -1,0 +1,303 @@
+{
+  "id": "MAP_CORMORIA_SSELEGANT_ROOMS",
+  "name": "Cormoria_SSElegant_Rooms",
+  "layout": "LAYOUT_CORMORIA_SSELEGANT_ROOMS",
+  "music": "MUS_RG_SS_ANNE",
+  "region_map_section": "MAPSEC_CORMORIA_SSELEGANT",
+  "requires_flash": false,
+  "weather": "WEATHER_NONE",
+  "map_type": "MAP_TYPE_NONE",
+  "allow_cycling": false,
+  "allow_escaping": false,
+  "allow_running": false,
+  "show_map_name": true,
+  "battle_scene": "MAP_BATTLE_SCENE_NORMAL",
+  "connections": 0,
+  "object_events": [
+    {
+      "graphics_id": "OBJ_EVENT_GFX_MAGMA_MEMBER_F",
+      "x": 4,
+      "y": 7,
+      "elevation": 0,
+      "movement_type": "MOVEMENT_TYPE_FACE_RIGHT",
+      "movement_range_x": 0,
+      "movement_range_y": 0,
+      "trainer_type": "TRAINER_TYPE_NONE",
+      "trainer_sight_or_berry_tree_id": "0",
+      "script": "Cormoria_SSElegant_Rooms_Gabrielle",
+      "flag": "Cormoria_FLAG_RAAZI_BEATEN"
+    },
+    {
+      "graphics_id": "OBJ_EVENT_GFX_POKEFAN_M",
+      "x": 22,
+      "y": 6,
+      "elevation": 0,
+      "movement_type": "MOVEMENT_TYPE_FACE_LEFT",
+      "movement_range_x": 0,
+      "movement_range_y": 0,
+      "trainer_type": "TRAINER_TYPE_NONE",
+      "trainer_sight_or_berry_tree_id": "0",
+      "script": "Cormoria_SSElegant_Rooms_NPC2",
+      "flag": "0"
+    },
+    {
+      "graphics_id": "OBJ_EVENT_GFX_MAN_4",
+      "x": 40,
+      "y": 4,
+      "elevation": 0,
+      "movement_type": "MOVEMENT_TYPE_NONE",
+      "movement_range_x": 0,
+      "movement_range_y": 0,
+      "trainer_type": "TRAINER_TYPE_NORMAL",
+      "trainer_sight_or_berry_tree_id": "3",
+      "script": "Cormoria_SSElegant_Rooms_Trainer_A",
+      "flag": "0"
+    },
+    {
+      "graphics_id": "OBJ_EVENT_GFX_POKEFAN_F",
+      "x": 19,
+      "y": 5,
+      "elevation": 0,
+      "movement_type": "MOVEMENT_TYPE_FACE_RIGHT",
+      "movement_range_x": 0,
+      "movement_range_y": 0,
+      "trainer_type": "TRAINER_TYPE_NONE",
+      "trainer_sight_or_berry_tree_id": "0",
+      "script": "Cormoria_SSElegant_Rooms_NPC1",
+      "flag": "0"
+    },
+    {
+      "graphics_id": "OBJ_EVENT_GFX_HIKER",
+      "x": 7,
+      "y": 41,
+      "elevation": 0,
+      "movement_type": "MOVEMENT_TYPE_FACE_LEFT",
+      "movement_range_x": 0,
+      "movement_range_y": 0,
+      "trainer_type": "TRAINER_TYPE_NONE",
+      "trainer_sight_or_berry_tree_id": "0",
+      "script": "Cormoria_SSElegant_Rooms_Breech",
+      "flag": "Cormoria_FLAG_RAAZI_BEATEN"
+    },
+    {
+      "graphics_id": "OBJ_EVENT_GFX_ARTIST",
+      "x": 21,
+      "y": 42,
+      "elevation": 0,
+      "movement_type": "MOVEMENT_TYPE_WANDER_AROUND",
+      "movement_range_x": 1,
+      "movement_range_y": 1,
+      "trainer_type": "TRAINER_TYPE_NONE",
+      "trainer_sight_or_berry_tree_id": "0",
+      "script": "Cormoria_SSElegant_Rooms_NPC3",
+      "flag": "0"
+    },
+    {
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(CLEFABLE)",
+      "x": 2,
+      "y": 42,
+      "elevation": 0,
+      "movement_type": "MOVEMENT_TYPE_WANDER_AROUND",
+      "movement_range_x": 1,
+      "movement_range_y": 1,
+      "trainer_type": "TRAINER_TYPE_NONE",
+      "trainer_sight_or_berry_tree_id": "0",
+      "script": "Cormoria_SSElegant_Rooms_Clefable",
+      "flag": "Cormoria_FLAG_RAAZI_BEATEN"
+    },
+    {
+      "graphics_id": "OBJ_EVENT_GFX_TMHM_BALL",
+      "x": 40,
+      "y": 7,
+      "elevation": 0,
+      "movement_type": "MOVEMENT_TYPE_NONE",
+      "movement_range_x": 1,
+      "movement_range_y": 1,
+      "trainer_type": "TRAINER_TYPE_NONE",
+      "trainer_sight_or_berry_tree_id": "ITEM_TM24",
+      "script": "Cormoria_Common_EventScript_FindItem",
+      "flag": "Cormoria_FLAG_ITEM_SSELEGANT_A"
+    },
+    {
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(DRAGALGE)",
+      "x": 22,
+      "y": 3,
+      "elevation": 0,
+      "movement_type": "MOVEMENT_TYPE_WANDER_AROUND",
+      "movement_range_x": 1,
+      "movement_range_y": 1,
+      "trainer_type": "TRAINER_TYPE_NONE",
+      "trainer_sight_or_berry_tree_id": "0",
+      "script": "Cormoria_SSElegant_Rooms_Weezing",
+      "flag": "0"
+    },
+    {
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(SMEARGLE)",
+      "x": 21,
+      "y": 39,
+      "elevation": 0,
+      "movement_type": "MOVEMENT_TYPE_FACE_RIGHT",
+      "movement_range_x": 1,
+      "movement_range_y": 1,
+      "trainer_type": "TRAINER_TYPE_NONE",
+      "trainer_sight_or_berry_tree_id": "0",
+      "script": "Cormoria_SSElegant_Rooms_Smeargle",
+      "flag": "0"
+    },
+    {
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(ZOROARK_HISUI)",
+      "x": 3,
+      "y": 5,
+      "elevation": 0,
+      "movement_type": "MOVEMENT_TYPE_WANDER_AROUND",
+      "movement_range_x": 1,
+      "movement_range_y": 1,
+      "trainer_type": "TRAINER_TYPE_NONE",
+      "trainer_sight_or_berry_tree_id": "0",
+      "script": "Cormoria_SSElegant_Rooms_Zoroark",
+      "flag": "Cormoria_FLAG_RAAZI_BEATEN"
+    }
+  ],
+  "warp_events": [
+    {
+      "x": 12,
+      "y": 27,
+      "elevation": 0,
+      "dest_map": "MAP_CORMORIA_SSELEGANT",
+      "dest_warp_id": "1"
+    },
+    {
+      "x": 11,
+      "y": 27,
+      "elevation": 0,
+      "dest_map": "MAP_CORMORIA_SSELEGANT",
+      "dest_warp_id": "1"
+    },
+    {
+      "x": 14,
+      "y": 25,
+      "elevation": 0,
+      "dest_map": "MAP_CORMORIA_SSELEGANT_ROOMS",
+      "dest_warp_id": "3"
+    },
+    {
+      "x": 5,
+      "y": 44,
+      "elevation": 0,
+      "dest_map": "MAP_CORMORIA_SSELEGANT_ROOMS",
+      "dest_warp_id": "2"
+    },
+    {
+      "x": 4,
+      "y": 44,
+      "elevation": 0,
+      "dest_map": "MAP_CORMORIA_SSELEGANT_ROOMS",
+      "dest_warp_id": "2"
+    },
+    {
+      "x": 17,
+      "y": 25,
+      "elevation": 0,
+      "dest_map": "MAP_CORMORIA_SSELEGANT_ROOMS",
+      "dest_warp_id": "6"
+    },
+    {
+      "x": 21,
+      "y": 44,
+      "elevation": 0,
+      "dest_map": "MAP_CORMORIA_SSELEGANT_ROOMS",
+      "dest_warp_id": "5"
+    },
+    {
+      "x": 20,
+      "y": 44,
+      "elevation": 0,
+      "dest_map": "MAP_CORMORIA_SSELEGANT_ROOMS",
+      "dest_warp_id": "5"
+    },
+    {
+      "x": 28,
+      "y": 25,
+      "elevation": 0,
+      "dest_map": "MAP_CORMORIA_SSELEGANT_ROOMS",
+      "dest_warp_id": "9"
+    },
+    {
+      "x": 38,
+      "y": 44,
+      "elevation": 0,
+      "dest_map": "MAP_CORMORIA_SSELEGANT_ROOMS",
+      "dest_warp_id": "8"
+    },
+    {
+      "x": 37,
+      "y": 44,
+      "elevation": 0,
+      "dest_map": "MAP_CORMORIA_SSELEGANT_ROOMS",
+      "dest_warp_id": "8"
+    },
+    {
+      "x": 14,
+      "y": 20,
+      "elevation": 0,
+      "dest_map": "MAP_CORMORIA_SSELEGANT_ROOMS",
+      "dest_warp_id": "12"
+    },
+    {
+      "x": 4,
+      "y": 1,
+      "elevation": 0,
+      "dest_map": "MAP_CORMORIA_SSELEGANT_ROOMS",
+      "dest_warp_id": "11"
+    },
+    {
+      "x": 17,
+      "y": 20,
+      "elevation": 0,
+      "dest_map": "MAP_CORMORIA_SSELEGANT_ROOMS",
+      "dest_warp_id": "14"
+    },
+    {
+      "x": 20,
+      "y": 1,
+      "elevation": 0,
+      "dest_map": "MAP_CORMORIA_SSELEGANT_ROOMS",
+      "dest_warp_id": "13"
+    },
+    {
+      "x": 20,
+      "y": 20,
+      "elevation": 0,
+      "dest_map": "MAP_CORMORIA_SSELEGANT_ROOMS",
+      "dest_warp_id": "16"
+    },
+    {
+      "x": 37,
+      "y": 1,
+      "elevation": 0,
+      "dest_map": "MAP_CORMORIA_SSELEGANT_ROOMS",
+      "dest_warp_id": "15"
+    }
+  ],
+  "coord_events": [],
+  "bg_events": [
+    {
+      "type": "sign",
+      "x": 20,
+      "y": 25,
+      "elevation": 0,
+      "player_facing_dir": "BG_EVENT_PLAYER_FACING_NORTH",
+      "script": "Cormoria_SSElegant_Rooms_Gloria_Locked"
+    },
+    {
+      "type": "hidden_item",
+      "x": 21,
+      "y": 7,
+      "elevation": 0,
+      "item": "ITEM_PP_MAX",
+      "flag": "Cormoria_FLAG_HIDDEN_ITEM_ELEGANT_B"
+    }
+  ],
+  "rom_world": "cormoria",
+  "region": "REGION_CORMORIA"
+}

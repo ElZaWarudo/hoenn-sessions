@@ -2,6 +2,10 @@
 
 	@ Takes a MAP constant and outputs the map group and map number as separate bytes
 	.macro map map_id:req
+	.ifc \map_id,0
+	.byte 0, 0 @ Current-map operand used by object script commands.
+	.exitm
+	.endif
 	.ifdef \map_id
 	.byte \map_id >> 8    @ map group
 	.byte \map_id & 0xFF  @ map num
@@ -105,16 +109,31 @@
 
 	@ Defines a background hidden item event for map data
 	.macro bg_hidden_item_event x:req, y:req, elevation:req, item:req, flag:req, quantity=1, underfoot=FALSE
-	.if \flag < FLAG_HIDDEN_ITEMS_START
-	.error "Hidden Item flag \flag is too small. Must be >= FLAG_HIDDEN_ITEMS_START."
-	.endif
 	.if \item >= (1 << 12)
 	.error "quantity \quantity too large"
 	.endif
 	.if \quantity >= (1 << 7)
 	.error "quantity \quantity too large"
 	.endif
-	bg_event \x, \y, \elevation, BG_EVENT_HIDDEN_ITEM, \item | (((\flag) - FLAG_HIDDEN_ITEMS_START) << 11)| (\quantity << 24) | (\underfoot << 31)
+	.if \flag >= WORLD_EVENT_FLAG_START
+		.if \flag > WORLD_EVENT_FLAG_END
+		.error "Regional hidden-item flag exceeds the local event window"
+		.endif
+		bg_event \x, \y, \elevation, BG_EVENT_HIDDEN_ITEM, \item | ((WORLD_EVENT_HIDDEN_ITEM_MARKER | ((\flag) - WORLD_EVENT_FLAG_START)) << 11) | (\quantity << 24) | (\underfoot << 31)
+	.elseif \flag >= JOHTO_FLAG_START
+		.if \flag > JOHTO_FLAG_END
+		.error "Johto hidden-item flag exceeds its event window"
+		.endif
+		bg_event \x, \y, \elevation, BG_EVENT_HIDDEN_ITEM, \item | ((WORLD_EVENT_HIDDEN_ITEM_JOHTO_MARKER | ((\flag) - JOHTO_FLAG_START)) << 11) | (\quantity << 24) | (\underfoot << 31)
+	.else
+		.if \flag < FLAG_HIDDEN_ITEMS_START
+		.error "Hidden Item flag \flag is too small. Must be >= FLAG_HIDDEN_ITEMS_START."
+		.endif
+		.if (\flag - FLAG_HIDDEN_ITEMS_START) >= WORLD_EVENT_HIDDEN_ITEM_JOHTO_MARKER
+		.error "Legacy hidden-item flag overlaps a regional marker"
+		.endif
+		bg_event \x, \y, \elevation, BG_EVENT_HIDDEN_ITEM, \item | (((\flag) - FLAG_HIDDEN_ITEMS_START) << 11) | (\quantity << 24) | (\underfoot << 31)
+	.endif
 	.endm
 
 	@ Defines a background secret base event for map data

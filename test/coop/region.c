@@ -7,12 +7,14 @@
 #include "test/test.h"
 
 _Static_assert(sizeof(struct WorldLocation) == 10, "tested world location ABI size");
-_Static_assert(sizeof(struct MapHeader) == 0x1C, "tested map header size");
-_Static_assert(offsetof(struct MapHeader, engineRegion) == 0x19, "tested engine region offset");
-_Static_assert(offsetof(struct MapHeader, battleType) == 0x1B, "tested battle type offset");
+_Static_assert(sizeof(struct MapHeader) == 0x20, "tested map header size");
+_Static_assert(offsetof(struct MapHeader, regionMapSectionId) == 0x14, "tested section offset");
+_Static_assert(offsetof(struct MapHeader, engineRegion) == 0x1A, "tested engine region offset");
+_Static_assert(offsetof(struct MapHeader, battleType) == 0x1C, "tested battle type offset");
 _Static_assert(COOP_MAP_ENGINE_REGION_HOENN == 0, "Hoenn map header byte");
 _Static_assert(COOP_MAP_ENGINE_REGION_KANTO == 1, "Kanto map header byte");
 _Static_assert(COOP_MAP_ENGINE_REGION_JOHTO == 2, "Johto map header byte");
+_Static_assert(COOP_MAP_ENGINE_REGION_CORMORIA == 3, "Cormoria map header byte");
 _Static_assert(offsetof(struct WorldLocation, region) == 0, "tested location region offset");
 _Static_assert(offsetof(struct WorldLocation, map_group) == 2, "tested location map group offset");
 _Static_assert(offsetof(struct WorldLocation, map_number) == 4, "tested location map number offset");
@@ -24,6 +26,7 @@ TEST("Cloud Coop region IDs adapt explicitly from engine regions")
     EXPECT_EQ(CoopRegion_FromEngineRegion(REGION_HOENN), COOP_REGION_HOENN);
     EXPECT_EQ(CoopRegion_FromEngineRegion(REGION_KANTO), COOP_REGION_KANTO);
     EXPECT_EQ(CoopRegion_FromEngineRegion(REGION_JOHTO), COOP_REGION_JOHTO);
+    EXPECT_EQ(CoopRegion_FromEngineRegion(REGION_CORMORIA), COOP_REGION_CORMORIA);
     EXPECT_EQ(CoopRegion_FromEngineRegion(REGION_NONE), COOP_REGION_UNSPECIFIED);
     EXPECT_EQ(CoopRegion_FromEngineRegion(REGION_UNOVA), COOP_REGION_UNSPECIFIED);
 
@@ -32,8 +35,29 @@ TEST("Cloud Coop region IDs adapt explicitly from engine regions")
     EXPECT(CoopRegion_IsValid(COOP_REGION_KANTO));
     EXPECT(CoopRegion_IsValid(COOP_REGION_JOHTO));
     EXPECT(CoopRegion_IsValid(COOP_REGION_SEVII));
+    EXPECT(CoopRegion_IsValid(COOP_REGION_CORMORIA));
     EXPECT(!CoopRegion_IsValid(COOP_REGION_COUNT));
 }
+
+#if ROM_WORLD == 2
+TEST("Cloud Coop Cormoria section and engine byte normalize to region five")
+{
+    struct MapHeader savedHeader = gMapHeader;
+    enum CoopRegion region = COOP_REGION_UNSPECIFIED;
+
+    EXPECT_EQ(CoopRegion_FromSectionId(MAPSEC_CORMORIA_CARABRUE_TOWN), COOP_REGION_CORMORIA);
+    EXPECT(CoopRegion_Normalize(&region, REGION_CORMORIA, MAPSEC_CORMORIA_CARABRUE_TOWN));
+    EXPECT_EQ(region, COOP_REGION_CORMORIA);
+    EXPECT(!CoopRegion_Normalize(&region, REGION_HOENN, MAPSEC_CORMORIA_CARABRUE_TOWN));
+    EXPECT(!CoopRegion_Normalize(&region, REGION_CORMORIA, MAPSEC_LITTLEROOT_TOWN));
+
+    gMapHeader.engineRegion = COOP_MAP_ENGINE_REGION_CORMORIA;
+    gMapHeader.regionMapSectionId = MAPSEC_CORMORIA_CARABRUE_TOWN;
+    EXPECT(CoopRegion_TryGetActive(&region));
+    EXPECT_EQ(region, COOP_REGION_CORMORIA);
+    gMapHeader = savedHeader;
+}
+#endif
 
 TEST("Cloud Coop map-section adapter distinguishes Hoenn Kanto and Sevii")
 {

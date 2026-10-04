@@ -481,7 +481,6 @@ impl PresenceState {
 
 struct PresenceInner {
     store: Store,
-    build: RuntimeBuildIdentity,
     state: Mutex<PresenceState>,
 }
 
@@ -644,11 +643,9 @@ impl PresenceService {
     }
 
     pub(crate) fn new(store: Store) -> Result<Self, super::Phase2Error> {
-        let build = super::saves::current_runtime_build_identity()?;
         Ok(Self {
             inner: Arc::new(PresenceInner {
                 store,
-                build,
                 state: Mutex::new(PresenceState::new()),
             }),
         })
@@ -800,6 +797,23 @@ impl PresenceService {
                 if &fence.build != build {
                     return Err(PresenceServiceError::IncompatibleBuild.into());
                 }
+                let catalog = self
+                    .inner
+                    .store
+                    .config
+                    .release_catalog
+                    .as_ref()
+                    .ok_or(PresenceServiceError::IncompatibleBuild)?;
+                let binding = lease
+                    .runtime_binding
+                    .as_ref()
+                    .ok_or(PresenceServiceError::IncompatibleBuild)?;
+                if binding.session != fence.session
+                    || binding.build != *build
+                    || catalog.world_for_build(build) != Some(binding.world_id)
+                {
+                    return Err(PresenceServiceError::IncompatibleBuild.into());
+                }
                 Ok((
                     username,
                     Self::partition(build.clone(), character.state.world_zone.channel, location),
@@ -861,7 +875,17 @@ impl PresenceService {
             .validate()
             .map_err(|_| PresenceServiceError::InvalidState)?;
         let candidates = self.entropy_candidates()?;
-        let build = self.inner.build.clone();
+        let build = fence.build.clone();
+        let catalog = self
+            .inner
+            .store
+            .config
+            .release_catalog
+            .as_ref()
+            .ok_or(PresenceServiceError::IncompatibleBuild)?;
+        if catalog.world_for_build(&build).is_none() {
+            return Err(PresenceServiceError::IncompatibleBuild);
+        }
         let _gate = self.lock_gate()?;
         let now_ms = self.inner.store.presence_now();
         let (username, partition, lease_expires_at_ms) =
@@ -1177,7 +1201,7 @@ impl PresenceService {
         }
         let old_partition = entry.partition.clone();
         let new_partition = Self::partition(
-            self.inner.build.clone(),
+            old_partition.build.clone(),
             old_partition.channel,
             new_location,
         );
@@ -1937,6 +1961,9 @@ fn repository_disposition(
     snapshot: &PresenceSnapshot,
     now_ms: u64,
 ) -> RepositoryDisposition {
+    if state.paired_handoff_for_member(snapshot.character_id) {
+        return RepositoryDisposition::LeaseInvalid;
+    }
     let Some(user) = state.users_by_id.get(&snapshot.actor.user_id) else {
         return RepositoryDisposition::LeaseInvalid;
     };
@@ -2284,6 +2311,7 @@ mod tests {
             "local-test-key",
         )
         .unwrap()
+        .with_legacy_test_runtime()
         .with_test_adapters(
             std::sync::Arc::new(FixedClock::new(1_700_000_000_000)),
             std::sync::Arc::new(FixedEntropy::new(entropy)),
@@ -2301,6 +2329,7 @@ mod tests {
             "local-test-key",
         )
         .unwrap()
+        .with_legacy_test_runtime()
         .with_test_adapters(
             Arc::new(FixedClock::new(1_700_000_000_000)),
             Arc::new(HandleReuseEntropy::default()),
@@ -2321,6 +2350,7 @@ mod tests {
             "local-test-key",
         )
         .unwrap()
+        .with_legacy_test_runtime()
         .with_test_adapters(
             clock.clone(),
             Arc::new(FixedEntropy::new((0..=255).collect())),

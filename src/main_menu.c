@@ -1,4 +1,5 @@
 #include "global.h"
+#include "coop/arrival_proof.h"
 #include "trainer_pokemon_sprites.h"
 #include "bg.h"
 #include "constants/rgb.h"
@@ -904,8 +905,19 @@ static void Task_HighlightSelectedMainMenuItem(u8 taskId)
 static bool8 HandleMainMenuInput(u8 taskId)
 {
     s16 *data = gTasks[taskId].data;
+    bool8 verifyContinue = CoopArrivalProof_IsAwaitingContinue()
+                        && gSaveFileStatus == SAVE_STATUS_OK
+                        && tMenuType != HAS_NO_SAVED_GAME;
 
-    if (JOY_NEW(A_BUTTON))
+    if (CoopArrivalProof_IsVerifierMode() && !verifyContinue)
+        return FALSE;
+    if (verifyContinue)
+    {
+        tCurrItem = 0;
+        sCurrItemAndOptionMenuCheck = 0;
+    }
+
+    if (JOY_NEW(A_BUTTON) || verifyContinue)
     {
         PlaySE(SE_SELECT);
         IsWirelessAdapterConnected();   // why bother calling this here? debug? Task_HandleMainMenuAPressed will check too
@@ -957,6 +969,16 @@ static void Task_HandleMainMenuAPressed(u8 taskId)
 {
     bool8 wirelessAdapterConnected;
     u8 action;
+
+    if (CoopArrivalProof_IsVerifierMode())
+    {
+        if (!CoopArrivalProof_IsAwaitingContinue()
+         || gSaveFileStatus != SAVE_STATUS_OK
+         || gTasks[taskId].tMenuType == HAS_NO_SAVED_GAME)
+            return;
+        gTasks[taskId].tCurrItem = 0;
+        sCurrItemAndOptionMenuCheck = 0;
+    }
 
     if (!gPaletteFade.active)
     {

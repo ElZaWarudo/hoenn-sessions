@@ -1275,6 +1275,55 @@ static const struct InGameTrade sIngameTrades[] =
         .otGender = FEMALE,
         .sheen = 10,
         .requestedSpecies = SPECIES_DODRIO
+    },
+    // Dreamstone names this trade WIMPOD, but the offered Pokémon is Galarian Ponyta.
+    [INGAME_TRADE_CORMORIA_WIMPOD] =
+    {
+        .nickname = _("Brynn"),
+        .species = SPECIES_PONYTA_GALAR,
+        .ivs = {4, 15, 15, 5, 25, 10},
+        .abilityNum = 0,
+        .otId = 91481,
+        .conditions = {5, 5, 5, 30, 5},
+        .personality = 0x8B,
+        .heldItem = ITEM_FAIRY_FEATHER,
+        .mailNum = 4,
+        .otName = _("Vien"),
+        .otGender = FEMALE,
+        .sheen = 10,
+        .requestedSpecies = SPECIES_PETILIL
+    },
+    [INGAME_TRADE_CORMORIA_PINSIR] =
+    {
+        .nickname = _("Buggles"),
+        .species = SPECIES_PINSIR,
+        .ivs = {25, 15, 4, 10, 20, 10},
+        .abilityNum = 0,
+        .otId = 46285,
+        .conditions = {5, 5, 5, 5, 30},
+        .personality = 0x7F,
+        .heldItem = ITEM_SITRUS_BERRY,
+        .mailNum = 1,
+        .otName = _("Skylar"),
+        .otGender = MALE,
+        .sheen = 10,
+        .requestedSpecies = SPECIES_BOMBIRDIER
+    },
+    [INGAME_TRADE_CORMORIA_HOUNDOUR] =
+    {
+        .nickname = _("Bowow"),
+        .species = SPECIES_HOUNDOUR,
+        .ivs = {15, 5, 4, 31, 31, 4},
+        .abilityNum = 0,
+        .otId = 91481,
+        .conditions = {5, 5, 5, 30, 5},
+        .personality = 0x8B,
+        .heldItem = ITEM_CHARCOAL,
+        .mailNum = 2,
+        .otName = _("Ormot"),
+        .otGender = FEMALE,
+        .sheen = 10,
+        .requestedSpecies = SPECIES_TOXEL
     }
 };
 
@@ -1321,6 +1370,16 @@ static const u16 sIngameTradeMail[][MAIL_WORDS_COUNT + 1] =
         EC_WORD_KIND,
         EC_WORD_TO,
         EC_WORD_IT
+    },
+    {
+        EC_WORD_THANK_YOU,
+        EC_WORD_FOR,
+        EC_POKEMON_NATIONAL(NYMBLE),
+        EC_WORD_CRIES,
+        EC_WORD_IN,
+        EC_WORD_A,
+        EC_WORD_CUTE,
+        EC_WORD_WAY
     }
 };
 

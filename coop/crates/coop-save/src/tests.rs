@@ -1,5 +1,67 @@
 use super::*;
 
+#[test]
+fn rom_written_harbor_saves_project_out_and_back_without_losing_world_locations() {
+    let registry = RegistryContract::new(
+        coop_protocol::IDENTITY_REGISTRY_VERSION,
+        coop_protocol::IDENTITY_REGISTRY_DIGEST,
+    );
+    let main = parse_v2(
+        include_bytes!("../../../../tools/tests/fixtures/arrival-v3-main-lilycove.sav"),
+        registry,
+    )
+    .unwrap();
+    let cormoria = parse_v2(
+        include_bytes!("../../../../tools/tests/fixtures/arrival-v3-cormoria-rivetshore.sav"),
+        registry,
+    )
+    .unwrap();
+    let descriptor = include_bytes!("fixtures/player_transfer_v3.bin");
+    let pair = TransferDescriptorPair {
+        source: descriptor,
+        destination: descriptor,
+    };
+
+    let arrival = project_arrival(&main, &cormoria, pair, true).unwrap();
+    assert!(
+        main.character_lineage()
+            .same_trainer(arrival.character_lineage())
+    );
+    assert_eq!(
+        arrival.coop().save_generation,
+        main.coop().save_generation + 1
+    );
+    assert_eq!(
+        &arrival.logical_sector_payload(1).unwrap()[..8],
+        &cormoria.logical_sector_payload(1).unwrap()[..8],
+        "the Cormoria harbor location remains local",
+    );
+    assert_eq!(
+        &arrival.logical_sector_payload(1).unwrap()[0x32..0x34],
+        &1314_u16.to_le_bytes(),
+    );
+
+    let returned = project_arrival(&arrival, &main, pair, false).unwrap();
+    assert!(
+        main.character_lineage()
+            .same_trainer(returned.character_lineage())
+    );
+    assert_eq!(
+        returned.coop().save_generation,
+        arrival.coop().save_generation + 1
+    );
+    assert_eq!(
+        &returned.logical_sector_payload(1).unwrap()[..8],
+        &main.logical_sector_payload(1).unwrap()[..8],
+        "the existing Main harbor location survives the return",
+    );
+    assert_eq!(
+        &returned.logical_sector_payload(1).unwrap()[0x32..0x34],
+        &88_u16.to_le_bytes(),
+    );
+    assert!(parse_v2(returned.raw_bytes(), registry).is_ok());
+}
+
 const TEST_REGISTRY: RegistryContract = RegistryContract::new(7, [0xa5; 16]);
 
 #[test]
@@ -19,6 +81,7 @@ fn stock_mgba_first_save_matches_linked_rom_sector_checksums() {
     assert_eq!(save.coop().save_generation, 1);
     assert!(save.coop().online_eligible());
     assert!(save.rtc_trailer().is_some());
+    assert_eq!(save.raw_bytes(), bytes);
     // A new game starts with 3000; this pins the money and key offsets to a
     // genuine save rather than to the validator's own synthetic layout.
     assert_eq!(save.money(), Some(3000));
@@ -629,6 +692,48 @@ fn distinguishes_empty_slots_and_rejects_corrupt_nonempty_pokemon() {
 }
 
 #[test]
+fn pre_fix_zero_mon_data_party_tail_is_outside_every_party_walk() {
+    // Before the ROM's ZeroMonData fix, an emptied party slot kept the previous
+    // occupant's maxHP in box.hpLost (offset 30); the fixed ROM leaves only
+    // MAIL_NONE. Party consumers stop at the saved count, so saves from either
+    // ROM validate the same way. Only a direct read of the stale slot sees it,
+    // as a nonempty record without species, never as a Pokemon.
+    let mut bytes = valid_image(20, 21);
+    let mut occupied = [0_u8; 100];
+    occupied[..80].copy_from_slice(&golden_box_pokemon());
+    write_logical_range(&mut bytes, SaveSlot::Second, 1, 0x238, &occupied);
+    write_logical_range(&mut bytes, SaveSlot::Second, 1, 0x234, &[1]);
+    write_logical_range(
+        &mut bytes,
+        SaveSlot::Second,
+        6,
+        4,
+        &vec![0; crate::pokemon::BOX_COUNT * crate::pokemon::BOX_SIZE * 80],
+    );
+    let mut stale = [0_u8; 100];
+    stale[30] = 23;
+    stale[0x55] = 0xff;
+    write_logical_range(&mut bytes, SaveSlot::Second, 1, 0x238 + 100, &stale);
+    let save = parse(&bytes, TEST_REGISTRY).unwrap();
+    assert_eq!(save.party_count(), Ok(1));
+    let PokemonSlot::Occupied(party) = save.party_pokemon(0).unwrap() else {
+        panic!("party record must be occupied")
+    };
+    assert_eq!(
+        save.locate_pokemon(party.identity.personality, party.identity.ot_id)
+            .unwrap(),
+        vec![crate::PokemonLocation::Party(0)]
+    );
+    assert_eq!(save.party_pokemon(1), Err(PokemonError::MissingSpecies));
+
+    let mut clean = [0_u8; 100];
+    clean[0x55] = 0xff;
+    write_logical_range(&mut bytes, SaveSlot::Second, 1, 0x238 + 100, &clean);
+    let save = parse(&bytes, TEST_REGISTRY).unwrap();
+    assert!(matches!(save.party_pokemon(1), Ok(PokemonSlot::Empty { raw }) if raw == clean));
+}
+
+#[test]
 fn pokemon_and_logical_range_bounds_are_checked() {
     let save = parse(&valid_image(20, 21), TEST_REGISTRY).unwrap();
     assert_eq!(
@@ -882,6 +987,41 @@ fn parses_rotated_slots_and_exposes_frozen_payload() {
     );
     assert_eq!(parsed.raw_bytes(), bytes);
     assert!(parsed.rtc_trailer().is_none());
+}
+
+#[test]
+fn exposes_selected_logical_sector_payload_after_rotation() {
+    let mut bytes = valid_image(20, 21);
+
+    // Give the same logical sector different valid bytes in each physical
+    // slot. The newer second slot must be the only source for the view.
+    let first_sector = logical_sector_mut(&mut bytes, SaveSlot::First, 7);
+    first_sector[123] = 0x11;
+    let checksum = sector_checksum(&first_sector[..LOGICAL_SECTOR_DATA_SIZES[7]]);
+    write_u16(first_sector, SECTOR_CHECKSUM_OFFSET, checksum);
+
+    let second_sector = logical_sector_mut(&mut bytes, SaveSlot::Second, 7);
+    second_sector[123] = 0x22;
+    let checksum = sector_checksum(&second_sector[..LOGICAL_SECTOR_DATA_SIZES[7]]);
+    write_u16(second_sector, SECTOR_CHECKSUM_OFFSET, checksum);
+
+    let parsed = parse(&bytes, TEST_REGISTRY).unwrap();
+    for logical in 0..SECTORS_PER_SLOT {
+        let logical_id = u8::try_from(logical).unwrap();
+        let payload = parsed
+            .logical_sector_payload(logical_id)
+            .expect("validated logical sector must be available");
+        assert_eq!(payload.len(), LOGICAL_SECTOR_DATA_SIZES[logical]);
+        assert_eq!(payload[0], logical_id.wrapping_mul(17));
+    }
+    assert_eq!(parsed.logical_sector_payload(7).unwrap()[123], 0x22);
+    assert!(
+        parsed
+            .logical_sector_payload(SECTORS_PER_SLOT as u8)
+            .is_none()
+    );
+    assert!(parsed.logical_sector_payload(u8::MAX).is_none());
+    assert_eq!(parsed.raw_bytes(), bytes);
 }
 
 #[test]
@@ -1280,7 +1420,7 @@ fn accepts_assigned_identity_boundary_ordinals() {
 #[test]
 fn rejects_unassigned_identity_ordinals_for_every_persisted_kind() {
     for (kind, offset, ordinal) in [
-        (IdentityKind::Trainer, COOP_TRAINER_BITS_OFFSET, 856_u16),
+        (IdentityKind::Trainer, COOP_TRAINER_BITS_OFFSET, 2047_u16),
         (IdentityKind::Event, COOP_EVENT_BITS_OFFSET, 4_u16),
         (IdentityKind::FlyPoint, COOP_FLY_BITS_OFFSET, 4_u16),
         (IdentityKind::Gym, COOP_GYM_BITS_OFFSET, 24_u16),
@@ -1332,6 +1472,1004 @@ fn checksum_ignores_partial_words_and_uses_end_around_fold() {
     assert_eq!(sector_checksum(&[1, 2, 3]), 0);
     assert_eq!(sector_checksum(&[0xff; 4]), 0xfffe);
     assert_eq!(sector_checksum(&[0xff; 8]), 0xfffd);
+}
+
+fn v2_payload(normalized: bool, migration_ambiguous: bool) -> Vec<u8> {
+    let mut payload = coop_payload(41);
+    write_u16(
+        &mut payload,
+        COOP_SCHEMA_OFFSET,
+        v2::COOP_SAVE_V2_SCHEMA_VERSION,
+    );
+    let mut status_flags = 0;
+    if normalized {
+        status_flags |= v2::COOP_SAVE_STATUS_MET_LOCATION_NORMALIZED;
+    }
+    if migration_ambiguous {
+        status_flags |= COOP_SAVE_STATUS_MIGRATION_AMBIGUOUS;
+    }
+    write_u32(&mut payload, COOP_STATUS_FLAGS_OFFSET, status_flags);
+    payload[v2::COOP_SAVE_V2_CORMORIA_PROGRESS_OFFSET] = RegionId::Cormoria.wire();
+    write_u32(
+        &mut payload,
+        v2::COOP_SAVE_V2_CORMORIA_PROGRESS_OFFSET + 4,
+        500,
+    );
+    let crc = crc32fast::hash(&payload[..COOP_CRC_OFFSET]);
+    write_u32(&mut payload, COOP_CRC_OFFSET, crc);
+    payload.to_vec()
+}
+
+fn v2_payload_array(normalized: bool, migration_ambiguous: bool) -> [u8; COOP_SAVE_V1_SIZE] {
+    v2_payload(normalized, migration_ambiguous)
+        .try_into()
+        .expect("schema-two payload has the frozen ABI size")
+}
+
+#[test]
+fn parse_v2_selects_newest_rotated_v2_slot_and_exposes_views() {
+    let mut bytes = vec![0xff; FLASH_IMAGE_SIZE];
+    let older_v2 = v2_payload_array(true, false);
+    let newer_v2 = v2_payload_array(true, false);
+    write_slot(&mut bytes, SaveSlot::First, 20, 13, &older_v2);
+    write_slot(&mut bytes, SaveSlot::Second, 21, 2, &newer_v2);
+
+    let parsed = parse_v2(&bytes, TEST_REGISTRY).unwrap();
+
+    assert_eq!(parsed.selected_slot(), SaveSlot::Second);
+    assert_eq!(parsed.counter(), 21);
+    assert_eq!(
+        parsed.coop().regional_progress[4].region,
+        RegionId::Cormoria
+    );
+    assert_eq!(parsed.coop().regional_progress[4].story_checkpoint, 500);
+    assert!(parsed.coop().met_locations_normalized());
+    assert_eq!(parsed.raw_bytes(), bytes);
+    assert_eq!(
+        parsed.logical_sector_payload(2).unwrap()[0],
+        2_u8.wrapping_mul(17)
+    );
+}
+
+#[test]
+fn parse_v2_does_not_fallback_when_newer_slot_is_v1() {
+    let mut bytes = vec![0xff; FLASH_IMAGE_SIZE];
+    let older_v2 = v2_payload_array(true, false);
+    let newer_v1 = coop_payload(42);
+    write_slot(&mut bytes, SaveSlot::First, 20, 5, &older_v2);
+    write_slot(&mut bytes, SaveSlot::Second, 21, 8, &newer_v1);
+
+    assert_eq!(
+        parse_v2(&bytes, TEST_REGISTRY),
+        Err(SaveV2Error::Coop(v2::CoopSaveV2Error::SchemaVersion {
+            actual: 1
+        }))
+    );
+}
+
+#[test]
+fn parse_v2_fails_closed_on_newer_bad_crc_without_rollback() {
+    let mut bytes = vec![0xff; FLASH_IMAGE_SIZE];
+    let older_v2 = v2_payload_array(true, false);
+    let newer_v2 = v2_payload_array(true, false);
+    write_slot(&mut bytes, SaveSlot::First, 20, 5, &older_v2);
+    write_slot(&mut bytes, SaveSlot::Second, 21, 8, &newer_v2);
+    rewrite_payload(&mut bytes, SaveSlot::Second, |payload| {
+        payload[COOP_CRC_OFFSET] ^= 1;
+    });
+
+    assert!(matches!(
+        parse_v2(&bytes, TEST_REGISTRY),
+        Err(SaveV2Error::Coop(v2::CoopSaveV2Error::Crc32 { .. }))
+    ));
+}
+
+#[test]
+fn parse_v2_retains_rtc_trailer_and_v1_api_rejects_schema_two() {
+    let mut bytes = vec![0xff; FLASH_IMAGE_SIZE];
+    let payload = v2_payload_array(true, false);
+    write_slot(&mut bytes, SaveSlot::First, 20, 5, &payload);
+    write_slot(&mut bytes, SaveSlot::Second, 21, 8, &payload);
+    let trailer = array::from_fn::<_, RTC_TRAILER_SIZE, _>(|index| 0xa0 ^ index as u8);
+    bytes.extend_from_slice(&trailer);
+
+    let parsed = parse_v2(&bytes, TEST_REGISTRY).unwrap();
+    assert_eq!(parsed.rtc_trailer(), Some(&trailer));
+    assert_eq!(parsed.into_raw_bytes().as_ref(), bytes);
+    assert!(matches!(
+        parse(&bytes, TEST_REGISTRY),
+        Err(SaveError::Coop(CoopSaveError::SchemaVersion { actual: 2 }))
+    ));
+}
+
+#[test]
+fn parses_v2_payload_with_five_ordered_regions_and_registry_contract() {
+    let payload = v2_payload(true, false);
+    let parsed = v2::parse_payload(&payload, TEST_REGISTRY).unwrap();
+
+    assert_eq!(parsed.regional_progress.len(), 5);
+    assert_eq!(
+        parsed
+            .regional_progress
+            .iter()
+            .map(|progress| progress.region)
+            .collect::<Vec<_>>(),
+        vec![
+            RegionId::Hoenn,
+            RegionId::Kanto,
+            RegionId::Johto,
+            RegionId::Sevii,
+            RegionId::Cormoria,
+        ]
+    );
+    assert_eq!(parsed.regional_progress[4].story_checkpoint, 500);
+    assert!(parsed.met_locations_normalized());
+    assert!(!parsed.migration_ambiguous());
+    assert!(parsed.online_eligible());
+}
+
+#[test]
+fn v2_rejects_schema_versions_and_payload_lengths() {
+    for schema in [1, 3] {
+        let mut payload = v2_payload(true, false);
+        write_u16(&mut payload, COOP_SCHEMA_OFFSET, schema);
+        let crc = crc32fast::hash(&payload[..COOP_CRC_OFFSET]);
+        write_u32(&mut payload, COOP_CRC_OFFSET, crc);
+        assert_eq!(
+            v2::parse_payload(&payload, TEST_REGISTRY),
+            Err(v2::CoopSaveV2Error::SchemaVersion { actual: schema })
+        );
+    }
+
+    let mut embedded_size = v2_payload(true, false);
+    write_u16(&mut embedded_size, COOP_STRUCT_SIZE_OFFSET, 671);
+    let crc = crc32fast::hash(&embedded_size[..COOP_CRC_OFFSET]);
+    write_u32(&mut embedded_size, COOP_CRC_OFFSET, crc);
+    assert_eq!(
+        v2::parse_payload(&embedded_size, TEST_REGISTRY),
+        Err(v2::CoopSaveV2Error::StructSize { actual: 671 })
+    );
+
+    let payload = v2_payload(true, false);
+    for invalid in [&payload[..0], &payload[..COOP_SAVE_V1_SIZE - 1]] {
+        assert_eq!(
+            v2::parse_payload(invalid, TEST_REGISTRY),
+            Err(v2::CoopSaveV2Error::InvalidLength {
+                actual: invalid.len()
+            })
+        );
+    }
+    let mut oversized = payload.clone();
+    oversized.push(0);
+    assert_eq!(
+        v2::parse_payload(&oversized, TEST_REGISTRY),
+        Err(v2::CoopSaveV2Error::InvalidLength {
+            actual: COOP_SAVE_V1_SIZE + 1
+        })
+    );
+}
+
+#[test]
+fn v2_rejects_crc_unknown_status_and_cormoria_record_errors() {
+    let mut crc = v2_payload(true, false);
+    crc[COOP_CRC_OFFSET] ^= 1;
+    assert!(matches!(
+        v2::parse_payload(&crc, TEST_REGISTRY),
+        Err(v2::CoopSaveV2Error::Crc32 { .. })
+    ));
+
+    let mut unknown_status = v2_payload(true, false);
+    write_u32(
+        &mut unknown_status,
+        COOP_STATUS_FLAGS_OFFSET,
+        v2::COOP_SAVE_V2_STATUS_KNOWN_MASK | (1 << 2),
+    );
+    let crc = crc32fast::hash(&unknown_status[..COOP_CRC_OFFSET]);
+    write_u32(&mut unknown_status, COOP_CRC_OFFSET, crc);
+    assert!(matches!(
+        v2::parse_payload(&unknown_status, TEST_REGISTRY),
+        Err(v2::CoopSaveV2Error::UnknownStatusFlags { .. })
+    ));
+
+    let mut wrong_region = v2_payload(true, false);
+    wrong_region[v2::COOP_SAVE_V2_CORMORIA_PROGRESS_OFFSET] = RegionId::Sevii.wire();
+    let crc = crc32fast::hash(&wrong_region[..COOP_CRC_OFFSET]);
+    write_u32(&mut wrong_region, COOP_CRC_OFFSET, crc);
+    assert!(matches!(
+        v2::parse_payload(&wrong_region, TEST_REGISTRY),
+        Err(v2::CoopSaveV2Error::RegionOrder {
+            record: 4,
+            expected: RegionId::Cormoria,
+            actual: RegionId::Sevii,
+        })
+    ));
+}
+
+#[test]
+fn v2_rejects_reserved_fifth_record_and_tail_bytes() {
+    let mut fifth_reserved = v2_payload(true, false);
+    fifth_reserved[v2::COOP_SAVE_V2_CORMORIA_PROGRESS_OFFSET + 1] = 1;
+    let crc = crc32fast::hash(&fifth_reserved[..COOP_CRC_OFFSET]);
+    write_u32(&mut fifth_reserved, COOP_CRC_OFFSET, crc);
+    assert_eq!(
+        v2::parse_payload(&fifth_reserved, TEST_REGISTRY),
+        Err(v2::CoopSaveV2Error::ReservedByte {
+            offset: v2::COOP_SAVE_V2_CORMORIA_PROGRESS_OFFSET + 1,
+            value: 1,
+        })
+    );
+
+    let mut tail = v2_payload(true, false);
+    tail[v2::COOP_SAVE_V2_RESERVED_TAIL_OFFSET + v2::COOP_SAVE_V2_RESERVED_TAIL_SIZE - 1] = 1;
+    let crc = crc32fast::hash(&tail[..COOP_CRC_OFFSET]);
+    write_u32(&mut tail, COOP_CRC_OFFSET, crc);
+    assert_eq!(
+        v2::parse_payload(&tail, TEST_REGISTRY),
+        Err(v2::CoopSaveV2Error::ReservedByte {
+            offset: COOP_CRC_OFFSET - 1,
+            value: 1,
+        })
+    );
+}
+
+#[test]
+fn v2_online_eligibility_requires_normalization_and_no_ambiguity() {
+    let missing = v2::parse_payload(&v2_payload(false, false), TEST_REGISTRY).unwrap();
+    assert!(!missing.met_locations_normalized());
+    assert!(!missing.online_eligible());
+
+    let ambiguous = v2::parse_payload(&v2_payload(true, true), TEST_REGISTRY).unwrap();
+    assert!(ambiguous.met_locations_normalized());
+    assert!(ambiguous.migration_ambiguous());
+    assert!(!ambiguous.online_eligible());
+}
+
+#[test]
+fn v2_projection_changes_only_approved_selected_bytes_and_touched_checksum() {
+    let mut bytes = vec![0xff; FLASH_IMAGE_SIZE];
+    let payload = v2_payload_array(true, false);
+    write_slot(&mut bytes, SaveSlot::First, 20, 4, &payload);
+    write_slot(&mut bytes, SaveSlot::Second, 21, 11, &payload);
+    let trailer = array::from_fn::<_, RTC_TRAILER_SIZE, _>(|index| index as u8 ^ 0x92);
+    bytes.extend_from_slice(&trailer);
+    let save = parse_v2(&bytes, TEST_REGISTRY).unwrap();
+    let physical = (0..SECTORS_PER_SLOT)
+        .map(|index| (SaveSlot::Second.index() * SECTORS_PER_SLOT + index) * SECTOR_SIZE)
+        .find(|&offset| read_u16(&bytes, offset + SECTOR_ID_OFFSET) == 5)
+        .unwrap();
+    let replacement = [0x12, 0x34, 0x56, 0x78];
+    let projected = save
+        .project_selected_sectors(
+            &[v2::ApprovedSectorSpan {
+                logical_id: 5,
+                offset: 2972,
+                len: 4,
+            }],
+            &[v2::SelectedSectorPatch {
+                logical_id: 5,
+                offset: 2972,
+                bytes: &replacement,
+            }],
+        )
+        .unwrap();
+    assert_eq!(
+        &projected.raw_bytes()[physical + 2972..physical + 2976],
+        &replacement
+    );
+    assert_eq!(projected.rtc_trailer(), Some(&trailer));
+    assert_eq!(projected.coop(), save.coop());
+    assert_eq!(projected.character_lineage(), save.character_lineage());
+    for index in 0..bytes.len() {
+        if !(physical + 2972..physical + 2976).contains(&index)
+            && !(physical + SECTOR_CHECKSUM_OFFSET..physical + SECTOR_CHECKSUM_OFFSET + 2)
+                .contains(&index)
+        {
+            assert_eq!(projected.raw_bytes()[index], bytes[index], "byte {index}");
+        }
+    }
+    assert!(parse_v2(projected.raw_bytes(), TEST_REGISTRY).is_ok());
+}
+
+#[test]
+fn v2_projection_rejects_unapproved_overlap_and_out_of_bounds() {
+    let mut bytes = vec![0xff; FLASH_IMAGE_SIZE];
+    let payload = v2_payload_array(true, false);
+    write_slot(&mut bytes, SaveSlot::First, 20, 4, &payload);
+    write_slot(&mut bytes, SaveSlot::Second, 21, 11, &payload);
+    let save = parse_v2(&bytes, TEST_REGISTRY).unwrap();
+    let approval = [v2::ApprovedSectorSpan {
+        logical_id: 5,
+        offset: 100,
+        len: 8,
+    }];
+    assert_eq!(
+        save.project_selected_sectors(&approval, &[]),
+        Err(v2::SectorProjectionError::InvalidPatch)
+    );
+    let bytes = [0x7a; 4];
+    assert_eq!(
+        save.project_selected_sectors(
+            &approval,
+            &[v2::SelectedSectorPatch {
+                logical_id: 5,
+                offset: 99,
+                bytes: &bytes,
+            }]
+        ),
+        Err(v2::SectorProjectionError::UnapprovedOrOverlapping)
+    );
+    assert_eq!(
+        save.project_selected_sectors(
+            &approval,
+            &[v2::SelectedSectorPatch {
+                logical_id: 5,
+                offset: 2975,
+                bytes: &bytes,
+            }]
+        ),
+        Err(v2::SectorProjectionError::InvalidPatch)
+    );
+    assert_eq!(
+        save.project_selected_sectors(
+            &approval,
+            &[
+                v2::SelectedSectorPatch {
+                    logical_id: 5,
+                    offset: 100,
+                    bytes: &bytes
+                },
+                v2::SelectedSectorPatch {
+                    logical_id: 5,
+                    offset: 102,
+                    bytes: &bytes
+                },
+            ]
+        ),
+        Err(v2::SectorProjectionError::UnapprovedOrOverlapping)
+    );
+    assert_eq!(
+        save.project_selected_sectors(
+            &approval,
+            &[v2::SelectedSectorPatch {
+                logical_id: 15,
+                offset: 0,
+                bytes: &bytes,
+            }]
+        ),
+        Err(v2::SectorProjectionError::InvalidPatch)
+    );
+}
+
+#[test]
+fn v2_projection_reparses_and_rejects_lineage_changes() {
+    let mut bytes = vec![0xff; FLASH_IMAGE_SIZE];
+    let payload = v2_payload_array(true, false);
+    write_slot(&mut bytes, SaveSlot::First, 20, 4, &payload);
+    write_slot(&mut bytes, SaveSlot::Second, 21, 11, &payload);
+    let save = parse_v2(&bytes, TEST_REGISTRY).unwrap();
+    let replacement = [0x42];
+    assert_eq!(
+        save.project_selected_sectors(
+            &[v2::ApprovedSectorSpan {
+                logical_id: 0,
+                offset: PLAYER_NAME_OFFSET,
+                len: 1
+            }],
+            &[v2::SelectedSectorPatch {
+                logical_id: 0,
+                offset: PLAYER_NAME_OFFSET,
+                bytes: &replacement,
+            }],
+        ),
+        Err(v2::SectorProjectionError::ProtectedStateChanged)
+    );
+    assert_eq!(save.raw_bytes(), bytes);
+}
+
+fn transfer_descriptor(pending: bool, coop_shared: bool) -> Vec<u8> {
+    // A compact, complete synthetic descriptor with the real encrypted field
+    // positions. Production uses the compiler-emitted 45-field descriptor.
+    let fields: [(u16, u8, u8, u32, u32); 15] = [
+        (0x0100, 0, 2, 0, 0x490),
+        (0x0102, 0, 1, 0x490, 4),
+        (0x0103, 0, 1, 0x494, 2),
+        (0x0104, 0, if pending { 3 } else { 2 }, 0x496, 0xca),
+        (0x0106, 0, 1, 0x560, 0x400),
+        (0x0200, 1, 2, 0, 17),
+        (0x0203, 1, 1, 17, 1),
+        (0x0204, 1, 2, 18, 0xb4 - 18),
+        (0x020b, 1, 2, 0xb4, 4),
+        (0x020c, 1, 2, 0xb8, 0x1fc - 0xb8),
+        (0x020d, 1, 1, 0x1fc, 4),
+        (0x0300, 2, 1, 0, 1),
+        (0x0301, 2, 2, 1, 1),
+        (0x0400, 3, 2, 0, COOP_SAVE_OFFSET as u32),
+        (
+            0x0403,
+            3,
+            if coop_shared { 1 } else { 2 },
+            COOP_SAVE_OFFSET as u32,
+            COOP_SAVE_V1_SIZE as u32,
+        ),
+    ];
+    let mut bytes = vec![0; 44 + 16 * fields.len()];
+    write_u32(&mut bytes, 0, 0x3154_5043);
+    write_u16(&mut bytes, 4, 3);
+    write_u16(&mut bytes, 6, u16::try_from(fields.len()).unwrap());
+    let length = u32::try_from(bytes.len()).unwrap();
+    write_u32(&mut bytes, 8, length);
+    write_u32(&mut bytes, 12, 44);
+    for (offset, span) in [
+        (16, 0x960),
+        (20, 0x200),
+        (24, 2),
+        (28, (COOP_SAVE_OFFSET + COOP_SAVE_V1_SIZE) as u32),
+    ] {
+        write_u32(&mut bytes, offset, span);
+    }
+    write_u32(&mut bytes, 32, 44);
+    write_u32(&mut bytes, 36, 16);
+    for (index, (id, storage, owner, offset, size)) in fields.into_iter().enumerate() {
+        let base = 44 + index * 16;
+        write_u16(&mut bytes, base, id);
+        bytes[base + 2] = storage;
+        bytes[base + 3] = owner;
+        write_u32(&mut bytes, base + 4, offset);
+        write_u32(&mut bytes, base + 8, size);
+    }
+    bytes
+}
+
+fn write_selected_payload(
+    bytes: &mut [u8],
+    slot: SaveSlot,
+    logical: usize,
+    offset: usize,
+    value: &[u8],
+) {
+    let sector = logical_sector_mut(bytes, slot, logical);
+    sector[offset..offset + value.len()].copy_from_slice(value);
+    let checksum = sector_checksum(&sector[..LOGICAL_SECTOR_DATA_SIZES[logical]]);
+    write_u16(sector, SECTOR_CHECKSUM_OFFSET, checksum);
+}
+
+#[test]
+fn fresh_world_template_binds_only_selected_trainer_identity_before_projection() {
+    let payload = v2_payload_array(true, false);
+    let mut source = vec![0xff; FLASH_IMAGE_SIZE];
+    let mut destination = vec![0xff; FLASH_IMAGE_SIZE];
+    write_slot(&mut source, SaveSlot::First, 20, 4, &payload);
+    write_slot(&mut source, SaveSlot::Second, 21, 11, &payload);
+    write_slot(&mut destination, SaveSlot::First, 22, 7, &payload);
+    write_slot(&mut destination, SaveSlot::Second, 21, 2, &payload);
+    write_selected_payload(
+        &mut source,
+        SaveSlot::Second,
+        0,
+        PLAYER_NAME_OFFSET,
+        b"NEWNAME\xff",
+    );
+    write_selected_payload(&mut source, SaveSlot::Second, 0, PLAYER_GENDER_OFFSET, &[1]);
+    write_selected_payload(
+        &mut source,
+        SaveSlot::Second,
+        0,
+        PLAYER_TRAINER_ID_OFFSET,
+        &[0x12, 0x34, 0x56, 0x78],
+    );
+    let source = parse_v2(&source, TEST_REGISTRY).unwrap();
+    let template = parse_v2(&destination, TEST_REGISTRY).unwrap();
+    assert!(
+        !source
+            .character_lineage()
+            .same_trainer(template.character_lineage())
+    );
+    let bound = template.bind_fresh_template_trainer(&source).unwrap();
+    assert!(
+        source
+            .character_lineage()
+            .same_trainer(bound.character_lineage())
+    );
+    assert_eq!(bound.coop(), template.coop());
+    assert_eq!(bound.selected_slot(), template.selected_slot());
+    assert_eq!(bound.counter(), template.counter());
+    assert_eq!(
+        bound.logical_sector_payload(1),
+        template.logical_sector_payload(1)
+    );
+    assert_eq!(
+        &bound.raw_bytes()[SECTORS_PER_SLOT * SECTOR_SIZE..],
+        &destination[SECTORS_PER_SLOT * SECTOR_SIZE..]
+    );
+    let descriptor = include_bytes!("fixtures/player_transfer_v3.bin");
+    let projected =
+        super::transfer::project_shared_player(&source, &bound, descriptor, descriptor).unwrap();
+    assert_eq!(projected.character_lineage(), source.character_lineage());
+    assert_eq!(projected.coop(), source.coop());
+    assert!(parse_v2(projected.raw_bytes(), TEST_REGISTRY).is_ok());
+}
+
+#[test]
+fn v2_sector_projection_rekeys_selected_rotated_slots_and_preserves_world_bytes() {
+    let mut source_payload = v2_payload_array(true, false);
+    write_u32(&mut source_payload, COOP_GENERATION_OFFSET, 42);
+    seal_coop_payload(&mut source_payload);
+    let destination_payload = v2_payload_array(true, false);
+    let mut source = vec![0xff; FLASH_IMAGE_SIZE];
+    let mut destination = vec![0xff; FLASH_IMAGE_SIZE];
+    write_slot(&mut source, SaveSlot::First, 20, 4, &source_payload);
+    write_slot(&mut source, SaveSlot::Second, 21, 11, &source_payload);
+    write_slot(
+        &mut destination,
+        SaveSlot::First,
+        22,
+        7,
+        &destination_payload,
+    );
+    write_slot(
+        &mut destination,
+        SaveSlot::Second,
+        21,
+        2,
+        &destination_payload,
+    );
+    write_selected_payload(&mut source, SaveSlot::Second, 0, PLAYER_REGION_OFFSET, &[1]);
+    write_selected_payload(
+        &mut destination,
+        SaveSlot::First,
+        0,
+        PLAYER_REGION_OFFSET,
+        &[2],
+    );
+    let source_key = 0x1256_3487_u32;
+    let destination_key = 0xa9bc_02d1_u32;
+    write_selected_payload(
+        &mut source,
+        SaveSlot::Second,
+        0,
+        0xb4,
+        &source_key.to_le_bytes(),
+    );
+    write_selected_payload(
+        &mut destination,
+        SaveSlot::First,
+        0,
+        0xb4,
+        &destination_key.to_le_bytes(),
+    );
+    write_selected_payload(
+        &mut source,
+        SaveSlot::Second,
+        0,
+        0x1fc,
+        &(7_654_u32 ^ source_key).to_le_bytes(),
+    );
+    write_selected_payload(
+        &mut source,
+        SaveSlot::Second,
+        1,
+        0x490,
+        &(500_000_u32 ^ source_key).to_le_bytes(),
+    );
+    write_selected_payload(
+        &mut source,
+        SaveSlot::Second,
+        2,
+        2220,
+        &(33_u32 ^ source_key).to_le_bytes(),
+    );
+    write_selected_payload(
+        &mut source,
+        SaveSlot::Second,
+        1,
+        0x494,
+        &(345_u16 ^ u16::from_le_bytes([source_key.to_le_bytes()[0], source_key.to_le_bytes()[1]]))
+            .to_le_bytes(),
+    );
+    write_selected_payload(&mut source, SaveSlot::Second, 1, 0x560, &[0x34, 0x12]);
+    write_selected_payload(
+        &mut source,
+        SaveSlot::Second,
+        1,
+        0x562,
+        &(9_u16 ^ u16::from_le_bytes([source_key.to_le_bytes()[0], source_key.to_le_bytes()[1]]))
+            .to_le_bytes(),
+    );
+    write_selected_payload(&mut source, SaveSlot::Second, 6, 0, &[0x57]);
+    // These offsets come from the linked schema-v3 ROM descriptor fixture.
+    // Day Care Pokémon follow the player; room furnishings remain regional.
+    write_selected_payload(&mut source, SaveSlot::Second, 4, 1600, &[0xab]);
+    write_selected_payload(&mut destination, SaveSlot::First, 3, 3268, &[0x77]);
+    write_selected_payload(&mut destination, SaveSlot::First, 1, 0, &[0x91]);
+    write_selected_payload(&mut destination, SaveSlot::First, 6, 1, &[0x62]);
+    let trailer = [0x5a; RTC_TRAILER_SIZE];
+    destination.extend_from_slice(&trailer);
+    let src = parse_v2(&source, TEST_REGISTRY).unwrap();
+    let dst = parse_v2(&destination, TEST_REGISTRY).unwrap();
+    let linked_descriptor = include_bytes!("fixtures/player_transfer_v3.bin");
+    let linked_projected =
+        super::transfer::project_shared_player(&src, &dst, linked_descriptor, linked_descriptor)
+            .unwrap();
+    let arrival = linked_projected.advance_transfer_generation().unwrap();
+    assert_eq!(
+        arrival.coop().save_generation,
+        linked_projected.coop().save_generation + 1
+    );
+    for logical in 0..SECTORS_PER_SLOT {
+        assert_eq!(
+            arrival.logical_sector_payload(logical as u8),
+            linked_projected.logical_sector_payload(logical as u8)
+        );
+    }
+    let mut expected_block3 = *linked_projected.save_block3();
+    for offset in [COOP_GENERATION_OFFSET, COOP_CRC_OFFSET] {
+        let start = COOP_SAVE_OFFSET + offset;
+        expected_block3[start..start + 4].copy_from_slice(&arrival.save_block3()[start..start + 4]);
+    }
+    assert_eq!(arrival.save_block3(), &expected_block3);
+    assert!(parse_v2(arrival.raw_bytes(), TEST_REGISTRY).is_ok());
+    assert_eq!(linked_projected.coop(), src.coop());
+    assert_eq!(linked_projected.character_lineage().player_region, 1);
+    assert_eq!(
+        linked_projected.logical_sector_payload(4).unwrap()[1600],
+        0xab
+    );
+    assert_eq!(
+        linked_projected.logical_sector_payload(3).unwrap()[3268],
+        0x77
+    );
+    assert_eq!(
+        read_u32(linked_projected.logical_sector_payload(2).unwrap(), 2220) ^ destination_key,
+        33
+    );
+    assert_eq!(
+        read_u32(linked_projected.logical_sector_payload(0).unwrap(), 0x1fc) ^ destination_key,
+        7_654
+    );
+    let descriptor = transfer_descriptor(false, true);
+    let projected =
+        super::transfer::project_shared_player(&src, &dst, &descriptor, &descriptor).unwrap();
+    assert_eq!(projected.selected_slot(), SaveSlot::First);
+    assert_eq!(projected.rtc_trailer(), Some(&trailer));
+    assert_eq!(projected.character_lineage().player_region, 1);
+    assert_eq!(projected.coop(), src.coop());
+    assert_eq!(
+        &projected.logical_sector_payload(0).unwrap()[0xb4..0xb8],
+        &destination_key.to_le_bytes()
+    );
+    assert_eq!(
+        read_u32(projected.logical_sector_payload(1).unwrap(), 0x490) ^ destination_key,
+        500_000
+    );
+    assert_eq!(
+        read_u16(projected.logical_sector_payload(1).unwrap(), 0x494)
+            ^ u16::from_le_bytes([
+                destination_key.to_le_bytes()[0],
+                destination_key.to_le_bytes()[1]
+            ]),
+        345
+    );
+    assert_eq!(
+        read_u16(projected.logical_sector_payload(1).unwrap(), 0x562)
+            ^ u16::from_le_bytes([
+                destination_key.to_le_bytes()[0],
+                destination_key.to_le_bytes()[1]
+            ]),
+        9
+    );
+    assert_eq!(
+        read_u32(projected.logical_sector_payload(0).unwrap(), 0x1fc) ^ destination_key,
+        7_654
+    );
+    assert_eq!(projected.logical_sector_payload(1).unwrap()[0], 0x91);
+    assert_eq!(projected.logical_sector_payload(6).unwrap()[1], 0x62);
+    assert_eq!(projected.logical_sector_payload(6).unwrap()[0], 0x57);
+    let other_slot = SECTORS_PER_SLOT * SECTOR_SIZE..2 * SECTORS_PER_SLOT * SECTOR_SIZE;
+    assert_eq!(
+        &projected.raw_bytes()[other_slot.clone()],
+        &destination[other_slot]
+    );
+    assert!(parse_v2(projected.raw_bytes(), TEST_REGISTRY).is_ok());
+    let returned =
+        super::transfer::project_shared_player(&projected, &src, &descriptor, &descriptor).unwrap();
+    assert_eq!(
+        read_u32(returned.logical_sector_payload(1).unwrap(), 0x490) ^ source_key,
+        500_000
+    );
+    assert_eq!(
+        &returned.logical_sector_payload(0).unwrap()[0xb4..0xb8],
+        &source_key.to_le_bytes()
+    );
+}
+
+#[test]
+fn transfer_generation_rejects_wraparound_without_changing_the_save() {
+    let mut payload = v2_payload_array(true, false);
+    write_u32(&mut payload, COOP_GENERATION_OFFSET, u32::MAX);
+    seal_coop_payload(&mut payload);
+    let mut bytes = vec![0xff; FLASH_IMAGE_SIZE];
+    write_slot(&mut bytes, SaveSlot::First, 20, 4, &payload);
+    write_slot(&mut bytes, SaveSlot::Second, 21, 11, &payload);
+    let save = parse_v2(&bytes, TEST_REGISTRY).unwrap();
+    assert_eq!(
+        save.advance_transfer_generation(),
+        Err(v2::SectorProjectionError::GenerationExhausted)
+    );
+    assert_eq!(save.raw_bytes(), bytes);
+}
+
+#[test]
+fn public_arrival_projection_round_trips_existing_world_and_preserves_regional_bytes() {
+    let mut source_payload = v2_payload_array(true, false);
+    write_u32(&mut source_payload, COOP_GENERATION_OFFSET, 8);
+    seal_coop_payload(&mut source_payload);
+    let destination_payload = v2_payload_array(true, false);
+    let mut source_bytes = vec![0xff; FLASH_IMAGE_SIZE];
+    let mut destination_bytes = vec![0xff; FLASH_IMAGE_SIZE];
+    write_slot(&mut source_bytes, SaveSlot::First, 20, 4, &source_payload);
+    write_slot(&mut source_bytes, SaveSlot::Second, 21, 11, &source_payload);
+    write_slot(
+        &mut destination_bytes,
+        SaveSlot::First,
+        22,
+        7,
+        &destination_payload,
+    );
+    write_slot(
+        &mut destination_bytes,
+        SaveSlot::Second,
+        21,
+        2,
+        &destination_payload,
+    );
+    // This byte belongs to a destination-local regional field and must remain
+    // untouched by the shared-player projection.
+    write_selected_payload(&mut destination_bytes, SaveSlot::First, 3, 3268, &[0x7d]);
+    let source = parse_v2(&source_bytes, TEST_REGISTRY).unwrap();
+    let destination = parse_v2(&destination_bytes, TEST_REGISTRY).unwrap();
+    let descriptor = include_bytes!("fixtures/player_transfer_v3.bin");
+    let arrival = project_arrival(
+        &source,
+        &destination,
+        TransferDescriptorPair {
+            source: descriptor,
+            destination: descriptor,
+        },
+        false,
+    )
+    .unwrap();
+    assert_eq!(arrival.coop().save_generation, 9);
+    assert_eq!(arrival.logical_sector_payload(3).unwrap()[3268], 0x7d);
+    assert_eq!(arrival.character_lineage(), source.character_lineage());
+    assert!(parse_v2(arrival.raw_bytes(), TEST_REGISTRY).is_ok());
+}
+
+#[test]
+fn public_first_arrival_binds_fresh_template_and_supports_a_third_world() {
+    let payload = v2_payload_array(true, false);
+    let mut source_bytes = vec![0xff; FLASH_IMAGE_SIZE];
+    let mut destination_bytes = vec![0xff; FLASH_IMAGE_SIZE];
+    write_slot(&mut source_bytes, SaveSlot::First, 20, 4, &payload);
+    write_slot(&mut source_bytes, SaveSlot::Second, 21, 11, &payload);
+    write_slot(&mut destination_bytes, SaveSlot::First, 22, 7, &payload);
+    write_slot(&mut destination_bytes, SaveSlot::Second, 21, 2, &payload);
+    write_selected_payload(
+        &mut source_bytes,
+        SaveSlot::Second,
+        0,
+        PLAYER_REGION_OFFSET,
+        &[3],
+    );
+    write_selected_payload(
+        &mut destination_bytes,
+        SaveSlot::First,
+        0,
+        PLAYER_REGION_OFFSET,
+        &[3],
+    );
+    write_selected_payload(
+        &mut source_bytes,
+        SaveSlot::Second,
+        0,
+        PLAYER_NAME_OFFSET,
+        &[b'T', b'H', b'I', b'R', b'D', 0xff, 0xff, 0xff],
+    );
+    write_selected_payload(
+        &mut source_bytes,
+        SaveSlot::Second,
+        0,
+        PLAYER_GENDER_OFFSET,
+        &[1],
+    );
+    write_selected_payload(
+        &mut source_bytes,
+        SaveSlot::Second,
+        0,
+        PLAYER_TRAINER_ID_OFFSET,
+        &[0x12, 0x34, 0x56, 0x78],
+    );
+    write_selected_payload(&mut destination_bytes, SaveSlot::First, 3, 3268, &[0xa1]);
+    let source = parse_v2(&source_bytes, TEST_REGISTRY).unwrap();
+    let destination = parse_v2(&destination_bytes, TEST_REGISTRY).unwrap();
+    assert!(
+        !source
+            .character_lineage()
+            .same_trainer(destination.character_lineage())
+    );
+    let descriptor = include_bytes!("fixtures/player_transfer_v3.bin");
+    let arrival = project_arrival(
+        &source,
+        &destination,
+        TransferDescriptorPair {
+            source: descriptor,
+            destination: descriptor,
+        },
+        true,
+    )
+    .unwrap();
+    assert!(
+        source
+            .character_lineage()
+            .same_trainer(arrival.character_lineage())
+    );
+    assert_eq!(arrival.character_lineage().player_region, 3);
+    assert_eq!(
+        arrival.coop().save_generation,
+        source.coop().save_generation + 1
+    );
+    assert_eq!(arrival.logical_sector_payload(3).unwrap()[3268], 0xa1);
+}
+
+#[test]
+fn public_arrival_rejects_malformed_descriptor_and_generation_exhaustion() {
+    let payload = v2_payload_array(true, false);
+    let mut bytes = vec![0xff; FLASH_IMAGE_SIZE];
+    write_slot(&mut bytes, SaveSlot::First, 20, 4, &payload);
+    write_slot(&mut bytes, SaveSlot::Second, 21, 11, &payload);
+    let save = parse_v2(&bytes, TEST_REGISTRY).unwrap();
+    assert_eq!(
+        project_arrival(
+            &save,
+            &save,
+            TransferDescriptorPair {
+                source: &[],
+                destination: &[],
+            },
+            false,
+        ),
+        Err(TransferError::InvalidDescriptor)
+    );
+
+    let mut max_payload = v2_payload_array(true, false);
+    write_u32(&mut max_payload, COOP_GENERATION_OFFSET, u32::MAX);
+    seal_coop_payload(&mut max_payload);
+    let mut max_bytes = vec![0xff; FLASH_IMAGE_SIZE];
+    write_slot(&mut max_bytes, SaveSlot::First, 20, 4, &max_payload);
+    write_slot(&mut max_bytes, SaveSlot::Second, 21, 11, &max_payload);
+    let max_save = parse_v2(&max_bytes, TEST_REGISTRY).unwrap();
+    let descriptor = include_bytes!("fixtures/player_transfer_v3.bin");
+    assert_eq!(
+        project_arrival(
+            &max_save,
+            &max_save,
+            TransferDescriptorPair {
+                source: descriptor,
+                destination: descriptor,
+            },
+            false,
+        ),
+        Err(TransferError::Projection(
+            v2::SectorProjectionError::GenerationExhausted
+        ))
+    );
+    assert_eq!(max_save.raw_bytes(), max_bytes);
+}
+
+#[test]
+fn v2_transfer_rejects_pending_and_mismatched_descriptors_without_writing() {
+    let payload = v2_payload_array(true, false);
+    let mut bytes = vec![0xff; FLASH_IMAGE_SIZE];
+    write_slot(&mut bytes, SaveSlot::First, 20, 4, &payload);
+    write_slot(&mut bytes, SaveSlot::Second, 21, 11, &payload);
+    let save = parse_v2(&bytes, TEST_REGISTRY).unwrap();
+    let pending = transfer_descriptor(true, false);
+    assert_eq!(
+        super::transfer::project_shared_player(&save, &save, &pending, &pending),
+        Err(super::transfer::TransferError::PendingField(0x0104))
+    );
+    let resolved = transfer_descriptor(false, false);
+    assert_eq!(
+        super::transfer::project_shared_player(&save, &save, &pending, &resolved),
+        Err(super::transfer::TransferError::DescriptorMismatch)
+    );
+    assert_eq!(save.raw_bytes(), bytes);
+    let missing_shared_coop = transfer_descriptor(false, false);
+    assert_eq!(
+        super::transfer::project_shared_player(
+            &save,
+            &save,
+            &missing_shared_coop,
+            &missing_shared_coop
+        ),
+        Err(super::transfer::TransferError::InvalidDescriptor)
+    );
+}
+
+#[test]
+fn v2_coop_projection_maps_validated_record_into_rotated_destination_only() {
+    let mut source_payload = v2_payload_array(true, false);
+    write_u32(&mut source_payload, COOP_GENERATION_OFFSET, 42);
+    write_u32(
+        &mut source_payload,
+        v2::COOP_SAVE_V2_CORMORIA_PROGRESS_OFFSET + 4,
+        501,
+    );
+    seal_coop_payload(&mut source_payload);
+    let destination_payload = v2_payload_array(true, false);
+    let mut source_bytes = vec![0xff; FLASH_IMAGE_SIZE];
+    let mut destination_bytes = vec![0xff; FLASH_IMAGE_SIZE];
+    write_slot(&mut source_bytes, SaveSlot::First, 20, 4, &source_payload);
+    write_slot(&mut source_bytes, SaveSlot::Second, 21, 11, &source_payload);
+    write_slot(
+        &mut destination_bytes,
+        SaveSlot::First,
+        22,
+        7,
+        &destination_payload,
+    );
+    write_slot(
+        &mut destination_bytes,
+        SaveSlot::Second,
+        21,
+        2,
+        &destination_payload,
+    );
+    destination_bytes.extend_from_slice(&[0x5a; RTC_TRAILER_SIZE]);
+    let source = parse_v2(&source_bytes, TEST_REGISTRY).unwrap();
+    let destination = parse_v2(&destination_bytes, TEST_REGISTRY).unwrap();
+
+    let projected = destination.project_coop_from(&source).unwrap();
+    assert_eq!(projected.coop(), source.coop());
+    assert_eq!(projected.selected_slot(), SaveSlot::First);
+    assert_eq!(projected.counter(), destination.counter());
+    assert_eq!(projected.rtc_trailer(), destination.rtc_trailer());
+    assert!(parse_v2(projected.raw_bytes(), TEST_REGISTRY).is_ok());
+    let mut changed = 0;
+    for (offset, (&before, &after)) in destination_bytes
+        .iter()
+        .zip(projected.raw_bytes())
+        .enumerate()
+    {
+        if before != after {
+            changed += 1;
+            let physical = offset / SECTOR_SIZE;
+            let sector_offset = offset % SECTOR_SIZE;
+            assert!(physical < SECTORS_PER_SLOT);
+            assert!(
+                (SAVE_BLOCK3_CHUNK_OFFSET..SAVE_BLOCK3_CHUNK_OFFSET + SAVE_BLOCK3_CHUNK_SIZE)
+                    .contains(&sector_offset)
+            );
+            let logical = usize::from(read_u16(
+                &destination_bytes,
+                physical * SECTOR_SIZE + SECTOR_ID_OFFSET,
+            ));
+            let block3_offset =
+                logical * SAVE_BLOCK3_CHUNK_SIZE + sector_offset - SAVE_BLOCK3_CHUNK_OFFSET;
+            assert!(
+                (COOP_SAVE_OFFSET..COOP_SAVE_OFFSET + COOP_SAVE_V1_SIZE).contains(&block3_offset)
+            );
+        }
+    }
+    assert!(changed > 0);
+
+    let mut other_character = source_bytes.clone();
+    write_selected_payload(&mut other_character, SaveSlot::Second, 0, 0, &[0x77]);
+    let mismatched = parse_v2(&other_character, TEST_REGISTRY).unwrap();
+    assert_eq!(
+        destination.project_coop_from(&mismatched),
+        Err(v2::SectorProjectionError::SourceMismatch)
+    );
+    assert_eq!(destination.raw_bytes(), destination_bytes);
 }
 
 #[test]
@@ -1448,4 +2586,402 @@ fn reads_money_trainer_flags_experience_and_locates_pokemon() {
         ]
     );
     assert!(save.locate_pokemon(1, 2).unwrap().is_empty());
+}
+
+// Independent synthetic CSP2 saves, not a legacy-save conversion path.
+fn v2_trade_record(tag: u8, held_item: u16) -> [u8; 100] {
+    let mut raw = [0_u8; 100];
+    let personality = u32::from(tag) * 24; // GAEM physical order, permutation zero.
+    let ot_id = u32::from_le_bytes([tag; 4]);
+    write_u32(&mut raw, 0, personality);
+    write_u32(&mut raw, 4, ot_id);
+    raw[8..18].fill(tag);
+    raw[19] = 2;
+    raw[20..27].fill(tag);
+    let mut secure = [0_u8; 48];
+    write_u16(&mut secure, 0, u16::from(tag));
+    write_u16(&mut secure, 2, held_item);
+    write_u32(&mut secure, 4, 12345);
+    write_u16(&mut secure, 12, 33);
+    secure[20..24].copy_from_slice(&[10, 11, 12, 13]);
+    let checksum = secure.chunks_exact(2).fold(0_u16, |sum, word| {
+        sum.wrapping_add(u16::from_le_bytes(word.try_into().unwrap()))
+    });
+    write_u16(&mut raw, 28, checksum);
+    for (index, word) in secure.chunks_exact(4).enumerate() {
+        write_u32(
+            &mut raw,
+            32 + 4 * index,
+            u32::from_le_bytes(word.try_into().unwrap()) ^ personality ^ ot_id,
+        );
+    }
+    raw[85] = 0xff;
+    raw[84] = 5;
+    write_u16(&mut raw, 86, 20);
+    write_u16(&mut raw, 88, 25);
+    raw
+}
+
+fn v2_trade_fixture(counter: u32, tag: u8, rotation: usize) -> ValidatedSaveV2 {
+    let mut bytes = vec![0xff; FLASH_IMAGE_SIZE];
+    let selected = SaveSlot::from_counter(counter);
+    let other = SaveSlot::from_counter(counter.wrapping_sub(1));
+    let mut payload = v2_payload_array(true, true); // Preserve both known status bits.
+    write_u16(
+        &mut payload,
+        v2::COOP_SAVE_V2_CORMORIA_PROGRESS_OFFSET + 2,
+        0x15,
+    );
+    let crc = crc32fast::hash(&payload[..COOP_CRC_OFFSET]);
+    write_u32(&mut payload, COOP_CRC_OFFSET, crc);
+    write_slot(&mut bytes, other, counter.wrapping_sub(1), 3, &payload);
+    write_slot(&mut bytes, selected, counter, rotation, &payload);
+    write_logical_range(
+        &mut bytes,
+        selected,
+        0,
+        PLAYER_NAME_OFFSET,
+        &[tag; PLAYER_NAME_SIZE],
+    );
+    write_logical_range(&mut bytes, selected, 0, PLAYER_TRAINER_ID_OFFSET, &[tag; 4]);
+    write_logical_range(&mut bytes, selected, 1, 0x234, &[2]);
+    let mut party = [0; 600];
+    party[..100].copy_from_slice(&v2_trade_record(tag, 0));
+    party[100..200].copy_from_slice(&v2_trade_record(tag + 1, 0));
+    write_logical_range(&mut bytes, selected, 1, 0x238, &party);
+    // Initialize boxes in batches so fixture construction recomputes each
+    // sector checksum once, not once per cleared byte.
+    let boxes_end = 4 + pokemon::BOX_COUNT * pokemon::BOX_SIZE * 80;
+    for logical in 6..SECTORS_PER_SLOT {
+        let base = (logical - 6) * SAVE_BLOCK3_CHUNK_OFFSET;
+        let begin = 4_usize.saturating_sub(base);
+        let end = boxes_end.saturating_sub(base).min(SAVE_BLOCK3_CHUNK_OFFSET);
+        if begin >= end {
+            continue;
+        }
+        let sector = logical_sector_mut(&mut bytes, selected, logical);
+        sector[begin..end].fill(0);
+        let checksum = sector_checksum(&sector[..LOGICAL_SECTOR_DATA_SIZES[logical]]);
+        write_u16(sector, SECTOR_CHECKSUM_OFFSET, checksum);
+    }
+    write_logical_range(
+        &mut bytes,
+        selected,
+        6,
+        4 + 49 * 80,
+        &v2_trade_record(tag, 0)[..80],
+    );
+    bytes.extend_from_slice(&[tag; RTC_TRAILER_SIZE]);
+    parse_v2(&bytes, TEST_REGISTRY).unwrap()
+}
+
+#[test]
+fn v2_trade_preserves_every_nonparty_byte_and_fifth_campaign_across_counter_rollover() {
+    let left = v2_trade_fixture(21, 7, 1);
+    let right = v2_trade_fixture(u32::MAX, 9, 14);
+    assert!(
+        !left
+            .character_lineage()
+            .same_trainer(right.character_lineage())
+    );
+    let left_record = match left.party_pokemon(1).unwrap() {
+        PokemonSlot::Occupied(record) => record.raw,
+        _ => panic!("occupied"),
+    };
+    let right_record = match right.party_pokemon(0).unwrap() {
+        PokemonSlot::Occupied(record) => record.raw,
+        _ => panic!("occupied"),
+    };
+    let originals = (left.raw_bytes().to_vec(), right.raw_bytes().to_vec());
+    let (new_left, new_right) = trade_party_pokemon_v2(&left, 1, &right, 0).unwrap();
+    assert_eq!(left.raw_bytes(), originals.0);
+    assert_eq!(right.raw_bytes(), originals.1);
+    assert_eq!(new_right.counter(), 0);
+    for (before, after, index, incoming) in [
+        (&left, &new_left, 1, right_record),
+        (&right, &new_right, 0, left_record),
+    ] {
+        assert_eq!(after.character_lineage(), before.character_lineage());
+        assert_eq!(after.rtc_trailer(), before.rtc_trailer());
+        assert_eq!(after.money(), before.money());
+        assert_eq!(
+            after.pc_storage_range(0, PC_STORAGE_CAPACITY),
+            before.pc_storage_range(0, PC_STORAGE_CAPACITY)
+        );
+        assert_eq!(after.party_count(), before.party_count());
+        assert_eq!(
+            after.coop().regional_progress,
+            before.coop().regional_progress
+        );
+        assert_eq!(after.coop().status_flags, before.coop().status_flags);
+        assert_eq!(
+            after.coop().defeated_trainers,
+            before.coop().defeated_trainers
+        );
+        assert_eq!(after.coop().events, before.coop().events);
+        assert_eq!(
+            after.coop().unlocked_fly_points,
+            before.coop().unlocked_fly_points
+        );
+        assert_eq!(after.coop().gyms, before.coop().gyms);
+        assert_eq!(
+            after.coop().save_generation,
+            before.coop().save_generation + 1
+        );
+        assert_eq!(
+            after
+                .coop()
+                .progress_for(RegionId::Cormoria)
+                .unwrap()
+                .badge_mask,
+            0x15
+        );
+        assert!(
+            matches!(after.party_pokemon(index), Ok(PokemonSlot::Occupied(record)) if record.raw == incoming)
+        );
+        assert_eq!(after.counter(), before.counter().wrapping_add(1));
+        assert_ne!(after.selected_slot(), before.selected_slot());
+        let source_base = before.selected_slot().index() * SECTORS_PER_SLOT * SECTOR_SIZE;
+        assert_eq!(
+            &after.raw_bytes()[source_base..source_base + SECTORS_PER_SLOT * SECTOR_SIZE],
+            &before.raw_bytes()[source_base..source_base + SECTORS_PER_SLOT * SECTOR_SIZE]
+        );
+        assert_eq!(
+            &after.raw_bytes()[SECTOR_SIZE * SECTORS_PER_SLOT * 2..],
+            &before.raw_bytes()[SECTOR_SIZE * SECTORS_PER_SLOT * 2..]
+        );
+        for logical in 0..SECTORS_PER_SLOT {
+            let old = before.logical_sector_offsets[logical];
+            let new = after.logical_sector_offsets[logical];
+            for inside in 0..SECTOR_SIZE {
+                let party = logical
+                    .checked_sub(1)
+                    .map(|id| id * SAVE_BLOCK3_CHUNK_OFFSET + inside)
+                    .is_some_and(|position| {
+                        (0x238 + index * 100..0x238 + (index + 1) * 100).contains(&position)
+                    });
+                let block3 = logical * SAVE_BLOCK3_CHUNK_SIZE
+                    + inside.saturating_sub(SAVE_BLOCK3_CHUNK_OFFSET);
+                let coop_integrity = inside >= SAVE_BLOCK3_CHUNK_OFFSET
+                    && ((COOP_SAVE_OFFSET + COOP_GENERATION_OFFSET
+                        ..COOP_SAVE_OFFSET + COOP_GENERATION_OFFSET + 4)
+                        .contains(&block3)
+                        || (COOP_SAVE_OFFSET + COOP_CRC_OFFSET
+                            ..COOP_SAVE_OFFSET + COOP_CRC_OFFSET + 4)
+                            .contains(&block3));
+                let footer = (SECTOR_CHECKSUM_OFFSET..SECTOR_CHECKSUM_OFFSET + 2).contains(&inside)
+                    || (SECTOR_COUNTER_OFFSET..SECTOR_COUNTER_OFFSET + 4).contains(&inside);
+                if !(party || coop_integrity || footer) {
+                    assert_eq!(
+                        after.raw_bytes()[new + inside],
+                        before.raw_bytes()[old + inside],
+                        "logical{logical} byte{inside}"
+                    );
+                }
+            }
+        }
+        assert!(parse_v2(after.raw_bytes(), TEST_REGISTRY).is_ok());
+        assert!(parse(after.raw_bytes(), TEST_REGISTRY).is_err());
+    }
+}
+
+#[test]
+fn v2_trade_rotates_logical_sectors_from_each_physical_start() {
+    let right = v2_trade_fixture(31, 9, 3);
+    for rotation in 0..SECTORS_PER_SLOT {
+        let left = v2_trade_fixture(21, 7, rotation);
+        let (output, _) = trade_party_pokemon_v2(&left, 0, &right, 1).unwrap();
+        let old_base = left.selected_slot().index() * SECTOR_SIZE * SECTORS_PER_SLOT;
+        let new_base = output.selected_slot().index() * SECTOR_SIZE * SECTORS_PER_SLOT;
+        let old_zero = (left.logical_sector_offsets[0] - old_base) / SECTOR_SIZE;
+        assert_eq!(
+            (output.logical_sector_offsets[0] - new_base) / SECTOR_SIZE,
+            (old_zero + 1) % SECTORS_PER_SLOT
+        );
+    }
+}
+
+#[test]
+fn v2_trade_rejects_invalid_selected_records_without_either_output() {
+    let left = v2_trade_fixture(21, 7, 3);
+    let right = v2_trade_fixture(31, 9, 6);
+    assert!(matches!(
+        trade_party_pokemon_v2(&left, 2, &right, 0),
+        Err(TradeError::OutsideParty { side: "left", .. })
+    ));
+    assert!(matches!(
+        trade_party_pokemon_v2(&left, 6, &right, 0),
+        Err(TradeError::Pokemon {
+            reason: PokemonError::PartyIndex { .. },
+            ..
+        })
+    ));
+    for (record, expected) in [
+        ([0; 100], "empty"),
+        (
+            {
+                let mut r = v2_trade_record(7, 0);
+                r[32] ^= 1;
+                r
+            },
+            "checksum",
+        ),
+        (
+            {
+                let mut r = v2_trade_record(7, 0);
+                r[85] = 0;
+                r
+            },
+            "mail",
+        ),
+        (v2_trade_record(7, 200), "mail"),
+    ] {
+        let mut raw = right.raw_bytes().to_vec();
+        write_logical_range(&mut raw, right.selected_slot(), 1, 0x238, &record);
+        let bad = parse_v2(&raw, TEST_REGISTRY).unwrap();
+        let result = trade_party_pokemon_v2(&left, 0, &bad, 0);
+        assert!(match expected {
+            "empty" => matches!(result, Err(TradeError::Empty { side: "right", .. })),
+            "checksum" => matches!(
+                result,
+                Err(TradeError::Pokemon {
+                    side: "right",
+                    reason: PokemonError::Checksum { .. }
+                })
+            ),
+            _ => matches!(result, Err(TradeError::Mail { side: "right", .. })),
+        });
+        assert_eq!(bad.raw_bytes(), raw);
+    }
+}
+
+#[test]
+fn v2_trade_rejects_generation_overflow_on_either_side() {
+    let left = v2_trade_fixture(21, 7, 3);
+    let right = v2_trade_fixture(31, 9, 6);
+    for side in ["left", "right"] {
+        let save = if side == "left" { &left } else { &right };
+        let mut raw = save.raw_bytes().to_vec();
+        rewrite_payload(&mut raw, save.selected_slot(), |payload| {
+            write_u32(payload, COOP_GENERATION_OFFSET, u32::MAX);
+            let crc = crc32fast::hash(&payload[..COOP_CRC_OFFSET]);
+            write_u32(payload, COOP_CRC_OFFSET, crc);
+        });
+        let exhausted = parse_v2(&raw, TEST_REGISTRY).unwrap();
+        let result = if side == "left" {
+            trade_party_pokemon_v2(&exhausted, 0, &right, 0)
+        } else {
+            trade_party_pokemon_v2(&left, 0, &exhausted, 0)
+        };
+        assert!(matches!(result,Err(TradeError::GenerationOverflow{side:failed}) if failed==side));
+        assert_eq!(exhausted.raw_bytes(), raw);
+    }
+}
+
+#[test]
+fn v2_gameplay_views_use_current_slot_and_canonical_trainer_bits() {
+    let save = v2_trade_fixture(21, 7, 3);
+    let mut raw = save.raw_bytes().to_vec();
+    let slot = save.selected_slot();
+    write_logical_range(
+        &mut raw,
+        slot,
+        0,
+        SAVE_BLOCK2_ENCRYPTION_KEY_OFFSET,
+        &0x12345678_u32.to_le_bytes(),
+    );
+    write_logical_range(
+        &mut raw,
+        slot,
+        1,
+        SAVE_BLOCK1_MONEY_OFFSET,
+        &(3000_u32 ^ 0x12345678).to_le_bytes(),
+    );
+    write_briney_evidence(&mut raw, slot, 0, 11, 0, true, false, false, true);
+    write_wally_evidence(&mut raw, slot, true, 1, false);
+    write_csp1_trainer_bit(&mut raw, slot, WALLY_VICTORY_ROAD_TRAINER_ORDINAL, true);
+    let save = parse_v2(&raw, TEST_REGISTRY).unwrap();
+    assert_eq!(save.money(), Some(3000));
+    assert!(
+        save.briney_voyage_evidence()
+            .is_first_voyage_post_scene_at(0, 11)
+    );
+    assert!(save.wally_victory_road_evidence().is_post_battle());
+    let ordinal =
+        resolve_ordinal(IdentityKind::Trainer, WALLY_VICTORY_ROAD_TRAINER_ORDINAL).unwrap();
+    let identity = TrainerInstanceId::parse(ordinal.qualified_id).unwrap();
+    assert_eq!(save.coop().defeated_trainer(&identity), Ok(true));
+    assert!(
+        save.coop()
+            .defeated_trainer(&TrainerInstanceId::parse("HOENN:TRAINER_NOT_REGISTERED").unwrap())
+            .is_err()
+    );
+    assert!(save.coop().progress_for(RegionId::Unspecified).is_none());
+    let PokemonSlot::Occupied(mon) = save.party_pokemon(0).unwrap() else {
+        panic!("occupied")
+    };
+    assert_eq!(mon.identity.experience(), 12345);
+    assert_eq!(
+        save.locate_pokemon(mon.identity.personality, mon.identity.ot_id)
+            .unwrap(),
+        vec![
+            PokemonLocation::Party(0),
+            PokemonLocation::Pc {
+                box_index: 1,
+                position: 19
+            }
+        ]
+    );
+    assert_eq!(save.event_var(VARS_START - 1), None);
+    assert_eq!(save.event_var(VARS_START + SAVE_BLOCK1_VAR_COUNT), None);
+    assert_eq!(save.event_flag(SAVE_BLOCK1_FLAG_BYTES * 8), None);
+    assert_eq!(save.save_block1_range(usize::MAX, 1), None);
+    assert_eq!(save.pc_storage_range(PC_STORAGE_CAPACITY, 1), None);
+    let mut raw = save.raw_bytes().to_vec();
+    write_bill_evidence(
+        &mut raw,
+        slot,
+        (64, 0),
+        (2, 3, 1),
+        (true, true, false, true),
+    );
+    let bill = parse_v2(&raw, TEST_REGISTRY).unwrap();
+    assert!(bill.bill_voyage_evidence().is_cinnabar_to_one_post_scene());
+}
+
+#[test]
+fn v2_trade_output_preserves_rom_slot_selection_and_rejects_tamper() {
+    let left = v2_trade_fixture(21, 7, 3);
+    let right = v2_trade_fixture(31, 9, 6);
+    let (output, _) = trade_party_pokemon_v2(&left, 0, &right, 0).unwrap();
+    let mut raw = output.raw_bytes().to_vec();
+    let offset = output.logical_sector_offsets[1];
+    raw[offset + 200] ^= 1;
+    // A corrupt container follows the ROM's valid-other-slot fallback.
+    let fallback = parse_v2(&raw, TEST_REGISTRY).unwrap();
+    assert_eq!(fallback.counter(), left.counter());
+    raw[left.logical_sector_offsets[1] + 200] ^= 1;
+    assert!(parse_v2(&raw, TEST_REGISTRY).is_err());
+    let mut raw = output.raw_bytes().to_vec();
+    rewrite_payload(&mut raw, output.selected_slot(), |payload| {
+        payload[COOP_CRC_OFFSET] ^= 1
+    });
+    assert!(parse_v2(&raw, TEST_REGISTRY).is_err());
+}
+
+#[test]
+fn same_trainer_binding_ignores_only_campaign_region() {
+    let save = v2_trade_fixture(21, 7, 3);
+    let identity = save.character_lineage();
+    let mut other = identity;
+    other.player_region ^= 1;
+    assert!(identity.same_trainer(other));
+    other.player_trainer_id[0] ^= 1;
+    assert!(!identity.same_trainer(other));
+    other = identity;
+    other.player_name[0] ^= 1;
+    assert!(!identity.same_trainer(other));
+    other = identity;
+    other.player_gender ^= 1;
+    assert!(!identity.same_trainer(other));
 }

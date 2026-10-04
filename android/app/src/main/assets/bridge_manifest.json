@@ -10,13 +10,13 @@
     "version": "0.11.0"
   },
   "game_build": {
-    "id": "pokecrossroads-beta-1.4-e05c8286-coop-v1",
+    "id": "pokecrossroads-beta-1.4-e05c8286-coop-v2-4be48101b829aeb55d185fa37275e6e8e6eab303095099e37f4b560cb274630e",
     "numeric_id": 65536,
-    "rom_sha256": "fab0b864068b7ca02ad4c708379f1f000b42020ef91d4d716d403c351280d3fd"
+    "rom_sha256": "4be48101b829aeb55d185fa37275e6e8e6eab303095099e37f4b560cb274630e"
   },
   "net_bridge": {
     "abi_version": 1,
-    "address": 33794236,
+    "address": 33797296,
     "byte_order": "little",
     "checksum": {
       "algorithm": "CRC-32/IEEE",
@@ -61,14 +61,14 @@
     "symbol": "gCoopNetBridge"
   },
   "save": {
-    "block3_address": 33642436,
+    "block3_address": 33645056,
     "coop_offset": 4,
     "crc_offset": 668,
-    "generation_address": 33642468,
+    "generation_address": 33645088,
     "generation_offset": 28,
-    "registry_digest": "43918833dec646d6a583d124686c8540",
-    "registry_version": 1,
-    "schema_version": 1,
+    "registry_digest": "17a333e34f21d9067a2307372524d9b0",
+    "registry_version": 3,
+    "schema_version": 2,
     "struct_size": 672
   },
   "schema_version": 4

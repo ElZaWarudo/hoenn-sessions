@@ -55,8 +55,17 @@ COOP_PHASE2_INVITE_PEPPER=<server-only random pepper>
 COOP_PHASE2_SIGNING_KEY_HEX=<64 lowercase hex characters for the private key>
 COOP_PHASE2_SIGNING_KEY_ID=<pinned signing-key identifier>
 COOP_PHASE2_BOOTSTRAP_INVITATION=<one-use invitation>
+COOP_PHASE2_RELEASE_CATALOG_PATH=<path to generated server build catalog>
+COOP_PHASE2_RELEASE_CATALOG_SHA256=<64 lowercase hex characters pinned by the release>
 cargo run -p coop-server -- --phase2-local --bind 127.0.0.1:0
 ```
+
+The catalog must list the exact build identity of every ROM in the release.
+Generate it from the validated multi-ROM release catalog with
+`tools/coop/generate_server_build_catalog.py`; pin the printed SHA-256 in
+server configuration separately from the catalog file. The local server
+rejects a missing or changed catalog at startup. Region IDs in this file are
+stable numeric world IDs, independent of build bits and in-game region IDs.
 
 Never use a wildcard bind, commit an invitation, or print the pepper, signing
 key, access/refresh token, bridge secret, or control secret. The bridge and
@@ -66,12 +75,12 @@ secret remains launcher-memory-only. Generated session files, ROMs, saves,
 savestates, and BIOS files remain ignored and local.
 
 The smoke exercises invite registration, case-insensitive login, lease fencing,
-snapshot prepare/upload/finalize, signed resume verification, reconnect, stale
-fence rejection, release, and revision-preserving reacquire. Its synthetic SAV
-is a byte-accurate 128 KiB PokéCrossroads Flash1M image containing two rotated
-sector slots and the frozen `CSP1` v1 payload. It is constructed at the
-deterministic ROM/mGBA seam, so it validates canonical save parsing and CAS
-behavior without claiming that stock mGBA produced the bytes interactively.
+catalog-bound runtime admission, snapshot prepare/upload/finalize, signed
+resume verification, reconnect, stale fence rejection, release, and
+revision-preserving reacquire. Its synthetic SAV is a byte-accurate 128 KiB
+Flash1M image containing two rotated sector slots and a schema-two `CSP1`
+payload. It validates canonical save parsing and CAS behavior at the transport
+boundary. The separate Cormoria emulator smoke covers a ROM-written V2 save.
 
 If a smoke fails, first stop the server/launcher processes and rerun the
 command; private temporary session directories are cleaned up by the test. A

@@ -20,6 +20,7 @@ import android.window.OnBackInvokedCallback;
 import android.window.OnBackInvokedDispatcher;
 import java.io.*;
 import java.nio.*;
+import java.security.MessageDigest;
 
 import java.util.concurrent.*;
 import org.json.JSONObject;
@@ -65,6 +66,7 @@ public final class MainActivity extends Activity implements GameRenderer.Host {
         touchOverlay.setControllerPresent(present);
     }
     private volatile BridgeConnection connection;
+    private volatile ArrivalVerifier arrivalVerifier;
     private volatile boolean cooperative;
     /** A hoenn-sessions://join/ link waiting for a running game and the player's consent. */
     private String pendingJoinLink;
@@ -260,7 +262,7 @@ public final class MainActivity extends Activity implements GameRenderer.Host {
         String authenticatedCharacterId=resumeSession?characterId:api.characterId();
         api.clearAccess();
         // Java's preflight login created the refresh family; Rust rotates that same family.
-        if(!NativeSession.start(getFilesDir().getCanonicalPath(),username,"",authenticatedUserId,authenticatedCharacterId,true,false))throw new IOException(getString(R.string.game_session_active));
+        if(!NativeSession.start(getFilesDir().getCanonicalPath(),username,"",authenticatedUserId,authenticatedCharacterId,currentGame.catalogSha256,true,false))throw new IOException(getString(R.string.game_session_active));
         if(session.isDestroyed() || !session.isResumed())NativeSession.stop();
         return resumeSession?getString(R.string.restoring_session):getString(R.string.checking_credentials);
     }
@@ -292,6 +294,8 @@ public final class MainActivity extends Activity implements GameRenderer.Host {
         catch (RuntimeException error) { awaitingInstallPermission=false;showStatus(getString(R.string.installer_open_failed,error.getMessage())); }
     }
     private void closeCore(){
+        ArrivalVerifier verifier=arrivalVerifier;
+        if(verifier!=null){verifier.requestStop(false);verifier.awaitClosed();}
         controller.clear();
         synchronized(NativeCore.class){try{if(connection!=null)connection.close();}finally{connection=null;NativeCore.close();cooperative=false;}}
         NativeSession.acknowledgeStopped();
@@ -319,13 +323,19 @@ public final class MainActivity extends Activity implements GameRenderer.Host {
     private void pollSession() throws Exception {
         String raw;while((raw=NativeSession.poll())!=null){JSONObject event=new JSONObject(raw);String type=event.getString("type");
             if(type.equals("load")){
+                if(arrivalVerifier!=null)throw new SecurityException("Verificador de llegada aún activo");
                 session.resetRetries();hostHandler.removeCallbacks(resumeRetry);
                 if(!session.mayAcceptLoad(currentGame!=null)){
                     closeCore();NativeSession.stop();continue;
                 }
                 verifyCore();
-                synchronized(NativeCore.class){NativeCore.close();NativeBridge.ADDRESS=currentGame.bridgeAddress();NativeCore.configureBridge(NativeBridge.ADDRESS,currentGame.generationAddress());if(!NativeCore.open(event.getString("rom"),event.getString("save")))throw new IOException(getString(R.string.game_open_failed));connection=new BridgeConnection(event.getJSONObject("bridge"),event.getLong("epoch"));cooperative=true;}
+                RuntimeStore.Game selected=new RuntimeStore(getFilesDir()).current(event.getInt("world_id"));
+                String verifiedPath=RuntimeStore.verifiedSessionRom(selected,event.getString("rom"),
+                    event.getString("rom_sha256"),event.getString("build_id"));
+                currentGame=selected;
+                synchronized(NativeCore.class){NativeCore.close();NativeBridge.ADDRESS=currentGame.bridgeAddress();NativeCore.configureBridge(NativeBridge.ADDRESS,currentGame.generationAddress());if(!NativeCore.open(verifiedPath,event.getString("save")))throw new IOException(getString(R.string.game_open_failed));connection=new BridgeConnection(event.getJSONObject("bridge"),event.getLong("epoch"));cooperative=true;}
                 savedAccount=SecureCredentialStore.loadAccount();session.markPlaying();setPlaying(true);enterFullscreen();
+                game.start();
                 lastCloudRevision=event.getLong("revision");
                 long[] evidence=NativeCore.saveEvidence();lastSeenSaveSerial=evidence!=null&&evidence.length>0?evidence[0]:0;lastAcceptedSaveSerial=lastSeenSaveSerial;savePending=false;
                 setConnection(getString(R.string.connection_online),0xFF80CBC4);setCloudRevision(lastCloudRevision);
@@ -334,6 +344,12 @@ public final class MainActivity extends Activity implements GameRenderer.Host {
             }else if(type.equals("pairing_redeemed")){
                 String result=event.getString("result");
                 showStatus(getString(result.equals("joined")?R.string.join_joined:result.equals("refused")?R.string.join_refused:R.string.join_unavailable));
+            }else if(type.equals("verify_arrival")){
+                try{startArrivalVerifier(event);}catch(Exception e){NativeSession.arrivalVerifierClosed(event.getLong("verification_id"),false,e.getMessage()==null?e.getClass().getSimpleName():e.getMessage());throw e;}
+            }else if(type.equals("verify_arrival_stop")){
+                ArrivalVerifier verifier=arrivalVerifier;
+                if(verifier==null || verifier.id!=event.getLong("verification_id"))throw new SecurityException("Verificador de llegada desconocido");
+                verifier.requestStop(true);
             }else if(type.equals("stop")){
                 closeCore();session.markReady();
             }else if(type.equals("saved")){
@@ -366,6 +382,76 @@ public final class MainActivity extends Activity implements GameRenderer.Host {
                 }else if(leaseConflict)showStatus(getString(R.string.other_session_retry));
                 else if(cloudFailure)showStatus(getString(R.string.server_retry));
                 else {Log.e("HoennGame","Session error: "+message);showStatus(getString(R.string.operation_failed));}
+            }
+        }
+    }
+    private File stagedFile(String path) throws IOException {
+        File file=new File(path),root=getFilesDir().getCanonicalFile();
+        if(!file.isFile() || !file.getAbsolutePath().equals(file.getCanonicalPath()) || !file.getCanonicalPath().startsWith(root.getPath()+File.separator))throw new SecurityException("Archivo de llegada fuera del espacio privado");
+        return file;
+    }
+    private void startArrivalVerifier(JSONObject event) throws Exception {
+        long id=event.getLong("verification_id");
+        if(id<=0 || arrivalVerifier!=null || connection!=null || cooperative || session.isDestroyed() || !session.isResumed())throw new SecurityException("Verificación de llegada fuera de estado");
+        game.stop();
+        if(game.isRunning())throw new IOException("El núcleo de juego no se detuvo");
+        controller.clear();game.keys=0;
+        setPlaying(false);showStatus("Comprobando la llegada en el juego…");
+        RuntimeStore.Game selected=new RuntimeStore(getFilesDir()).current(event.getInt("world_id"));
+        String hash=event.getString("rom_sha256"),build=event.getString("build_id");
+        int bridgeAddress=event.getInt("bridge_address"),generationAddress=event.getInt("generation_address");
+        if(!selected.romHash.equals(hash) || !selected.buildId.equals(build)
+                || selected.bridgeAddress()!=bridgeAddress || selected.generationAddress()!=generationAddress)
+            throw new SecurityException("Identidad de llegada no coincide con el catálogo");
+        ArrivalVerifier verifier=new ArrivalVerifier(id,stagedFile(event.getString("rom")),stagedFile(event.getString("save")),
+                hash,event.getJSONObject("bridge"),bridgeAddress,generationAddress);
+        arrivalVerifier=verifier;verifier.start();
+    }
+    private final class ArrivalVerifier implements Runnable {
+        final long id;
+        final File rom,save;
+        final String romSha256;
+        final JSONObject bridge;
+        final int bridgeAddress,generationAddress;
+        final Thread thread;
+        final ArrivalStopState stop=new ArrivalStopState();
+        ArrivalVerifier(long id,File rom,File save,String romSha256,JSONObject bridge,int bridgeAddress,int generationAddress){
+            this.id=id;this.rom=rom;this.save=save;this.romSha256=romSha256;this.bridge=bridge;
+            this.bridgeAddress=bridgeAddress;this.generationAddress=generationAddress;thread=new Thread(this,"arrival-verifier");
+        }
+        void start(){thread.start();}
+        void requestStop(boolean fromHost){stop.request(fromHost);}
+        void awaitClosed(){if(Thread.currentThread()==thread)return;try{thread.join(4000);}catch(InterruptedException e){Thread.currentThread().interrupt();throw new IllegalStateException("Cierre del verificador interrumpido");}if(thread.isAlive())throw new IllegalStateException("El verificador no confirmó su cierre");}
+        @Override public void run(){
+            BridgeConnection verifierBridge=null;String failure="";
+            try{
+                if(!romSha256.matches("[0-9a-f]{64}") || rom.length()>64L*1024*1024 || bridgeAddress==0 || generationAddress==0)throw new SecurityException("Identidad de llegada inválida");
+                MessageDigest digest=MessageDigest.getInstance("SHA-256");
+                try(InputStream input=new FileInputStream(rom)){byte[] buffer=new byte[65536];int count;while((count=input.read(buffer))!=-1)digest.update(buffer,0,count);}
+                if(!MessageDigest.isEqual(digest.digest(),PinnedIdentity.hex(romSha256)))throw new SecurityException("ROM de llegada no coincide");
+                if(stop.isRequested() || session.isDestroyed() || !session.isResumed())throw new IOException("Verificación cancelada");
+                verifyCore();
+                synchronized(NativeCore.class){
+                    NativeCore.close();NativeBridge.ADDRESS=bridgeAddress;NativeCore.configureBridge(bridgeAddress,generationAddress);
+                    if(!NativeCore.open(rom.getPath(),save.getPath()))throw new IOException("mGBA no pudo abrir la llegada");
+                    verifierBridge=BridgeConnection.arrivalVerifier(bridge);
+                }
+                Bitmap bitmap=Bitmap.createBitmap(240,160,Bitmap.Config.ARGB_8888);short[] samples=new short[4096];
+                long deadline=System.nanoTime()+TimeUnit.SECONDS.toNanos(50);
+                while(!stop.isRequested() && !session.isDestroyed() && session.isResumed() && System.nanoTime()<deadline){
+                    long frameStart=System.nanoTime();
+                    synchronized(NativeCore.class){if(NativeCore.frame(0,bitmap,samples)<0)throw new IOException("Núcleo de llegada cerrado");verifierBridge.step();}
+                    long remaining=TimeUnit.MILLISECONDS.toNanos(16)-(System.nanoTime()-frameStart);
+                    if(remaining>0)TimeUnit.NANOSECONDS.sleep(remaining);
+                }
+                if(!stop.isRequested())throw new IOException("La llegada no produjo una prueba a tiempo");
+            }catch(Exception e){failure=e.getMessage()==null?e.getClass().getSimpleName():e.getMessage();}
+            finally{
+                boolean bridgeClosed=false,coreClosed=false;
+                try{if(verifierBridge!=null)verifierBridge.close();bridgeClosed=true;}catch(Exception e){failure="Cierre del bridge verificador fallido";}
+                try{synchronized(NativeCore.class){NativeCore.close();}coreClosed=true;}catch(Exception e){failure="Cierre del núcleo verificador fallido";}
+                arrivalVerifier=null;
+                NativeSession.arrivalVerifierClosed(id,bridgeClosed && coreClosed && failure.isEmpty() && stop.hostClosed(),failure);
             }
         }
     }
@@ -481,7 +567,7 @@ public final class MainActivity extends Activity implements GameRenderer.Host {
         if(!session.beginStart()){showStatus(getString(R.string.wait_for_login));return;}
         SecureCredentialStore.Account account=savedAccount;
         work(()->{try{
-            if(!NativeSession.start(getFilesDir().getCanonicalPath(),account.username,"",account.userId,account.characterId,true,true))throw new IOException(getString(R.string.other_operation));
+            if(!NativeSession.start(getFilesDir().getCanonicalPath(),account.username,"",account.userId,account.characterId,"",true,true))throw new IOException(getString(R.string.other_operation));
             return getString(R.string.signing_out);
         }finally{session.finishStart();}});
     }
@@ -514,7 +600,7 @@ public final class MainActivity extends Activity implements GameRenderer.Host {
         if(NativeSession.isActive()||session.isStarting()){hostHandler.postDelayed(this,500);return;}
         startSavedSession();
     }};
-    @Override protected void onResume(){super.onResume();session.setResumed(true);audioFocused=audioManager.requestAudioFocus(audioFocusRequest)==AudioManager.AUDIOFOCUS_REQUEST_GRANTED;refreshControllerOverlay();if(game!=null)game.start();if(awaitingInstallPermission){awaitingInstallPermission=false;if(getPackageManager().canRequestPackageInstalls())openApkInstaller();else showStatus(getString(R.string.install_permission));}if(session.takeAutoResumeIfReady(NativeSession.isActive()||session.isStarting()))startSavedSession();else if(session.retryCount()>0)hostHandler.post(resumeRetry);else resumeAfterClose();}
+    @Override protected void onResume(){super.onResume();session.setResumed(true);audioFocused=audioManager.requestAudioFocus(audioFocusRequest)==AudioManager.AUDIOFOCUS_REQUEST_GRANTED;refreshControllerOverlay();if(game!=null && arrivalVerifier==null)game.start();if(awaitingInstallPermission){awaitingInstallPermission=false;if(getPackageManager().canRequestPackageInstalls())openApkInstaller();else showStatus(getString(R.string.install_permission));}if(session.takeAutoResumeIfReady(NativeSession.isActive()||session.isStarting()))startSavedSession();else if(session.retryCount()>0)hostHandler.post(resumeRetry);else resumeAfterClose();}
     @Override public void onWindowFocusChanged(boolean hasFocus){super.onWindowFocusChanged(hasFocus);inputFocused=hasFocus;if(hasFocus && cooperative)enterFullscreen();if(!hasFocus){controller.clear();if(game!=null)game.keys=0;}}
     private void handleBack(){
         if(cooperative){
@@ -525,8 +611,8 @@ public final class MainActivity extends Activity implements GameRenderer.Host {
     // Android 13+ uses the registered OnBackInvokedCallback; this handles older devices.
     @SuppressLint("GestureBackNavigation")
     @Override public void onBackPressed(){handleBack();}
-    @Override protected void onPause(){boolean wasStarting=session.isStarting();session.setResumed(false);audioFocused=false;audioManager.abandonAudioFocusRequest(audioFocusRequest);hostHandler.removeCallbacks(resumeRetry);controller.clear();if(game!=null){game.keys=0;if(wasStarting){session.requestResumeAfterPause();NativeSession.stop();}else if(!NativeSession.isActive())game.stop();}super.onPause();}
-    @Override protected void onDestroy(){session.markDestroyed();hostHandler.removeCallbacks(resumeRetry);hostHandler.removeCallbacks(hideGameStatus);unregisterReceiver(noisyAudio);if(Build.VERSION.SDK_INT>=33 && backCallback!=null)getOnBackInvokedDispatcher().unregisterOnBackInvokedCallback(backCallback);inputManager.unregisterInputDeviceListener(controllerDevices);NativeSession.stop();worker.shutdown();super.onDestroy();}
+    @Override protected void onPause(){boolean wasStarting=session.isStarting();session.setResumed(false);ArrivalVerifier verifier=arrivalVerifier;if(verifier!=null){verifier.requestStop(false);NativeSession.stop();}audioFocused=false;audioManager.abandonAudioFocusRequest(audioFocusRequest);hostHandler.removeCallbacks(resumeRetry);controller.clear();if(game!=null){game.keys=0;if(wasStarting){session.requestResumeAfterPause();NativeSession.stop();}else if(!NativeSession.isActive())game.stop();}super.onPause();}
+    @Override protected void onDestroy(){session.markDestroyed();ArrivalVerifier verifier=arrivalVerifier;if(verifier!=null)verifier.requestStop(false);hostHandler.removeCallbacks(resumeRetry);hostHandler.removeCallbacks(hideGameStatus);unregisterReceiver(noisyAudio);if(Build.VERSION.SDK_INT>=33 && backCallback!=null)getOnBackInvokedDispatcher().unregisterOnBackInvokedCallback(backCallback);inputManager.unregisterInputDeviceListener(controllerDevices);NativeSession.stop();worker.shutdown();super.onDestroy();}
     @Override public boolean isResumed(){return session.isResumed();}
     @Override public boolean hasInputFocus(){return inputFocused;}
     @Override public boolean hasAudioFocus(){return audioFocused;}

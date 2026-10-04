@@ -187,9 +187,39 @@ def replace_owned_section(text: str, start: str, end: str, body: str, path: str)
     return text[:start_pos] + start + body + text[end_pos:]
 
 
-def require_local_sequence(text: str, parts: tuple[str, ...], path: str, *, at_start: bool = False) -> None:
+# Reviewed Cormoria include blocks (6be11d394e).  Each block is accepted only at
+# one exact position inside a Johto composition sequence checked in
+# integration_outputs() (directly after the Johto shared include) and is matched
+# literally, so a missing, moved, edited or additional line still fails closed.
+CORMORIA_INTEGRATION_BLOCKS = {
+    name: f'#if ROM_WORLD == 2\n#include "{include}"\n#endif\n'
+    for name, include in (
+        ("assets", "data/object_events/cormoria_assets.h"),
+        ("info", "data/object_events/cormoria_info.h"),
+        ("palettes", "data/object_events/cormoria_palettes.inc"),
+        ("declarations", "cormoria_declarations.h"),
+        ("pointers", "cormoria_pointers.inc"),
+    )
+}
+
+
+def require_local_sequence(
+    text: str,
+    parts: tuple[str, ...],
+    path: str,
+    *,
+    at_start: bool = False,
+    reviewed_block: tuple[str, int] | None = None,
+) -> None:
+    """Require ``parts`` contiguously, plus an optional reviewed (name, index) block."""
     if text.count(parts[1]) != 1 or text.count(parts[2]) != 1:
         raise SystemExit(f"integration anchor drift: {path}")
+    if reviewed_block is not None:
+        name, index = reviewed_block
+        block = CORMORIA_INTEGRATION_BLOCKS[name]
+        if text.count(block) != 1:
+            raise SystemExit(f"integration anchor drift: {path}")
+        parts = (*parts[:index], block, *parts[index:])
     sequence = "".join(parts)
     if text.count(sequence) != 1 or (at_start and not text.startswith(sequence)):
         raise SystemExit(f"integration composition drift: {path}")
@@ -237,27 +267,27 @@ def integration_outputs(root: Path):
 
     path = INTEGRATION_PATHS[1]
     core = originals[path]
-    for parts in (
-        (
+    for block, parts in (
+        ("assets", (
             '#include "data/object_events/object_event_graphics.h"\n',
             '#include "data/object_events/johto_assets.h"\n',
             '#include "data/object_events/johto_shared_assets.h"\n',
             '\n// movement type callbacks\n',
-        ),
-        (
+        )),
+        ("info", (
             '#include "data/object_events/object_event_graphics_info.h"\n',
             '#include "data/object_events/johto_info.h"\n',
             '#include "data/object_events/johto_shared_info.h"\n',
             '#include "data/object_events/object_event_graphics_info_followers.h"\n',
-        ),
-        (
+        )),
+        ("palettes", (
             '    {gObjectEventPaletteNeonLight,          OBJ_EVENT_PAL_TAG_NEON_LIGHT},\n',
             '#include "data/object_events/johto_palettes.inc"\n',
             '#include "data/object_events/johto_shared_palettes.inc"\n',
             '#ifdef BUGFIX\n',
-        ),
+        )),
     ):
-        require_local_sequence(core, parts, path)
+        require_local_sequence(core, parts, path, reviewed_block=(block, 3))
     if not core.startswith('#include "global.h"\n'):
         raise SystemExit("host prefix drift: " + path)
     outputs[root / path] = core.encode()
@@ -273,6 +303,7 @@ def integration_outputs(root: Path):
         ),
         path,
         at_start=True,
+        reviewed_block=("declarations", 2),
     )
     require_local_sequence(
         core,
@@ -283,6 +314,7 @@ def integration_outputs(root: Path):
             '};\n',
         ),
         path,
+        reviewed_block=("pointers", 3),
     )
     outputs[root / path] = core.encode()
 

@@ -55,6 +55,9 @@ pub(crate) fn validate_trade_anchor(
         return Err(Phase2Error::Conflict);
     }
     for (index, character_id) in view.members.into_iter().enumerate() {
+        if state.handoff_for_member(character_id) {
+            return Err(Phase2Error::Conflict);
+        }
         if state.active_group_by_member.get(&character_id) != Some(&view.group_id) {
             return Err(Phase2Error::Conflict);
         }
@@ -89,7 +92,8 @@ pub(crate) fn validate_trade_anchor(
                 .get(&(character_id, view.revisions[index]))
                 != Some(&view.snapshots[index])
             || source.is_none_or(|snapshot| {
-                snapshot.snapshot_id != view.snapshots[index]
+                character.world_heads.get(&snapshot.rom_world_id) != Some(&snapshot.snapshot_id)
+                    || snapshot.snapshot_id != view.snapshots[index]
                     || snapshot.character_id != character_id
                     || snapshot.revision != view.revisions[index]
                     || snapshot.validate().is_err()
@@ -111,7 +115,7 @@ pub(crate) fn validate_trade_anchor(
 #[derive(Clone)]
 struct VerifiedSource {
     commitment: TradeSourceCommitment,
-    save: coop_save::ValidatedSave,
+    save: coop_save::ValidatedSaveV2,
     pending: Vec<u8>,
 }
 
@@ -358,7 +362,7 @@ pub(crate) fn stage_trade(
         verify_source(store, &snapshots[0], record.fences[0], record.view.slots[0])?,
         verify_source(store, &snapshots[1], record.fences[1], record.view.slots[1])?,
     ];
-    let (left, right) = coop_save::trade_party_pokemon(
+    let (left, right) = coop_save::trade_party_pokemon_v2(
         &sources[0].save,
         sources[0].commitment.slot.index(),
         &sources[1].save,
@@ -432,6 +436,7 @@ pub(crate) fn stage_trade(
         {
             return Err(Phase2Error::Busy);
         }
+        validate_trade_anchor(state, &record, now)?;
         for output in &stage.outputs {
             ensure_trade_snapshot_quota(state, output.character_id, &output.files, None)?;
         }
@@ -489,9 +494,14 @@ pub(crate) fn stage_trade(
     })
 }
 
-fn output_snapshot(output: &TradeStagedMember, now: u64) -> Result<SnapshotRecord, Phase2Error> {
+fn output_snapshot(
+    output: &TradeStagedMember,
+    world: coop_protocol::RomWorldId,
+    now: u64,
+) -> Result<SnapshotRecord, Phase2Error> {
     SnapshotRecord::new(
         output.snapshot_id,
+        world,
         SnapshotFence::new(
             output.fence.session_id,
             output.character_id,
@@ -542,6 +552,14 @@ pub(crate) fn publish_trade(
             .get(&offer_id)
             .cloned()
             .ok_or(Phase2Error::NotFound)?;
+        // A ROM switch temporarily pauses publication without discarding
+        // the pair's owned outputs. Other stale anchors must reach the
+        // existing abort/cleanup path below rather than returning here.
+        if stage.sources.iter().any(|source| state.handoff_for_member(source.character_id))
+            || record.view.members.iter().any(|member| state.handoff_for_member(*member))
+        {
+            return Err(Phase2Error::Conflict);
+        }
         Ok((Some(stage), Some(record)))
     })?;
     if stage.is_none() {
@@ -589,9 +607,35 @@ pub(crate) fn publish_trade(
         let cleanup = cleanup_trade_stage(store, offer_id, idempotency_key, &stage);
         return Err(cleanup.err().unwrap_or(error));
     }
+    let worlds = store.read_transaction(|state| {
+        // Rebind each generated head to its authoritative source world.
+        let worlds: [Result<coop_protocol::RomWorldId, Phase2Error>; 2] =
+            std::array::from_fn(|index| {
+                let snapshot = state
+                    .snapshots
+                    .get(&stage.sources[index].snapshot_id)
+                    .ok_or(Phase2Error::Conflict)?;
+                if !source_matches_snapshot(snapshot, stage.sources[index]) {
+                    return Err(Phase2Error::Conflict);
+                }
+                Ok(snapshot.rom_world_id)
+            });
+        let [left, right] = worlds;
+        Ok::<_, Phase2Error>([left?, right?])
+    });
+    let worlds = match worlds {
+        Ok(worlds) => worlds,
+        Err(error) => {
+            if store.repository.is_fenced() {
+                return Err(error);
+            }
+            let cleanup = cleanup_trade_stage(store, offer_id, idempotency_key, &stage);
+            return Err(cleanup.err().unwrap_or(error));
+        }
+    };
     let snapshots = [
-        output_snapshot(&stage.outputs[0], now)?,
-        output_snapshot(&stage.outputs[1], now)?,
+        output_snapshot(&stage.outputs[0], worlds[0], now)?,
+        output_snapshot(&stage.outputs[1], worlds[1], now)?,
     ];
     let receipt = TradeCommitReceipt {
         offer_id,
@@ -630,6 +674,7 @@ pub(crate) fn publish_trade(
                 .get(&stage.sources[index].snapshot_id)
                 .ok_or(Phase2Error::Conflict)?;
             if !source_matches_snapshot(current_source, stage.sources[index])
+                || current_source.rom_world_id != worlds[index]
                 || view.members[index] != output.character_id
                 || output.source != stage.sources[index]
                 || output.source.slot != view.slots[index]
@@ -691,6 +736,9 @@ pub(crate) fn publish_trade(
             if let Some(character) = state.characters.get_mut(&character_id) {
                 character.revision = stage.outputs[index].revision;
                 character.active_snapshot = Some(stage.outputs[index].snapshot_id);
+                character
+                    .world_heads
+                    .insert(worlds[index], stage.outputs[index].snapshot_id);
             }
             if let Some(lease) = state.leases.get_mut(&character_id) {
                 lease.contract = contracts[index].clone();
@@ -802,6 +850,10 @@ fn live_member_lease(
     character_id: CharacterId,
     now: u64,
 ) -> Result<(), Phase2Error> {
+    if state.handoff_for_member(character_id) {
+        return Err(Phase2Error::Conflict);
+    }
+
     super::group_travel::validate_member(state, character_id)?;
     let lease = state
         .leases
@@ -1568,6 +1620,7 @@ fn mark_offer_expired(state: &mut State, offer_id: &TradeOfferId) {
 
 #[cfg(test)]
 mod tests {
+    use super::super::storage::MAX_SNAPSHOTS_PER_CHARACTER;
     use super::*;
     use coop_cloud::{
         ApiVersion, CharacterCloudState, CharacterId, ClientInstanceId, Group, GroupId,
@@ -1672,6 +1725,7 @@ mod tests {
         let mut bytes = super::super::tests::valid_character_sav(false);
         let mut mon = [0_u8; 100];
         mon[19] = 2; // hasSpecies
+        mon[85] = 0xff; // ROM MAIL_NONE
         mon[28] = 1; // checksum of decrypted species word
         mon[32] = 1; // species 1, personality and OT ID are zero
         let selected_slot = coop_save::SECTORS_PER_SLOT;
@@ -1709,6 +1763,7 @@ mod tests {
         let pending = SnapshotFile::from_bytes(ArtifactIdentity::PendingCommits, b"[]").unwrap();
         SnapshotRecord::new(
             snapshot_id,
+            coop_protocol::RomWorldId::new(1).unwrap(),
             SnapshotFence::new(
                 id(60, SessionId::new),
                 character,
@@ -1761,6 +1816,10 @@ mod tests {
                     world_revision: 0,
                     active_snapshot: Some(record.view.snapshots[index]),
                     last_session_epoch: 1,
+                    world_heads: std::collections::BTreeMap::from([(
+                        coop_protocol::RomWorldId::new(1).unwrap(),
+                        record.view.snapshots[index],
+                    )]),
                 },
             );
             state.leases.insert(
@@ -1776,6 +1835,7 @@ mod tests {
                     released: false,
                     reconnect: None,
                     release_keys: vec![],
+                    runtime_binding: None,
                 },
             );
             state
@@ -1990,6 +2050,7 @@ mod tests {
         };
         let snapshot = SnapshotRecord::new(
             snapshot_id,
+            coop_protocol::RomWorldId::new(1).unwrap(),
             SnapshotFence::new(fence.session_id, member, fence.session_epoch),
             Revision::new(1),
             Revision::new(2),
@@ -2002,6 +2063,7 @@ mod tests {
         assert!(source_matches_snapshot(&snapshot, source));
         let changed = SnapshotRecord::new(
             snapshot_id,
+            coop_protocol::RomWorldId::new(1).unwrap(),
             SnapshotFence::new(fence.session_id, member, fence.session_epoch),
             Revision::new(1),
             Revision::new(2),
@@ -2125,31 +2187,60 @@ mod tests {
 
     #[test]
     fn stale_source_fences_abort_without_partial_heads() {
-        let objects = Arc::new(InMemoryObjectStore::new());
-        let store = test_store(objects.clone());
-        let record = accepted_record();
-        let stage = ready_stage(&record);
-        install_stage(&store, &record, &stage);
-        store
-            .write_transaction(|state| {
-                state
-                    .characters
-                    .get_mut(&record.view.members[0])
-                    .unwrap()
-                    .revision = Revision::new(3);
-                Ok::<(), Phase2Error>(())
-            })
-            .unwrap();
-        assert_eq!(
-            publish_trade(&store, record.view.offer_id, stage.idempotency_key, 1),
-            Err(Phase2Error::Conflict)
-        );
-        let state = store
-            .read_transaction(|state| Ok::<State, Phase2Error>(state.clone()))
-            .unwrap();
-        assert_eq!(state.snapshots.len(), 4);
-        assert!(!state.trade_staging.contains_key(&record.view.offer_id));
-        assert_eq!(objects.object_count().unwrap(), 4);
+        for member in 0..2 {
+            for stale in 0..3 {
+                let objects = Arc::new(InMemoryObjectStore::new());
+                let store = test_store(objects.clone());
+                let record = accepted_record();
+                let stage = ready_stage(&record);
+                install_stage(&store, &record, &stage);
+                let parked_key = Store::object_key(
+                    record.view.members[member],
+                    id(30_000, SnapshotId::new),
+                    ArtifactIdentity::CharacterSav,
+                );
+                let parked_bytes = trade_test_sav();
+                objects.put(parked_key.clone(), parked_bytes.clone()).unwrap();
+                let source_objects = stage.sources.iter().flat_map(|source| {
+                    [ArtifactIdentity::CharacterSav, ArtifactIdentity::PendingCommits]
+                        .map(|artifact| Store::object_key(source.character_id, source.snapshot_id, artifact))
+                }).map(|key| {
+                    let bytes = objects.get(&key).unwrap();
+                    (key, bytes)
+                }).collect::<Vec<_>>();
+                store.write_transaction(|state| {
+                    let character = state.characters.get_mut(&record.view.members[member]).unwrap();
+                    match stale {
+                        0 => character.revision = Revision::new(3),
+                        1 => { character.world_heads.clear(); }
+                        _ => {
+                            state.snapshots.get_mut(&record.view.snapshots[member]).unwrap().rom_world_id =
+                                coop_protocol::RomWorldId::new(2).unwrap();
+                        }
+                    }
+                    Ok::<(), Phase2Error>(())
+                }).unwrap();
+                let before = store.inspect_state(|state| {
+                    let mut snapshot = Vec::new();
+                    ciborium::into_writer(&(&state.characters, &state.snapshots, &state.groups), &mut snapshot).unwrap();
+                    snapshot
+                }).unwrap();
+                assert_eq!(publish_trade(&store, record.view.offer_id, stage.idempotency_key, 1), Err(Phase2Error::Conflict));
+                let after = store.inspect_state(|state| {
+                    assert_eq!(state.snapshots.len(), 4);
+                    assert!(!state.trade_staging.contains_key(&record.view.offer_id));
+                    assert!(!state.trade_receipts.contains_key(&record.view.offer_id));
+                    let mut snapshot = Vec::new();
+                    ciborium::into_writer(&(&state.characters, &state.snapshots, &state.groups), &mut snapshot).unwrap();
+                    snapshot
+                }).unwrap();
+                assert_eq!(before, after);
+                for key in staged_keys(&stage) { assert!(objects.get(&key).unwrap().is_none()); }
+                for (key, bytes) in source_objects { assert_eq!(objects.get(&key).unwrap(), bytes); }
+                assert_eq!(objects.get(&parked_key).unwrap(), Some(parked_bytes));
+                assert_eq!(objects.object_count().unwrap(), 5);
+            }
+        }
     }
 
     #[test]
@@ -2310,6 +2401,10 @@ mod tests {
                             world_revision: 0,
                             active_snapshot: Some(snapshots[index]),
                             last_session_epoch: 1,
+                            world_heads: std::collections::BTreeMap::from([(
+                                coop_protocol::RomWorldId::new(1).unwrap(),
+                                snapshots[index],
+                            )]),
                         },
                     );
                     next.leases.insert(
@@ -2325,6 +2420,7 @@ mod tests {
                             released: false,
                             reconnect: None,
                             release_keys: vec![],
+                            runtime_binding: None,
                         },
                     );
                 }
@@ -3787,5 +3883,338 @@ mod tests {
             ledger_state(&fixture, |state| state.ledger_entries.len()),
             2
         );
+    }
+    #[test]
+    fn both_rom_stage_kinds_fence_trade_consent_and_ledger_finalize() {
+        for paired in [false, true] {
+            for staged in 0..2 {
+                let fixture = consent_fixture();
+                let accepted = accept_fixture_offer(&fixture, 9900);
+                fixture
+                    .store
+                    .write_transaction(|state| {
+                        super::super::storage::test_stage_handoff(
+                            state,
+                            fixture.members[staged],
+                            paired,
+                            fixture.store.now(),
+                        );
+                        Ok::<_, Phase2Error>(())
+                    })
+                    .unwrap();
+                let before = ledger_state(&fixture, |state| {
+                    let mut out = Vec::new();
+                    ciborium::into_writer(state, &mut out).unwrap();
+                    out
+                });
+                for caller in 0..2 {
+                    assert_eq!(
+                        fixture.store.read_transaction(|state| live_member_lease(
+                            state,
+                            fixture.members[caller],
+                            fixture.store.now()
+                        )),
+                        Err(Phase2Error::Conflict)
+                    );
+                    let source =
+                        validate_character_sav(&consent_member_sav(caller), Revision::new(2))
+                            .unwrap();
+                    let request = coop_cloud::SnapshotFinalizeRequest::new(
+                        id(9950 + caller as u128, SnapshotId::new),
+                        coop_cloud::SnapshotFinalizeFence::new(
+                            fixture.fences[caller].session_id,
+                            fixture.members[caller],
+                            fixture.revision,
+                            fixture.fences[caller].session_epoch,
+                            fixture.fences[caller].client_instance_id,
+                            id(9950 + caller as u128, IdempotencyKey::new),
+                        ),
+                        vec![
+                            SnapshotFile::from_bytes(
+                                ArtifactIdentity::CharacterSav,
+                                source.raw_bytes(),
+                            )
+                            .unwrap(),
+                            SnapshotFile::from_bytes(ArtifactIdentity::PendingCommits, b"[]")
+                                .unwrap(),
+                        ],
+                        Sha256Digest::of_bytes(b"[]"),
+                        None,
+                    )
+                    .unwrap();
+                    assert_eq!(
+                        fixture.store.write_transaction(|state| {
+                            super::super::ledger::apply_on_finalize(
+                                state,
+                                fixture.actors[caller],
+                                &request,
+                                &source,
+                                &source,
+                                fixture.store.now(),
+                            )
+                        }),
+                        Err(Phase2Error::Conflict)
+                    );
+                }
+                assert!(matches!(
+                    stage_trade(
+                        &fixture.store,
+                        accepted.offer_id,
+                        id(9999, IdempotencyKey::new),
+                        fixture.store.now()
+                    ),
+                    Err(Phase2Error::Conflict)
+                ));
+                let after = ledger_state(&fixture, |state| {
+                    let mut out = Vec::new();
+                    ciborium::into_writer(state, &mut out).unwrap();
+                    out
+                });
+                assert_eq!(before, after);
+            }
+        }
+    }
+    #[test]
+    fn staged_rom_switch_rejects_trade_publication_without_output_or_cleanup() {
+        for paired in [false, true] {
+            for member in 0..2 {
+                let objects = Arc::new(InMemoryObjectStore::new());
+                let store = test_store(objects.clone());
+                let record = accepted_record();
+                let stage = ready_stage(&record);
+                install_stage(&store, &record, &stage);
+                store
+                    .write_transaction(|state| {
+                        super::super::storage::test_stage_handoff(
+                            state,
+                            record.view.members[member],
+                            paired,
+                            1,
+                        );
+                        // Even a stale anchor is retained while ROM staging
+                        // owns the temporary pause; cleanup resumes afterward.
+                        state.characters.get_mut(&record.view.members[member]).unwrap().revision = Revision::new(3);
+                        Ok::<_, Phase2Error>(())
+                    })
+                    .unwrap();
+                let before = store
+                    .inspect_state(|state| {
+                        let mut out = Vec::new();
+                        ciborium::into_writer(state, &mut out).unwrap();
+                        out
+                    })
+                    .unwrap();
+                let count = objects.object_count().unwrap();
+                assert_eq!(
+                    publish_trade(&store, record.view.offer_id, stage.idempotency_key, 1),
+                    Err(Phase2Error::Conflict)
+                );
+                assert_eq!(objects.object_count().unwrap(), count);
+                assert_eq!(
+                    before,
+                    store
+                        .inspect_state(|state| {
+                            let mut out = Vec::new();
+                            ciborium::into_writer(state, &mut out).unwrap();
+                            out
+                        })
+                        .unwrap()
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn trade_publication_preserves_source_world_and_atomically_updates_its_head() {
+        let objects = Arc::new(InMemoryObjectStore::new());
+        let store = test_store(objects);
+        let record = accepted_record();
+        let stage = ready_stage(&record);
+        install_stage(&store, &record, &stage);
+        let world = coop_protocol::RomWorldId::new(2).unwrap();
+        store
+            .write_transaction(|state| {
+                for index in 0..2 {
+                    state
+                        .snapshots
+                        .get_mut(&record.view.snapshots[index])
+                        .unwrap()
+                        .rom_world_id = world;
+                    state
+                        .characters
+                        .get_mut(&record.view.members[index])
+                        .unwrap()
+                        .world_heads
+                        .insert(world, record.view.snapshots[index]);
+                }
+                Ok::<_, Phase2Error>(())
+            })
+            .unwrap();
+        let receipt =
+            publish_trade(&store, record.view.offer_id, stage.idempotency_key, 1).unwrap();
+        store
+            .inspect_state(|state| {
+                for index in 0..2 {
+                    assert_eq!(
+                        state.snapshots[&receipt.snapshots[index]].rom_world_id,
+                        world
+                    );
+                    assert_eq!(
+                        state.characters[&record.view.members[index]].world_heads[&world],
+                        receipt.snapshots[index]
+                    );
+                }
+            })
+            .unwrap();
+    }
+
+    #[test]
+    fn trade_anchor_rejects_world_head_divergence() {
+        let objects = Arc::new(InMemoryObjectStore::new());
+        let store = test_store(objects);
+        let record = accepted_record();
+        let stage = ready_stage(&record);
+        install_stage(&store, &record, &stage);
+        store
+            .write_transaction(|state| {
+                state
+                    .characters
+                    .get_mut(&record.view.members[1])
+                    .unwrap()
+                    .world_heads
+                    .clear();
+                Ok::<_, Phase2Error>(())
+            })
+            .unwrap();
+        assert_eq!(
+            store.read_transaction(|state| validate_trade_anchor(state, &record, 1)),
+            Err(Phase2Error::Conflict)
+        );
+    }
+    #[test]
+    fn ordinary_and_rom_room_plans_preserve_promised_trade_count_and_anchors() {
+        for mode in 0..4 {
+            let objects = Arc::new(InMemoryObjectStore::new());
+            let store = test_store(objects);
+            let record = accepted_record();
+            let stage = ready_stage(&record);
+            install_stage(&store, &record, &stage);
+            let member = record.view.members[0];
+            store
+                .write_transaction(|state| {
+                    let anchor = state.snapshots[&record.view.snapshots[0]].clone();
+                    for revision in 2..MAX_SNAPSHOTS_PER_CHARACTER as u64 {
+                        let snapshot_id = id(20_000 + revision as u128, SnapshotId::new);
+                        let snapshot = SnapshotRecord::new(
+                            snapshot_id,
+                            anchor.rom_world_id,
+                            SnapshotFence::new(anchor.session_id, member, anchor.session_epoch),
+                            Revision::new(revision - 1),
+                            Revision::new(revision),
+                            anchor.files.clone(),
+                            anchor.pending_commits_sha256,
+                            None,
+                            anchor.created_at,
+                        )
+                        .unwrap();
+                        state
+                            .snapshot_by_revision
+                            .insert((member, Revision::new(revision)), snapshot_id);
+                        state.snapshots.insert(snapshot_id, snapshot);
+                    }
+                    if mode == 3 {
+                        super::super::storage::test_stage_handoff(state, member, true, 1);
+                    }
+                    let before = state.clone();
+                    let excluded_prepared = (mode == 0).then_some(stage.outputs[0].snapshot_id);
+                    let excluded_restore = (mode == 1).then_some(stage.outputs[0].snapshot_id);
+                    let protected_source = (mode >= 2).then_some(record.view.snapshots[0]);
+                    super::super::saves::handoff::make_snapshot_room(
+                        state,
+                        member,
+                        &stage.outputs[0].files,
+                        excluded_prepared,
+                        excluded_restore,
+                        protected_source,
+                    )?;
+                    assert_eq!(
+                        state
+                            .snapshots
+                            .values()
+                            .filter(|snapshot| snapshot.character_id == member)
+                            .count(),
+                        MAX_SNAPSHOTS_PER_CHARACTER - 2
+                    );
+                    assert!(state.snapshots.contains_key(&record.view.snapshots[0]));
+                    assert!(state.trade_staging.contains_key(&record.view.offer_id));
+                    assert_eq!(
+                        state.characters[&member].world_heads,
+                        before.characters[&member].world_heads
+                    );
+                    Ok::<_, Phase2Error>(())
+                })
+                .unwrap();
+        }
+    }
+
+    #[test]
+    fn impossible_reserved_trade_room_never_partially_prunes_history() {
+        for overflow in [false, true] {
+            let objects = Arc::new(InMemoryObjectStore::new());
+            let store = test_store(objects);
+            let record = accepted_record();
+            let stage = ready_stage(&record);
+            install_stage(&store, &record, &stage);
+            let member = record.view.members[0];
+            store
+                .write_transaction(|state| {
+                    state
+                        .trade_staging
+                        .get_mut(&record.view.offer_id)
+                        .unwrap()
+                        .reserved_bytes[0] = if overflow {
+                        u64::MAX
+                    } else {
+                        super::super::storage::MAX_SNAPSHOT_STORAGE_BYTES
+                    };
+                    Ok::<_, Phase2Error>(())
+                })
+                .unwrap();
+            let before = store
+                .inspect_state(|state| {
+                    let mut out = Vec::new();
+                    ciborium::into_writer(state, &mut out).unwrap();
+                    out
+                })
+                .unwrap();
+            let result = store.write_transaction(|state| {
+                super::super::saves::handoff::make_snapshot_room(
+                    state,
+                    member,
+                    &stage.outputs[0].files,
+                    None,
+                    None,
+                    Some(record.view.snapshots[0]),
+                )
+            });
+            assert_eq!(
+                result,
+                Err(if overflow {
+                    Phase2Error::Internal
+                } else {
+                    Phase2Error::Busy
+                })
+            );
+            assert_eq!(
+                before,
+                store
+                    .inspect_state(|state| {
+                        let mut out = Vec::new();
+                        ciborium::into_writer(state, &mut out).unwrap();
+                        out
+                    })
+                    .unwrap()
+            );
+        }
     }
 }

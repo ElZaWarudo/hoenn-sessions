@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "registry_version": 1,
+  "registry_version": 3,
   "regions": [
     {
       "id": "HOENN",
@@ -17,6 +17,10 @@
     {
       "id": "SEVII",
       "wire": 4
+    },
+    {
+      "id": "CORMORIA",
+      "wire": 5
     }
   ],
   "capacities": {
@@ -6019,6 +6023,1364 @@
       "legacy_value": null
     },
     {
+      "kind": "trainer",
+      "ordinal": 856,
+      "id": "CORMORIA:TRAINER_CERAMBASECAMPGYM_A",
+      "legacy_value": 20480,
+      "legacy_symbol": "Cormoria_TRAINER_CERAMBASECAMPGYM_A"
+    },
+    {
+      "kind": "trainer",
+      "ordinal": 857,
+      "id": "CORMORIA:TRAINER_CERAMBASECAMPGYM_B",
+      "legacy_value": 20481,
+      "legacy_symbol": "Cormoria_TRAINER_CERAMBASECAMPGYM_B"
+    },
+    {
+      "kind": "trainer",
+      "ordinal": 858,
+      "id": "CORMORIA:TRAINER_CERAMBASECAMPGYM_C",
+      "legacy_value": 20482,
+      "legacy_symbol": "Cormoria_TRAINER_CERAMBASECAMPGYM_C"
+    },
+    {
+      "kind": "trainer",
+      "ordinal": 859,
+      "id": "CORMORIA:TRAINER_CERAMBASECAMPGYM_D",
+      "legacy_value": 20483,
+      "legacy_symbol": "Cormoria_TRAINER_CERAMBASECAMPGYM_D"
+    },
+    {
+      "kind": "trainer",
+      "ordinal": 860,
+      "id": "CORMORIA:TRAINER_CERAMBASECAMPGYM_LEADER",
+      "legacy_value": 20484,
+      "legacy_symbol": "Cormoria_TRAINER_CERAMBASECAMPGYM_LEADER"
+    },
+    {
+      "kind": "trainer",
+      "ordinal": 861,
+      "id": "CORMORIA:TRAINER_CERAMBASECAMP_EVIL_GABRIELLE",
+      "legacy_value": 20485,
+      "legacy_symbol": "Cormoria_TRAINER_CERAMBASECAMP_EVIL_GABRIELLE"
+    },
+    {
+      "kind": "trainer",
+      "ordinal": 862,
+      "id": "CORMORIA:TRAINER_CERAMBASECAMP_GRUNT1",
+      "legacy_value": 20486,
+      "legacy_symbol": "Cormoria_TRAINER_CERAMBASECAMP_GRUNT1"
+    },
+    {
+      "kind": "trainer",
+      "ordinal": 863,
+      "id": "CORMORIA:TRAINER_CERAMBASECAMP_GRUNT2",
+      "legacy_value": 20487,
+      "legacy_symbol": "Cormoria_TRAINER_CERAMBASECAMP_GRUNT2"
+    },
+    {
+      "kind": "trainer",
+      "ordinal": 864,
+      "id": "CORMORIA:TRAINER_CERAMBASECAMP_GRUNT3",
+      "legacy_value": 20488,
+      "legacy_symbol": "Cormoria_TRAINER_CERAMBASECAMP_GRUNT3"
+    },
+    {
+      "kind": "trainer",
+      "ordinal": 865,
+      "id": "CORMORIA:TRAINER_CERAMPEAK_MOXIE",
+      "legacy_value": 20489,
+      "legacy_symbol": "Cormoria_TRAINER_CERAMPEAK_MOXIE"
+    },
+    {
+      "kind": "trainer",
+      "ordinal": 866,
+      "id": "CORMORIA:TRAINER_CHAMPIONSHIP_A",
+      "legacy_value": 20490,
+      "legacy_symbol": "Cormoria_TRAINER_CHAMPIONSHIP_A"
+    },
+    {
+      "kind": "trainer",
+      "ordinal": 867,
+      "id": "CORMORIA:TRAINER_CHAMPIONSHIP_B",
+      "legacy_value": 20491,
+      "legacy_symbol": "Cormoria_TRAINER_CHAMPIONSHIP_B"
+    },
+    {
+      "kind": "trainer",
+      "ordinal": 868,
+      "id": "CORMORIA:TRAINER_CHAMPIONSHIP_C",
+      "legacy_value": 20492,
+      "legacy_symbol": "Cormoria_TRAINER_CHAMPIONSHIP_C"
+    },
+    {
+      "kind": "trainer",
+      "ordinal": 869,
+      "id": "CORMORIA:TRAINER_CHAMPIONSHIP_D",
+      "legacy_value": 20493,
+      "legacy_symbol": "Cormoria_TRAINER_CHAMPIONSHIP_D"
+    },
+    {
+      "kind": "trainer",
+      "ordinal": 870,
+      "id": "CORMORIA:TRAINER_CHAMPIONSHIP_E",
+      "legacy_value": 20494,
+      "legacy_symbol": "Cormoria_TRAINER_CHAMPIONSHIP_E"
+    },
+    {
+      "kind": "trainer",
+      "ordinal": 871,
+      "id": "CORMORIA:TRAINER_CHAMPION_GRETA",
+      "legacy_value": 20495,
+      "legacy_symbol": "Cormoria_TRAINER_CHAMPION_GRETA"
+    },
+    {
+      "kind": "trainer",
+      "ordinal": 872,
+      "id": "CORMORIA:TRAINER_CHAMPION_LYNCH",
+      "legacy_value": 20496,
+      "legacy_symbol": "Cormoria_TRAINER_CHAMPION_LYNCH"
+    },
+    {
+      "kind": "trainer",
+      "ordinal": 873,
+      "id": "CORMORIA:TRAINER_CHAMPION_MARTHA",
+      "legacy_value": 20497,
+      "legacy_symbol": "Cormoria_TRAINER_CHAMPION_MARTHA"
+    },
+    {
+      "kind": "trainer",
+      "ordinal": 874,
+      "id": "CORMORIA:TRAINER_CHAMPION_RAVINE",
+      "legacy_value": 20498,
+      "legacy_symbol": "Cormoria_TRAINER_CHAMPION_RAVINE"
+    },
+    {
+      "kind": "trainer",
+      "ordinal": 875,
+      "id": "CORMORIA:TRAINER_GALECRESTGYM_A",
+      "legacy_value": 20499,
+      "legacy_symbol": "Cormoria_TRAINER_GALECRESTGYM_A"
+    },
+    {
+      "kind": "trainer",
+      "ordinal": 876,
+      "id": "CORMORIA:TRAINER_GALECRESTGYM_B",
+      "legacy_value": 20500,
+      "legacy_symbol": "Cormoria_TRAINER_GALECRESTGYM_B"
+    },
+    {
+      "kind": "trainer",
+      "ordinal": 877,
+      "id": "CORMORIA:TRAINER_GALECRESTGYM_C",
+      "legacy_value": 20501,
+      "legacy_symbol": "Cormoria_TRAINER_GALECRESTGYM_C"
+    },
+    {
+      "kind": "trainer",
+      "ordinal": 878,
+      "id": "CORMORIA:TRAINER_GALECRESTGYM_LEADER",
+      "legacy_value": 20502,
+      "legacy_symbol": "Cormoria_TRAINER_GALECRESTGYM_LEADER"
+    },
+    {
+      "kind": "trainer",
+      "ordinal": 879,
+      "id": "CORMORIA:TRAINER_GALECREST_DETECTIVE_A",
+      "legacy_value": 20503,
+      "legacy_symbol": "Cormoria_TRAINER_GALECREST_DETECTIVE_A"
+    },
+    {
+      "kind": "trainer",
+      "ordinal": 880,
+      "id": "CORMORIA:TRAINER_GALECREST_ROBBER",
+      "legacy_value": 20504,
+      "legacy_symbol": "Cormoria_TRAINER_GALECREST_ROBBER"
+    },
+    {
+      "kind": "trainer",
+      "ordinal": 881,
+      "id": "CORMORIA:TRAINER_GASTREEGYM_JACO",
+      "legacy_value": 20505,
+      "legacy_symbol": "Cormoria_TRAINER_GASTREEGYM_JACO"
+    },
+    {
+      "kind": "trainer",
+      "ordinal": 882,
+      "id": "CORMORIA:TRAINER_GASTREEGYM_LEADER",
+      "legacy_value": 20506,
+      "legacy_symbol": "Cormoria_TRAINER_GASTREEGYM_LEADER"
+    },
+    {
+      "kind": "trainer",
+      "ordinal": 883,
+      "id": "CORMORIA:TRAINER_GASTREEGYM_SKIP",
+      "legacy_value": 20507,
+      "legacy_symbol": "Cormoria_TRAINER_GASTREEGYM_SKIP"
+    },
+    {
+      "kind": "trainer",
+      "ordinal": 884,
+      "id": "CORMORIA:TRAINER_GASTREE_KOHLA",
+      "legacy_value": 20508,
+      "legacy_symbol": "Cormoria_TRAINER_GASTREE_KOHLA"
+    },
+    {
+      "kind": "trainer",
+      "ordinal": 885,
+      "id": "CORMORIA:TRAINER_IVY_RIVER_A",
+      "legacy_value": 20509,
+      "legacy_symbol": "Cormoria_TRAINER_IVY_RIVER_A"
+    },
+    {
+      "kind": "trainer",
+      "ordinal": 886,
+      "id": "CORMORIA:TRAINER_IVY_RIVER_B",
+      "legacy_value": 20510,
+      "legacy_symbol": "Cormoria_TRAINER_IVY_RIVER_B"
+    },
+    {
+      "kind": "trainer",
+      "ordinal": 887,
+      "id": "CORMORIA:TRAINER_IVY_RIVER_C",
+      "legacy_value": 20511,
+      "legacy_symbol": "Cormoria_TRAINER_IVY_RIVER_C"
+    },
+    {
+      "kind": "trainer",
+      "ordinal": 888,
+      "id": "CORMORIA:TRAINER_IVY_RIVER_D",
+      "legacy_value": 20512,
+      "legacy_symbol": "Cormoria_TRAINER_IVY_RIVER_D"
+    },
+    {
+      "kind": "trainer",
+      "ordinal": 889,
+      "id": "CORMORIA:TRAINER_KOHLA_LAB",
+      "legacy_value": 20513,
+      "legacy_symbol": "Cormoria_TRAINER_KOHLA_LAB"
+    },
+    {
+      "kind": "trainer",
+      "ordinal": 890,
+      "id": "CORMORIA:TRAINER_MIRROHBASECAMP_KOHLA",
+      "legacy_value": 20514,
+      "legacy_symbol": "Cormoria_TRAINER_MIRROHBASECAMP_KOHLA"
+    },
+    {
+      "kind": "trainer",
+      "ordinal": 891,
+      "id": "CORMORIA:TRAINER_MIRROHBASECAMP_LEADER",
+      "legacy_value": 20515,
+      "legacy_symbol": "Cormoria_TRAINER_MIRROHBASECAMP_LEADER"
+    },
+    {
+      "kind": "trainer",
+      "ordinal": 892,
+      "id": "CORMORIA:TRAINER_MIRROHEXT_A",
+      "legacy_value": 20516,
+      "legacy_symbol": "Cormoria_TRAINER_MIRROHEXT_A"
+    },
+    {
+      "kind": "trainer",
+      "ordinal": 893,
+      "id": "CORMORIA:TRAINER_MIRROHEXT_B",
+      "legacy_value": 20517,
+      "legacy_symbol": "Cormoria_TRAINER_MIRROHEXT_B"
+    },
+    {
+      "kind": "trainer",
+      "ordinal": 894,
+      "id": "CORMORIA:TRAINER_MIRROHEXT_C",
+      "legacy_value": 20518,
+      "legacy_symbol": "Cormoria_TRAINER_MIRROHEXT_C"
+    },
+    {
+      "kind": "trainer",
+      "ordinal": 895,
+      "id": "CORMORIA:TRAINER_MIRROHEXT_D",
+      "legacy_value": 20519,
+      "legacy_symbol": "Cormoria_TRAINER_MIRROHEXT_D"
+    },
+    {
+      "kind": "trainer",
+      "ordinal": 896,
+      "id": "CORMORIA:TRAINER_MIRROHEXT_E",
+      "legacy_value": 20520,
+      "legacy_symbol": "Cormoria_TRAINER_MIRROHEXT_E"
+    },
+    {
+      "kind": "trainer",
+      "ordinal": 897,
+      "id": "CORMORIA:TRAINER_MIRROHEXT_F",
+      "legacy_value": 20521,
+      "legacy_symbol": "Cormoria_TRAINER_MIRROHEXT_F"
+    },
+    {
+      "kind": "trainer",
+      "ordinal": 898,
+      "id": "CORMORIA:TRAINER_MIRROHEXT_G",
+      "legacy_value": 20522,
+      "legacy_symbol": "Cormoria_TRAINER_MIRROHEXT_G"
+    },
+    {
+      "kind": "trainer",
+      "ordinal": 899,
+      "id": "CORMORIA:TRAINER_MIRROHEXT_H",
+      "legacy_value": 20523,
+      "legacy_symbol": "Cormoria_TRAINER_MIRROHEXT_H"
+    },
+    {
+      "kind": "trainer",
+      "ordinal": 900,
+      "id": "CORMORIA:TRAINER_MIRROHINT2_A",
+      "legacy_value": 20524,
+      "legacy_symbol": "Cormoria_TRAINER_MIRROHINT2_A"
+    },
+    {
+      "kind": "trainer",
+      "ordinal": 901,
+      "id": "CORMORIA:TRAINER_MIRROHINT2_B",
+      "legacy_value": 20525,
+      "legacy_symbol": "Cormoria_TRAINER_MIRROHINT2_B"
+    },
+    {
+      "kind": "trainer",
+      "ordinal": 902,
+      "id": "CORMORIA:TRAINER_MIRROHINT2_C",
+      "legacy_value": 20526,
+      "legacy_symbol": "Cormoria_TRAINER_MIRROHINT2_C"
+    },
+    {
+      "kind": "trainer",
+      "ordinal": 903,
+      "id": "CORMORIA:TRAINER_MIRROHINT2_D",
+      "legacy_value": 20527,
+      "legacy_symbol": "Cormoria_TRAINER_MIRROHINT2_D"
+    },
+    {
+      "kind": "trainer",
+      "ordinal": 904,
+      "id": "CORMORIA:TRAINER_MIRROHINT2_E",
+      "legacy_value": 20528,
+      "legacy_symbol": "Cormoria_TRAINER_MIRROHINT2_E"
+    },
+    {
+      "kind": "trainer",
+      "ordinal": 905,
+      "id": "CORMORIA:TRAINER_MIRROHINT2_F",
+      "legacy_value": 20529,
+      "legacy_symbol": "Cormoria_TRAINER_MIRROHINT2_F"
+    },
+    {
+      "kind": "trainer",
+      "ordinal": 906,
+      "id": "CORMORIA:TRAINER_MIRROHINT2_G",
+      "legacy_value": 20530,
+      "legacy_symbol": "Cormoria_TRAINER_MIRROHINT2_G"
+    },
+    {
+      "kind": "trainer",
+      "ordinal": 907,
+      "id": "CORMORIA:TRAINER_MIRROHINT_A",
+      "legacy_value": 20531,
+      "legacy_symbol": "Cormoria_TRAINER_MIRROHINT_A"
+    },
+    {
+      "kind": "trainer",
+      "ordinal": 908,
+      "id": "CORMORIA:TRAINER_MIRROHINT_B",
+      "legacy_value": 20532,
+      "legacy_symbol": "Cormoria_TRAINER_MIRROHINT_B"
+    },
+    {
+      "kind": "trainer",
+      "ordinal": 909,
+      "id": "CORMORIA:TRAINER_MIRROHINT_C",
+      "legacy_value": 20533,
+      "legacy_symbol": "Cormoria_TRAINER_MIRROHINT_C"
+    },
+    {
+      "kind": "trainer",
+      "ordinal": 910,
+      "id": "CORMORIA:TRAINER_MIRROHINT_D",
+      "legacy_value": 20534,
+      "legacy_symbol": "Cormoria_TRAINER_MIRROHINT_D"
+    },
+    {
+      "kind": "trainer",
+      "ordinal": 911,
+      "id": "CORMORIA:TRAINER_MIRROHINT_E",
+      "legacy_value": 20535,
+      "legacy_symbol": "Cormoria_TRAINER_MIRROHINT_E"
+    },
+    {
+      "kind": "trainer",
+      "ordinal": 912,
+      "id": "CORMORIA:TRAINER_MIRROHPEAK_A",
+      "legacy_value": 20536,
+      "legacy_symbol": "Cormoria_TRAINER_MIRROHPEAK_A"
+    },
+    {
+      "kind": "trainer",
+      "ordinal": 913,
+      "id": "CORMORIA:TRAINER_MIRROHPEAK_B",
+      "legacy_value": 20537,
+      "legacy_symbol": "Cormoria_TRAINER_MIRROHPEAK_B"
+    },
+    {
+      "kind": "trainer",
+      "ordinal": 914,
+      "id": "CORMORIA:TRAINER_MIRROHPEAK_C",
+      "legacy_value": 20538,
+      "legacy_symbol": "Cormoria_TRAINER_MIRROHPEAK_C"
+    },
+    {
+      "kind": "trainer",
+      "ordinal": 915,
+      "id": "CORMORIA:TRAINER_MIRROHPEAK_D",
+      "legacy_value": 20539,
+      "legacy_symbol": "Cormoria_TRAINER_MIRROHPEAK_D"
+    },
+    {
+      "kind": "trainer",
+      "ordinal": 916,
+      "id": "CORMORIA:TRAINER_MIRROHPEAK_MOXIE",
+      "legacy_value": 20540,
+      "legacy_symbol": "Cormoria_TRAINER_MIRROHPEAK_MOXIE"
+    },
+    {
+      "kind": "trainer",
+      "ordinal": 917,
+      "id": "CORMORIA:TRAINER_MTCERAM_A",
+      "legacy_value": 20541,
+      "legacy_symbol": "Cormoria_TRAINER_MTCERAM_A"
+    },
+    {
+      "kind": "trainer",
+      "ordinal": 918,
+      "id": "CORMORIA:TRAINER_MTCERAM_B",
+      "legacy_value": 20542,
+      "legacy_symbol": "Cormoria_TRAINER_MTCERAM_B"
+    },
+    {
+      "kind": "trainer",
+      "ordinal": 919,
+      "id": "CORMORIA:TRAINER_MTCERAM_C",
+      "legacy_value": 20543,
+      "legacy_symbol": "Cormoria_TRAINER_MTCERAM_C"
+    },
+    {
+      "kind": "trainer",
+      "ordinal": 920,
+      "id": "CORMORIA:TRAINER_MTCERAM_D",
+      "legacy_value": 20544,
+      "legacy_symbol": "Cormoria_TRAINER_MTCERAM_D"
+    },
+    {
+      "kind": "trainer",
+      "ordinal": 921,
+      "id": "CORMORIA:TRAINER_MTCERAM_GRUNT1",
+      "legacy_value": 20545,
+      "legacy_symbol": "Cormoria_TRAINER_MTCERAM_GRUNT1"
+    },
+    {
+      "kind": "trainer",
+      "ordinal": 922,
+      "id": "CORMORIA:TRAINER_MTCERAM_GRUNT2",
+      "legacy_value": 20546,
+      "legacy_symbol": "Cormoria_TRAINER_MTCERAM_GRUNT2"
+    },
+    {
+      "kind": "trainer",
+      "ordinal": 923,
+      "id": "CORMORIA:TRAINER_MTCERAM_GRUNT_DOUBLE",
+      "legacy_value": 20547,
+      "legacy_symbol": "Cormoria_TRAINER_MTCERAM_GRUNT_DOUBLE"
+    },
+    {
+      "kind": "trainer",
+      "ordinal": 924,
+      "id": "CORMORIA:TRAINER_PELLUCA_CITY_GYM_A",
+      "legacy_value": 20549,
+      "legacy_symbol": "Cormoria_TRAINER_PELLUCA_CITY_GYM_A"
+    },
+    {
+      "kind": "trainer",
+      "ordinal": 925,
+      "id": "CORMORIA:TRAINER_PELLUCA_CITY_GYM_B",
+      "legacy_value": 20550,
+      "legacy_symbol": "Cormoria_TRAINER_PELLUCA_CITY_GYM_B"
+    },
+    {
+      "kind": "trainer",
+      "ordinal": 926,
+      "id": "CORMORIA:TRAINER_PELLUCA_CITY_GYM_C",
+      "legacy_value": 20551,
+      "legacy_symbol": "Cormoria_TRAINER_PELLUCA_CITY_GYM_C"
+    },
+    {
+      "kind": "trainer",
+      "ordinal": 927,
+      "id": "CORMORIA:TRAINER_PELLUCA_CITY_GYM_D",
+      "legacy_value": 20552,
+      "legacy_symbol": "Cormoria_TRAINER_PELLUCA_CITY_GYM_D"
+    },
+    {
+      "kind": "trainer",
+      "ordinal": 928,
+      "id": "CORMORIA:TRAINER_PELLUCA_CITY_GYM_E",
+      "legacy_value": 20553,
+      "legacy_symbol": "Cormoria_TRAINER_PELLUCA_CITY_GYM_E"
+    },
+    {
+      "kind": "trainer",
+      "ordinal": 929,
+      "id": "CORMORIA:TRAINER_PELLUCA_CITY_GYM_F",
+      "legacy_value": 20554,
+      "legacy_symbol": "Cormoria_TRAINER_PELLUCA_CITY_GYM_F"
+    },
+    {
+      "kind": "trainer",
+      "ordinal": 930,
+      "id": "CORMORIA:TRAINER_PELLUCA_CITY_GYM_G",
+      "legacy_value": 20555,
+      "legacy_symbol": "Cormoria_TRAINER_PELLUCA_CITY_GYM_G"
+    },
+    {
+      "kind": "trainer",
+      "ordinal": 931,
+      "id": "CORMORIA:TRAINER_PELLUCA_CITY_GYM_H",
+      "legacy_value": 20556,
+      "legacy_symbol": "Cormoria_TRAINER_PELLUCA_CITY_GYM_H"
+    },
+    {
+      "kind": "trainer",
+      "ordinal": 932,
+      "id": "CORMORIA:TRAINER_PELLUCA_CITY_GYM_I",
+      "legacy_value": 20557,
+      "legacy_symbol": "Cormoria_TRAINER_PELLUCA_CITY_GYM_I"
+    },
+    {
+      "kind": "trainer",
+      "ordinal": 933,
+      "id": "CORMORIA:TRAINER_PELLUCA_CITY_GYM_LEADER",
+      "legacy_value": 20558,
+      "legacy_symbol": "Cormoria_TRAINER_PELLUCA_CITY_GYM_LEADER"
+    },
+    {
+      "kind": "trainer",
+      "ordinal": 934,
+      "id": "CORMORIA:TRAINER_PELLUCA_GAMBLER",
+      "legacy_value": 20559,
+      "legacy_symbol": "Cormoria_TRAINER_PELLUCA_GAMBLER"
+    },
+    {
+      "kind": "trainer",
+      "ordinal": 935,
+      "id": "CORMORIA:TRAINER_PELLUCA_QWILSQUAD_A",
+      "legacy_value": 20560,
+      "legacy_symbol": "Cormoria_TRAINER_PELLUCA_QWILSQUAD_A"
+    },
+    {
+      "kind": "trainer",
+      "ordinal": 936,
+      "id": "CORMORIA:TRAINER_PELLUCA_QWILSQUAD_B",
+      "legacy_value": 20561,
+      "legacy_symbol": "Cormoria_TRAINER_PELLUCA_QWILSQUAD_B"
+    },
+    {
+      "kind": "trainer",
+      "ordinal": 937,
+      "id": "CORMORIA:TRAINER_PELLUCA_QWILSQUAD_BOSS",
+      "legacy_value": 20562,
+      "legacy_symbol": "Cormoria_TRAINER_PELLUCA_QWILSQUAD_BOSS"
+    },
+    {
+      "kind": "trainer",
+      "ordinal": 938,
+      "id": "CORMORIA:TRAINER_PLAYER_EDEN",
+      "legacy_value": 20563,
+      "legacy_symbol": "Cormoria_TRAINER_PLAYER_EDEN"
+    },
+    {
+      "kind": "trainer",
+      "ordinal": 939,
+      "id": "CORMORIA:TRAINER_PLAYER_GOZLIAK",
+      "legacy_value": 20564,
+      "legacy_symbol": "Cormoria_TRAINER_PLAYER_GOZLIAK"
+    },
+    {
+      "kind": "trainer",
+      "ordinal": 940,
+      "id": "CORMORIA:TRAINER_PLAYER_MIKE",
+      "legacy_value": 20565,
+      "legacy_symbol": "Cormoria_TRAINER_PLAYER_MIKE"
+    },
+    {
+      "kind": "trainer",
+      "ordinal": 941,
+      "id": "CORMORIA:TRAINER_PLAYER_SENTRY",
+      "legacy_value": 20566,
+      "legacy_symbol": "Cormoria_TRAINER_PLAYER_SENTRY"
+    },
+    {
+      "kind": "trainer",
+      "ordinal": 942,
+      "id": "CORMORIA:TRAINER_PLAYER_SHERRY",
+      "legacy_value": 20567,
+      "legacy_symbol": "Cormoria_TRAINER_PLAYER_SHERRY"
+    },
+    {
+      "kind": "trainer",
+      "ordinal": 943,
+      "id": "CORMORIA:TRAINER_RIVETSHORE_GYM_A",
+      "legacy_value": 20568,
+      "legacy_symbol": "Cormoria_TRAINER_RIVETSHORE_GYM_A"
+    },
+    {
+      "kind": "trainer",
+      "ordinal": 944,
+      "id": "CORMORIA:TRAINER_RIVETSHORE_GYM_B",
+      "legacy_value": 20569,
+      "legacy_symbol": "Cormoria_TRAINER_RIVETSHORE_GYM_B"
+    },
+    {
+      "kind": "trainer",
+      "ordinal": 945,
+      "id": "CORMORIA:TRAINER_RIVETSHORE_GYM_C",
+      "legacy_value": 20570,
+      "legacy_symbol": "Cormoria_TRAINER_RIVETSHORE_GYM_C"
+    },
+    {
+      "kind": "trainer",
+      "ordinal": 946,
+      "id": "CORMORIA:TRAINER_RIVETSHORE_GYM_D",
+      "legacy_value": 20571,
+      "legacy_symbol": "Cormoria_TRAINER_RIVETSHORE_GYM_D"
+    },
+    {
+      "kind": "trainer",
+      "ordinal": 947,
+      "id": "CORMORIA:TRAINER_RIVETSHORE_GYM_E",
+      "legacy_value": 20572,
+      "legacy_symbol": "Cormoria_TRAINER_RIVETSHORE_GYM_E"
+    },
+    {
+      "kind": "trainer",
+      "ordinal": 948,
+      "id": "CORMORIA:TRAINER_RIVETSHORE_GYM_LEADER",
+      "legacy_value": 20573,
+      "legacy_symbol": "Cormoria_TRAINER_RIVETSHORE_GYM_LEADER"
+    },
+    {
+      "kind": "trainer",
+      "ordinal": 949,
+      "id": "CORMORIA:TRAINER_ROUTE1_A",
+      "legacy_value": 20574,
+      "legacy_symbol": "Cormoria_TRAINER_ROUTE1_A"
+    },
+    {
+      "kind": "trainer",
+      "ordinal": 950,
+      "id": "CORMORIA:TRAINER_ROUTE1_B",
+      "legacy_value": 20575,
+      "legacy_symbol": "Cormoria_TRAINER_ROUTE1_B"
+    },
+    {
+      "kind": "trainer",
+      "ordinal": 951,
+      "id": "CORMORIA:TRAINER_ROUTE1_C",
+      "legacy_value": 20576,
+      "legacy_symbol": "Cormoria_TRAINER_ROUTE1_C"
+    },
+    {
+      "kind": "trainer",
+      "ordinal": 952,
+      "id": "CORMORIA:TRAINER_ROUTE1_STRONG_A",
+      "legacy_value": 20577,
+      "legacy_symbol": "Cormoria_TRAINER_ROUTE1_STRONG_A"
+    },
+    {
+      "kind": "trainer",
+      "ordinal": 953,
+      "id": "CORMORIA:TRAINER_ROUTE1_STRONG_B",
+      "legacy_value": 20578,
+      "legacy_symbol": "Cormoria_TRAINER_ROUTE1_STRONG_B"
+    },
+    {
+      "kind": "trainer",
+      "ordinal": 954,
+      "id": "CORMORIA:TRAINER_ROUTE1_STRONG_C",
+      "legacy_value": 20579,
+      "legacy_symbol": "Cormoria_TRAINER_ROUTE1_STRONG_C"
+    },
+    {
+      "kind": "trainer",
+      "ordinal": 955,
+      "id": "CORMORIA:TRAINER_ROUTE3_CHARA",
+      "legacy_value": 20580,
+      "legacy_symbol": "Cormoria_TRAINER_ROUTE3_CHARA"
+    },
+    {
+      "kind": "trainer",
+      "ordinal": 956,
+      "id": "CORMORIA:TRAINER_ROUTE3_EVIL_GABRIELLE",
+      "legacy_value": 20581,
+      "legacy_symbol": "Cormoria_TRAINER_ROUTE3_EVIL_GABRIELLE"
+    },
+    {
+      "kind": "trainer",
+      "ordinal": 957,
+      "id": "CORMORIA:TRAINER_ROUTE3_EXT_A",
+      "legacy_value": 20582,
+      "legacy_symbol": "Cormoria_TRAINER_ROUTE3_EXT_A"
+    },
+    {
+      "kind": "trainer",
+      "ordinal": 958,
+      "id": "CORMORIA:TRAINER_ROUTE3_EXT_B",
+      "legacy_value": 20583,
+      "legacy_symbol": "Cormoria_TRAINER_ROUTE3_EXT_B"
+    },
+    {
+      "kind": "trainer",
+      "ordinal": 959,
+      "id": "CORMORIA:TRAINER_ROUTE3_EXT_C",
+      "legacy_value": 20584,
+      "legacy_symbol": "Cormoria_TRAINER_ROUTE3_EXT_C"
+    },
+    {
+      "kind": "trainer",
+      "ordinal": 960,
+      "id": "CORMORIA:TRAINER_ROUTE3_JANA",
+      "legacy_value": 20585,
+      "legacy_symbol": "Cormoria_TRAINER_ROUTE3_JANA"
+    },
+    {
+      "kind": "trainer",
+      "ordinal": 961,
+      "id": "CORMORIA:TRAINER_ROUTE3_KIM",
+      "legacy_value": 20586,
+      "legacy_symbol": "Cormoria_TRAINER_ROUTE3_KIM"
+    },
+    {
+      "kind": "trainer",
+      "ordinal": 962,
+      "id": "CORMORIA:TRAINER_ROUTE3_RONNIE",
+      "legacy_value": 20587,
+      "legacy_symbol": "Cormoria_TRAINER_ROUTE3_RONNIE"
+    },
+    {
+      "kind": "trainer",
+      "ordinal": 963,
+      "id": "CORMORIA:TRAINER_ROUTE4_CAMMY",
+      "legacy_value": 20588,
+      "legacy_symbol": "Cormoria_TRAINER_ROUTE4_CAMMY"
+    },
+    {
+      "kind": "trainer",
+      "ordinal": 964,
+      "id": "CORMORIA:TRAINER_ROUTE4_GRUNTS",
+      "legacy_value": 20589,
+      "legacy_symbol": "Cormoria_TRAINER_ROUTE4_GRUNTS"
+    },
+    {
+      "kind": "trainer",
+      "ordinal": 965,
+      "id": "CORMORIA:TRAINER_ROUTE4_JENNY",
+      "legacy_value": 20590,
+      "legacy_symbol": "Cormoria_TRAINER_ROUTE4_JENNY"
+    },
+    {
+      "kind": "trainer",
+      "ordinal": 966,
+      "id": "CORMORIA:TRAINER_ROUTE4_KID1",
+      "legacy_value": 20591,
+      "legacy_symbol": "Cormoria_TRAINER_ROUTE4_KID1"
+    },
+    {
+      "kind": "trainer",
+      "ordinal": 967,
+      "id": "CORMORIA:TRAINER_ROUTE4_KID2",
+      "legacy_value": 20592,
+      "legacy_symbol": "Cormoria_TRAINER_ROUTE4_KID2"
+    },
+    {
+      "kind": "trainer",
+      "ordinal": 968,
+      "id": "CORMORIA:TRAINER_ROUTE4_KID3",
+      "legacy_value": 20593,
+      "legacy_symbol": "Cormoria_TRAINER_ROUTE4_KID3"
+    },
+    {
+      "kind": "trainer",
+      "ordinal": 969,
+      "id": "CORMORIA:TRAINER_ROUTE4_RAHA",
+      "legacy_value": 20594,
+      "legacy_symbol": "Cormoria_TRAINER_ROUTE4_RAHA"
+    },
+    {
+      "kind": "trainer",
+      "ordinal": 970,
+      "id": "CORMORIA:TRAINER_ROUTE4_SONA",
+      "legacy_value": 20595,
+      "legacy_symbol": "Cormoria_TRAINER_ROUTE4_SONA"
+    },
+    {
+      "kind": "trainer",
+      "ordinal": 971,
+      "id": "CORMORIA:TRAINER_ROUTE6_A",
+      "legacy_value": 20596,
+      "legacy_symbol": "Cormoria_TRAINER_ROUTE6_A"
+    },
+    {
+      "kind": "trainer",
+      "ordinal": 972,
+      "id": "CORMORIA:TRAINER_ROUTE6_B",
+      "legacy_value": 20597,
+      "legacy_symbol": "Cormoria_TRAINER_ROUTE6_B"
+    },
+    {
+      "kind": "trainer",
+      "ordinal": 973,
+      "id": "CORMORIA:TRAINER_ROUTE6_C",
+      "legacy_value": 20598,
+      "legacy_symbol": "Cormoria_TRAINER_ROUTE6_C"
+    },
+    {
+      "kind": "trainer",
+      "ordinal": 974,
+      "id": "CORMORIA:TRAINER_ROUTE6_D",
+      "legacy_value": 20599,
+      "legacy_symbol": "Cormoria_TRAINER_ROUTE6_D"
+    },
+    {
+      "kind": "trainer",
+      "ordinal": 975,
+      "id": "CORMORIA:TRAINER_ROUTE6_E",
+      "legacy_value": 20600,
+      "legacy_symbol": "Cormoria_TRAINER_ROUTE6_E"
+    },
+    {
+      "kind": "trainer",
+      "ordinal": 976,
+      "id": "CORMORIA:TRAINER_ROUTE6_F",
+      "legacy_value": 20601,
+      "legacy_symbol": "Cormoria_TRAINER_ROUTE6_F"
+    },
+    {
+      "kind": "trainer",
+      "ordinal": 977,
+      "id": "CORMORIA:TRAINER_ROUTE6_G",
+      "legacy_value": 20602,
+      "legacy_symbol": "Cormoria_TRAINER_ROUTE6_G"
+    },
+    {
+      "kind": "trainer",
+      "ordinal": 978,
+      "id": "CORMORIA:TRAINER_ROUTE6_GRUNT1",
+      "legacy_value": 20603,
+      "legacy_symbol": "Cormoria_TRAINER_ROUTE6_GRUNT1"
+    },
+    {
+      "kind": "trainer",
+      "ordinal": 979,
+      "id": "CORMORIA:TRAINER_ROUTE6_GRUNT2",
+      "legacy_value": 20604,
+      "legacy_symbol": "Cormoria_TRAINER_ROUTE6_GRUNT2"
+    },
+    {
+      "kind": "trainer",
+      "ordinal": 980,
+      "id": "CORMORIA:TRAINER_ROUTE6_H",
+      "legacy_value": 20605,
+      "legacy_symbol": "Cormoria_TRAINER_ROUTE6_H"
+    },
+    {
+      "kind": "trainer",
+      "ordinal": 981,
+      "id": "CORMORIA:TRAINER_ROUTE6_I",
+      "legacy_value": 20606,
+      "legacy_symbol": "Cormoria_TRAINER_ROUTE6_I"
+    },
+    {
+      "kind": "trainer",
+      "ordinal": 982,
+      "id": "CORMORIA:TRAINER_ROUTE6_J",
+      "legacy_value": 20607,
+      "legacy_symbol": "Cormoria_TRAINER_ROUTE6_J"
+    },
+    {
+      "kind": "trainer",
+      "ordinal": 983,
+      "id": "CORMORIA:TRAINER_ROUTE6_K",
+      "legacy_value": 20608,
+      "legacy_symbol": "Cormoria_TRAINER_ROUTE6_K"
+    },
+    {
+      "kind": "trainer",
+      "ordinal": 984,
+      "id": "CORMORIA:TRAINER_ROUTE6_KOHLA",
+      "legacy_value": 20609,
+      "legacy_symbol": "Cormoria_TRAINER_ROUTE6_KOHLA"
+    },
+    {
+      "kind": "trainer",
+      "ordinal": 985,
+      "id": "CORMORIA:TRAINER_ROUTE7_A",
+      "legacy_value": 20610,
+      "legacy_symbol": "Cormoria_TRAINER_ROUTE7_A"
+    },
+    {
+      "kind": "trainer",
+      "ordinal": 986,
+      "id": "CORMORIA:TRAINER_ROUTE7_B",
+      "legacy_value": 20611,
+      "legacy_symbol": "Cormoria_TRAINER_ROUTE7_B"
+    },
+    {
+      "kind": "trainer",
+      "ordinal": 987,
+      "id": "CORMORIA:TRAINER_ROUTE7_C",
+      "legacy_value": 20612,
+      "legacy_symbol": "Cormoria_TRAINER_ROUTE7_C"
+    },
+    {
+      "kind": "trainer",
+      "ordinal": 988,
+      "id": "CORMORIA:TRAINER_ROUTE7_D",
+      "legacy_value": 20613,
+      "legacy_symbol": "Cormoria_TRAINER_ROUTE7_D"
+    },
+    {
+      "kind": "trainer",
+      "ordinal": 989,
+      "id": "CORMORIA:TRAINER_ROUTE8_A",
+      "legacy_value": 20614,
+      "legacy_symbol": "Cormoria_TRAINER_ROUTE8_A"
+    },
+    {
+      "kind": "trainer",
+      "ordinal": 990,
+      "id": "CORMORIA:TRAINER_ROUTE8_B",
+      "legacy_value": 20615,
+      "legacy_symbol": "Cormoria_TRAINER_ROUTE8_B"
+    },
+    {
+      "kind": "trainer",
+      "ordinal": 991,
+      "id": "CORMORIA:TRAINER_ROUTE8_C",
+      "legacy_value": 20616,
+      "legacy_symbol": "Cormoria_TRAINER_ROUTE8_C"
+    },
+    {
+      "kind": "trainer",
+      "ordinal": 992,
+      "id": "CORMORIA:TRAINER_ROUTE8_D",
+      "legacy_value": 20617,
+      "legacy_symbol": "Cormoria_TRAINER_ROUTE8_D"
+    },
+    {
+      "kind": "trainer",
+      "ordinal": 993,
+      "id": "CORMORIA:TRAINER_ROUTE8_E",
+      "legacy_value": 20618,
+      "legacy_symbol": "Cormoria_TRAINER_ROUTE8_E"
+    },
+    {
+      "kind": "trainer",
+      "ordinal": 994,
+      "id": "CORMORIA:TRAINER_SEWERS_A",
+      "legacy_value": 20619,
+      "legacy_symbol": "Cormoria_TRAINER_SEWERS_A"
+    },
+    {
+      "kind": "trainer",
+      "ordinal": 995,
+      "id": "CORMORIA:TRAINER_SEWERS_B",
+      "legacy_value": 20620,
+      "legacy_symbol": "Cormoria_TRAINER_SEWERS_B"
+    },
+    {
+      "kind": "trainer",
+      "ordinal": 996,
+      "id": "CORMORIA:TRAINER_SEWERS_C",
+      "legacy_value": 20621,
+      "legacy_symbol": "Cormoria_TRAINER_SEWERS_C"
+    },
+    {
+      "kind": "trainer",
+      "ordinal": 997,
+      "id": "CORMORIA:TRAINER_SILVERSUNGYM_A",
+      "legacy_value": 20622,
+      "legacy_symbol": "Cormoria_TRAINER_SILVERSUNGYM_A"
+    },
+    {
+      "kind": "trainer",
+      "ordinal": 998,
+      "id": "CORMORIA:TRAINER_SILVERSUNGYM_B",
+      "legacy_value": 20623,
+      "legacy_symbol": "Cormoria_TRAINER_SILVERSUNGYM_B"
+    },
+    {
+      "kind": "trainer",
+      "ordinal": 999,
+      "id": "CORMORIA:TRAINER_SILVERSUNGYM_C",
+      "legacy_value": 20624,
+      "legacy_symbol": "Cormoria_TRAINER_SILVERSUNGYM_C"
+    },
+    {
+      "kind": "trainer",
+      "ordinal": 1000,
+      "id": "CORMORIA:TRAINER_SILVERSUNGYM_D",
+      "legacy_value": 20625,
+      "legacy_symbol": "Cormoria_TRAINER_SILVERSUNGYM_D"
+    },
+    {
+      "kind": "trainer",
+      "ordinal": 1001,
+      "id": "CORMORIA:TRAINER_SILVERSUNGYM_LEADER",
+      "legacy_value": 20626,
+      "legacy_symbol": "Cormoria_TRAINER_SILVERSUNGYM_LEADER"
+    },
+    {
+      "kind": "trainer",
+      "ordinal": 1002,
+      "id": "CORMORIA:TRAINER_SOMBERHQ_A",
+      "legacy_value": 20627,
+      "legacy_symbol": "Cormoria_TRAINER_SOMBERHQ_A"
+    },
+    {
+      "kind": "trainer",
+      "ordinal": 1003,
+      "id": "CORMORIA:TRAINER_SOMBERHQ_B",
+      "legacy_value": 20628,
+      "legacy_symbol": "Cormoria_TRAINER_SOMBERHQ_B"
+    },
+    {
+      "kind": "trainer",
+      "ordinal": 1004,
+      "id": "CORMORIA:TRAINER_SOMBERHQ_C",
+      "legacy_value": 20629,
+      "legacy_symbol": "Cormoria_TRAINER_SOMBERHQ_C"
+    },
+    {
+      "kind": "trainer",
+      "ordinal": 1005,
+      "id": "CORMORIA:TRAINER_SOMBERHQ_D",
+      "legacy_value": 20630,
+      "legacy_symbol": "Cormoria_TRAINER_SOMBERHQ_D"
+    },
+    {
+      "kind": "trainer",
+      "ordinal": 1006,
+      "id": "CORMORIA:TRAINER_SOMBERHQ_E",
+      "legacy_value": 20631,
+      "legacy_symbol": "Cormoria_TRAINER_SOMBERHQ_E"
+    },
+    {
+      "kind": "trainer",
+      "ordinal": 1007,
+      "id": "CORMORIA:TRAINER_SOMBERHQ_F",
+      "legacy_value": 20632,
+      "legacy_symbol": "Cormoria_TRAINER_SOMBERHQ_F"
+    },
+    {
+      "kind": "trainer",
+      "ordinal": 1008,
+      "id": "CORMORIA:TRAINER_SOMBERHQ_G",
+      "legacy_value": 20633,
+      "legacy_symbol": "Cormoria_TRAINER_SOMBERHQ_G"
+    },
+    {
+      "kind": "trainer",
+      "ordinal": 1009,
+      "id": "CORMORIA:TRAINER_SOMBERHQ_H",
+      "legacy_value": 20634,
+      "legacy_symbol": "Cormoria_TRAINER_SOMBERHQ_H"
+    },
+    {
+      "kind": "trainer",
+      "ordinal": 1010,
+      "id": "CORMORIA:TRAINER_SOMBERHQ_MELEA",
+      "legacy_value": 20635,
+      "legacy_symbol": "Cormoria_TRAINER_SOMBERHQ_MELEA"
+    },
+    {
+      "kind": "trainer",
+      "ordinal": 1011,
+      "id": "CORMORIA:TRAINER_SSELEGANT_A",
+      "legacy_value": 20636,
+      "legacy_symbol": "Cormoria_TRAINER_SSELEGANT_A"
+    },
+    {
+      "kind": "trainer",
+      "ordinal": 1012,
+      "id": "CORMORIA:TRAINER_SSELEGANT_ARIANA",
+      "legacy_value": 20637,
+      "legacy_symbol": "Cormoria_TRAINER_SSELEGANT_ARIANA"
+    },
+    {
+      "kind": "trainer",
+      "ordinal": 1013,
+      "id": "CORMORIA:TRAINER_SSELEGANT_INGER",
+      "legacy_value": 20638,
+      "legacy_symbol": "Cormoria_TRAINER_SSELEGANT_INGER"
+    },
+    {
+      "kind": "trainer",
+      "ordinal": 1014,
+      "id": "CORMORIA:TRAINER_SSELEGANT_JANIA",
+      "legacy_value": 20639,
+      "legacy_symbol": "Cormoria_TRAINER_SSELEGANT_JANIA"
+    },
+    {
+      "kind": "trainer",
+      "ordinal": 1015,
+      "id": "CORMORIA:TRAINER_THEATER_B",
+      "legacy_value": 20640,
+      "legacy_symbol": "Cormoria_TRAINER_THEATER_B"
+    },
+    {
+      "kind": "trainer",
+      "ordinal": 1016,
+      "id": "CORMORIA:TRAINER_UNCHARTED_ISLAND_GRUNT_A",
+      "legacy_value": 20641,
+      "legacy_symbol": "Cormoria_TRAINER_UNCHARTED_ISLAND_GRUNT_A"
+    },
+    {
+      "kind": "trainer",
+      "ordinal": 1017,
+      "id": "CORMORIA:TRAINER_UNCHARTED_ISLAND_GRUNT_B",
+      "legacy_value": 20642,
+      "legacy_symbol": "Cormoria_TRAINER_UNCHARTED_ISLAND_GRUNT_B"
+    },
+    {
+      "kind": "trainer",
+      "ordinal": 1018,
+      "id": "CORMORIA:TRAINER_UNCHARTED_ISLAND_GRUNT_C",
+      "legacy_value": 20643,
+      "legacy_symbol": "Cormoria_TRAINER_UNCHARTED_ISLAND_GRUNT_C"
+    },
+    {
+      "kind": "trainer",
+      "ordinal": 1019,
+      "id": "CORMORIA:TRAINER_UNCHARTED_ISLAND_MELEA",
+      "legacy_value": 20644,
+      "legacy_symbol": "Cormoria_TRAINER_UNCHARTED_ISLAND_MELEA"
+    },
+    {
+      "kind": "trainer",
+      "ordinal": 1020,
+      "id": "CORMORIA:TRAINER_UNCHARTED_ISLAND_MOXIE",
+      "legacy_value": 20645,
+      "legacy_symbol": "Cormoria_TRAINER_UNCHARTED_ISLAND_MOXIE"
+    },
+    {
+      "kind": "trainer",
+      "ordinal": 1021,
+      "id": "CORMORIA:TRAINER_UNCHARTED_ISLAND_RUE",
+      "legacy_value": 20646,
+      "legacy_symbol": "Cormoria_TRAINER_UNCHARTED_ISLAND_RUE"
+    },
+    {
+      "kind": "trainer",
+      "ordinal": 1022,
+      "id": "CORMORIA:TRAINER_VICTORYCAPE_A",
+      "legacy_value": 20647,
+      "legacy_symbol": "Cormoria_TRAINER_VICTORYCAPE_A"
+    },
+    {
+      "kind": "trainer",
+      "ordinal": 1023,
+      "id": "CORMORIA:TRAINER_VICTORYCAPE_B",
+      "legacy_value": 20648,
+      "legacy_symbol": "Cormoria_TRAINER_VICTORYCAPE_B"
+    },
+    {
+      "kind": "trainer",
+      "ordinal": 1024,
+      "id": "CORMORIA:TRAINER_VICTORY_ROAD_A",
+      "legacy_value": 20649,
+      "legacy_symbol": "Cormoria_TRAINER_VICTORY_ROAD_A"
+    },
+    {
+      "kind": "trainer",
+      "ordinal": 1025,
+      "id": "CORMORIA:TRAINER_VICTORY_ROAD_B",
+      "legacy_value": 20650,
+      "legacy_symbol": "Cormoria_TRAINER_VICTORY_ROAD_B"
+    },
+    {
+      "kind": "trainer",
+      "ordinal": 1026,
+      "id": "CORMORIA:TRAINER_VICTORY_ROAD_C",
+      "legacy_value": 20651,
+      "legacy_symbol": "Cormoria_TRAINER_VICTORY_ROAD_C"
+    },
+    {
+      "kind": "trainer",
+      "ordinal": 1027,
+      "id": "CORMORIA:TRAINER_VICTORY_ROAD_D",
+      "legacy_value": 20652,
+      "legacy_symbol": "Cormoria_TRAINER_VICTORY_ROAD_D"
+    },
+    {
+      "kind": "trainer",
+      "ordinal": 1028,
+      "id": "CORMORIA:TRAINER_VICTORY_ROAD_E",
+      "legacy_value": 20653,
+      "legacy_symbol": "Cormoria_TRAINER_VICTORY_ROAD_E"
+    },
+    {
+      "kind": "trainer",
+      "ordinal": 1029,
+      "id": "CORMORIA:TRAINER_VICTORY_ROAD_F",
+      "legacy_value": 20654,
+      "legacy_symbol": "Cormoria_TRAINER_VICTORY_ROAD_F"
+    },
+    {
+      "kind": "trainer",
+      "ordinal": 1030,
+      "id": "CORMORIA:TRAINER_VICTORY_ROAD_G",
+      "legacy_value": 20655,
+      "legacy_symbol": "Cormoria_TRAINER_VICTORY_ROAD_G"
+    },
+    {
+      "kind": "trainer",
+      "ordinal": 1031,
+      "id": "CORMORIA:TRAINER_VICTORY_ROAD_H",
+      "legacy_value": 20656,
+      "legacy_symbol": "Cormoria_TRAINER_VICTORY_ROAD_H"
+    },
+    {
+      "kind": "trainer",
+      "ordinal": 1032,
+      "id": "CORMORIA:TRAINER_VICTORY_ROAD_I",
+      "legacy_value": 20657,
+      "legacy_symbol": "Cormoria_TRAINER_VICTORY_ROAD_I"
+    },
+    {
+      "kind": "trainer",
+      "ordinal": 1033,
+      "id": "CORMORIA:TRAINER_VICTORY_ROAD_J",
+      "legacy_value": 20658,
+      "legacy_symbol": "Cormoria_TRAINER_VICTORY_ROAD_J"
+    },
+    {
+      "kind": "trainer",
+      "ordinal": 1034,
+      "id": "CORMORIA:TRAINER_VILETHORN_A",
+      "legacy_value": 20659,
+      "legacy_symbol": "Cormoria_TRAINER_VILETHORN_A"
+    },
+    {
+      "kind": "trainer",
+      "ordinal": 1035,
+      "id": "CORMORIA:TRAINER_VILETHORN_B",
+      "legacy_value": 20660,
+      "legacy_symbol": "Cormoria_TRAINER_VILETHORN_B"
+    },
+    {
+      "kind": "trainer",
+      "ordinal": 1036,
+      "id": "CORMORIA:TRAINER_VILETHORN_C",
+      "legacy_value": 20661,
+      "legacy_symbol": "Cormoria_TRAINER_VILETHORN_C"
+    },
+    {
+      "kind": "trainer",
+      "ordinal": 1037,
+      "id": "CORMORIA:TRAINER_VILETHORN_D",
+      "legacy_value": 20662,
+      "legacy_symbol": "Cormoria_TRAINER_VILETHORN_D"
+    },
+    {
+      "kind": "trainer",
+      "ordinal": 1038,
+      "id": "CORMORIA:TRAINER_VILETHORN_E",
+      "legacy_value": 20663,
+      "legacy_symbol": "Cormoria_TRAINER_VILETHORN_E"
+    },
+    {
+      "kind": "trainer",
+      "ordinal": 1039,
+      "id": "CORMORIA:TRAINER_VILETHORN_F",
+      "legacy_value": 20664,
+      "legacy_symbol": "Cormoria_TRAINER_VILETHORN_F"
+    },
+    {
+      "kind": "trainer",
+      "ordinal": 1040,
+      "id": "CORMORIA:TRAINER_VILETHORN_G",
+      "legacy_value": 20665,
+      "legacy_symbol": "Cormoria_TRAINER_VILETHORN_G"
+    },
+    {
+      "kind": "trainer",
+      "ordinal": 1041,
+      "id": "CORMORIA:TRAINER_VILETHORN_H",
+      "legacy_value": 20666,
+      "legacy_symbol": "Cormoria_TRAINER_VILETHORN_H"
+    },
+    {
+      "kind": "trainer",
+      "ordinal": 1042,
+      "id": "CORMORIA:TRAINER_VILETHORN_I",
+      "legacy_value": 20667,
+      "legacy_symbol": "Cormoria_TRAINER_VILETHORN_I"
+    },
+    {
+      "kind": "trainer",
+      "ordinal": 1043,
+      "id": "CORMORIA:TRAINER_WINTERLILY_HOLLOW_GYM_A",
+      "legacy_value": 20668,
+      "legacy_symbol": "Cormoria_TRAINER_WINTERLILY_HOLLOW_GYM_A"
+    },
+    {
+      "kind": "trainer",
+      "ordinal": 1044,
+      "id": "CORMORIA:TRAINER_WINTERLILY_HOLLOW_GYM_B",
+      "legacy_value": 20669,
+      "legacy_symbol": "Cormoria_TRAINER_WINTERLILY_HOLLOW_GYM_B"
+    },
+    {
+      "kind": "trainer",
+      "ordinal": 1045,
+      "id": "CORMORIA:TRAINER_WINTERLILY_HOLLOW_GYM_C",
+      "legacy_value": 20670,
+      "legacy_symbol": "Cormoria_TRAINER_WINTERLILY_HOLLOW_GYM_C"
+    },
+    {
+      "kind": "trainer",
+      "ordinal": 1046,
+      "id": "CORMORIA:TRAINER_WINTERLILY_HOLLOW_GYM_D",
+      "legacy_value": 20671,
+      "legacy_symbol": "Cormoria_TRAINER_WINTERLILY_HOLLOW_GYM_D"
+    },
+    {
+      "kind": "trainer",
+      "ordinal": 1047,
+      "id": "CORMORIA:TRAINER_WINTERLILY_HOLLOW_GYM_E",
+      "legacy_value": 20672,
+      "legacy_symbol": "Cormoria_TRAINER_WINTERLILY_HOLLOW_GYM_E"
+    },
+    {
+      "kind": "trainer",
+      "ordinal": 1048,
+      "id": "CORMORIA:TRAINER_WINTERLILY_HOLLOW_GYM_F",
+      "legacy_value": 20673,
+      "legacy_symbol": "Cormoria_TRAINER_WINTERLILY_HOLLOW_GYM_F"
+    },
+    {
+      "kind": "trainer",
+      "ordinal": 1049,
+      "id": "CORMORIA:TRAINER_WINTERLILY_HOLLOW_GYM_LEADER",
+      "legacy_value": 20674,
+      "legacy_symbol": "Cormoria_TRAINER_WINTERLILY_HOLLOW_GYM_LEADER"
+    },
+    {
       "kind": "gym",
       "ordinal": 0,
       "id": "HOENN:GYM_RUSTBORO",
@@ -6320,6 +7682,62 @@
       "kind": "badge",
       "id": "JOHTO:BADGE_RISING",
       "legacy_value": null,
+      "badge_bit": 7
+    },
+    {
+      "kind": "badge",
+      "id": "CORMORIA:BADGE_01",
+      "legacy_value": 32777,
+      "legacy_symbol": "Cormoria_FLAG_BADGE01_GET",
+      "badge_bit": 0
+    },
+    {
+      "kind": "badge",
+      "id": "CORMORIA:BADGE_02",
+      "legacy_value": 32778,
+      "legacy_symbol": "Cormoria_FLAG_BADGE02_GET",
+      "badge_bit": 1
+    },
+    {
+      "kind": "badge",
+      "id": "CORMORIA:BADGE_03",
+      "legacy_value": 32779,
+      "legacy_symbol": "Cormoria_FLAG_BADGE03_GET",
+      "badge_bit": 2
+    },
+    {
+      "kind": "badge",
+      "id": "CORMORIA:BADGE_04",
+      "legacy_value": 32780,
+      "legacy_symbol": "Cormoria_FLAG_BADGE04_GET",
+      "badge_bit": 3
+    },
+    {
+      "kind": "badge",
+      "id": "CORMORIA:BADGE_05",
+      "legacy_value": 32781,
+      "legacy_symbol": "Cormoria_FLAG_BADGE05_GET",
+      "badge_bit": 4
+    },
+    {
+      "kind": "badge",
+      "id": "CORMORIA:BADGE_06",
+      "legacy_value": 32782,
+      "legacy_symbol": "Cormoria_FLAG_BADGE06_GET",
+      "badge_bit": 5
+    },
+    {
+      "kind": "badge",
+      "id": "CORMORIA:BADGE_07",
+      "legacy_value": 32783,
+      "legacy_symbol": "Cormoria_FLAG_BADGE07_GET",
+      "badge_bit": 6
+    },
+    {
+      "kind": "badge",
+      "id": "CORMORIA:BADGE_08",
+      "legacy_value": 32784,
+      "legacy_symbol": "Cormoria_FLAG_BADGE08_GET",
       "badge_bit": 7
     },
     {

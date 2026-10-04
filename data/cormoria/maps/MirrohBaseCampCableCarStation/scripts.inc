@@ -1,0 +1,97 @@
+.set Cormoria_maps_MirrohBaseCampCableCarStation_scripts_LOCALID_ATTENDANT, 1
+
+Cormoria_MirrohBaseCampCableCarStation_MapScripts::
+	map_script MAP_SCRIPT_ON_TRANSITION, Cormoria_MirrohBaseCampCableCarStation_OnTransition
+	map_script MAP_SCRIPT_ON_FRAME_TABLE, Cormoria_MirrohBaseCampCableCarStation_OnFrame
+	.byte 0
+
+Cormoria_MirrohBaseCampCableCarStation_OnTransition:
+	call_if_eq Cormoria_VAR_CABLE_CAR_STATION_STATE, 1, Cormoria_MirrohBaseCampCableCarStation_EventScript_MoveAttendantAside
+	end
+
+Cormoria_MirrohBaseCampCableCarStation_EventScript_MoveAttendantAside::
+	setobjectxyperm Cormoria_maps_MirrohBaseCampCableCarStation_scripts_LOCALID_ATTENDANT, 5, 4
+	setobjectmovementtype Cormoria_maps_MirrohBaseCampCableCarStation_scripts_LOCALID_ATTENDANT, MOVEMENT_TYPE_FACE_RIGHT
+	return
+
+Cormoria_MirrohBaseCampCableCarStation_OnFrame:
+	map_script_2 Cormoria_VAR_CABLE_CAR_STATION_STATE, 1, Cormoria_MirrohBaseCampCableCarStation_EventScript_ExitCableCar
+	.2byte 0
+
+Cormoria_MirrohBaseCampCableCarStation_EventScript_ExitCableCar::
+	lockall
+	applymovement OBJ_EVENT_ID_PLAYER, Cormoria_MirrohBaseCampCableCarStation_Movement_ExitCableCar
+	applymovement Cormoria_maps_MirrohBaseCampCableCarStation_scripts_LOCALID_ATTENDANT, Cormoria_MirrohBaseCampCableCarStation_Movement_FollowPlayerOutFromCableCar
+	waitmovement 0
+	setvar Cormoria_VAR_CABLE_CAR_STATION_STATE, 0
+	setobjectxyperm Cormoria_maps_MirrohBaseCampCableCarStation_scripts_LOCALID_ATTENDANT, 6, 7
+	setobjectmovementtype Cormoria_maps_MirrohBaseCampCableCarStation_scripts_LOCALID_ATTENDANT, MOVEMENT_TYPE_FACE_DOWN
+	releaseall
+	end
+
+Cormoria_MirrohBaseCampCableCarStation_EventScript_Attendant::
+	lock
+	faceplayer
+	msgbox Cormoria_MirrohBaseCampCableCarStation_Text_CableCarReadyGetOn, MSGBOX_YESNO
+	goto_if_eq VAR_RESULT, YES, Cormoria_MirrohBaseCampCableCarStation_EventScript_RideCableCar
+	goto_if_eq VAR_RESULT, NO, Cormoria_MirrohBaseCampCableCarStation_EventScript_DeclineRide
+	end
+
+Cormoria_MirrohBaseCampCableCarStation_EventScript_RideCableCar::
+	msgbox Cormoria_MirrohBaseCampCableCarStation_Text_StepThisWay, MSGBOX_DEFAULT
+	closemessage
+	applymovement Cormoria_maps_MirrohBaseCampCableCarStation_scripts_LOCALID_ATTENDANT, Cormoria_MirrohBaseCampCableCarStation_Movement_LeadPlayerToCableCar
+	applymovement OBJ_EVENT_ID_PLAYER, Cormoria_MirrohBaseCampCableCarStation_Movement_BoardCableCar
+	waitmovement 0
+	setvar VAR_0x8004, TRUE  @ Going down
+	setvar Cormoria_VAR_CABLE_CAR_STATION_STATE, 2
+	incrementgamestat GAME_STAT_RODE_CABLE_CAR
+	special CableCarWarp
+	special CableCar
+	waitstate
+	release
+	end
+
+Cormoria_MirrohBaseCampCableCarStation_EventScript_DeclineRide::
+	msgbox Cormoria_MirrohBaseCampCableCarStation_Text_RideAnotherTime, MSGBOX_DEFAULT
+	release
+	end
+
+Cormoria_MirrohBaseCampCableCarStation_Movement_LeadPlayerToCableCar:
+	walk_up
+	walk_up
+	walk_left
+	walk_in_place_faster_right
+	step_end
+
+Cormoria_MirrohBaseCampCableCarStation_Movement_FollowPlayerOutFromCableCar:
+	delay_16
+	walk_right
+	walk_down
+	walk_down
+	step_end
+
+Cormoria_MirrohBaseCampCableCarStation_Movement_BoardCableCar:
+	walk_up
+	walk_up
+	walk_up
+	delay_16
+	step_end
+
+Cormoria_MirrohBaseCampCableCarStation_Movement_ExitCableCar:
+	walk_down
+	walk_down
+	walk_down
+	delay_16
+	step_end
+
+Cormoria_MirrohBaseCampCableCarStation_Text_CableCarReadyGetOn:
+	.string "The CABLE CAR is ready to go down.\n"
+	.string "Would you like to be on it?$"
+
+Cormoria_MirrohBaseCampCableCarStation_Text_StepThisWay:
+	.string "Please step this way.$"
+
+Cormoria_MirrohBaseCampCableCarStation_Text_RideAnotherTime:
+	.string "Please ride with us another time.$"
+

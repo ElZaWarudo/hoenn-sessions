@@ -4,9 +4,9 @@
 #include "constants/johto_berry_plots.h"
 #include "johto/berry_plots.h"
 #include "load_save.h"
+#include "malloc.h"
 #include "test/test.h"
 
-static EWRAM_DATA struct BerryTree sBefore[BERRY_TREES_COUNT];
 static const enum BerryId sExpectedBerries[] =
 {
     BERRY_ID_CHERI,
@@ -48,12 +48,14 @@ static const enum BerryId sExpectedBerries[] =
 
 TEST("Johto new-game crops seed every independent dormant plot only")
 {
+    struct BerryTree *sBefore = Alloc(BERRY_TREES_COUNT * sizeof(*sBefore));
     u32 i;
+    EXPECT(sBefore != NULL);
     SetSaveBlocksPointers(0);
     ClearBerryTrees();
     for (i = 0; i < BERRY_TREES_COUNT; i++)
         PlantBerryTree(i, BERRY_ID_ORAN, BERRY_STAGE_BERRIES, FALSE);
-    memcpy(sBefore, gSaveBlock1Ptr->berryTrees, sizeof(sBefore));
+    memcpy(sBefore, gSaveBlock1Ptr->berryTrees, BERRY_TREES_COUNT * sizeof(*sBefore));
     JohtoBerryPlots_InitializeNewGame();
     for (i = 0; i < BERRY_TREES_COUNT; i++)
     {
@@ -68,17 +70,20 @@ TEST("Johto new-game crops seed every independent dormant plot only")
         else
             EXPECT_EQ(memcmp(tree, &sBefore[i], sizeof(*tree)), 0);
     }
+    Free(sBefore);
 }
 
 TEST("A removed Johto crop replants and grows without touching other plots")
 {
+    struct BerryTree *sBefore = Alloc(BERRY_TREES_COUNT * sizeof(*sBefore));
     u32 i;
     u16 duration;
+    EXPECT(sBefore != NULL);
     SetSaveBlocksPointers(0);
     ClearBerryTrees();
     PlantBerryTree(0, BERRY_ID_ORAN, BERRY_STAGE_BERRIES, FALSE);
     JohtoBerryPlots_InitializeNewGame();
-    memcpy(sBefore, gSaveBlock1Ptr->berryTrees, sizeof(sBefore));
+    memcpy(sBefore, gSaveBlock1Ptr->berryTrees, BERRY_TREES_COUNT * sizeof(*sBefore));
     RemoveBerryTree(JOHTO_BERRY_TREE_CHERI_2);
     EXPECT_EQ(GetStageByBerryTreeId(JOHTO_BERRY_TREE_CHERI_2), BERRY_STAGE_NO_BERRY);
     PlantBerryTree(JOHTO_BERRY_TREE_CHERI_2, BERRY_ID_ORAN, BERRY_STAGE_PLANTED, TRUE);
@@ -91,4 +96,5 @@ TEST("A removed Johto crop replants and grows without touching other plots")
     for (i = 0; i < BERRY_TREES_COUNT; i++)
         if (i != JOHTO_BERRY_TREE_CHERI_2)
             EXPECT_EQ(memcmp(GetBerryTreeInfo(i), &sBefore[i], sizeof(sBefore[i])), 0);
+    Free(sBefore);
 }

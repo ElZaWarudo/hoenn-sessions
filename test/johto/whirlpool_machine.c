@@ -21,10 +21,17 @@ TEST("Whirlpool appends HM09 without renumbering existing machines")
     EXPECT_EQ(ITEM_JOHTO_MACHINE_PART, 887);
     EXPECT_EQ(ITEM_JOHTO_RADIO, 888);
     EXPECT_EQ(ITEM_JOHTO_SQUIRT_BOTTLE, 889);
-    EXPECT_EQ(ITEMS_COUNT, 890);
+    /* Cormoria (6be11d394e, data/shared_item_ids.json) appends 30 shared
+     * items at 890..919 after the Johto block, including its Splash HM as
+     * HM10 at 902. Nothing before 890 moves. */
+    EXPECT_EQ(ITEM_ANCIENT_STONE, 890);
+    EXPECT_EQ(ITEM_HM10, 902);
+    EXPECT_EQ(ITEM_HM_SPLASH, ITEM_HM10);
+    EXPECT_EQ(ITEM_TREKKING_BOOTS, 919);
+    EXPECT_EQ(ITEMS_COUNT, 920);
     EXPECT_EQ(NUM_TECHNICAL_MACHINES, 50);
-    EXPECT_EQ(NUM_HIDDEN_MACHINES, 9);
-    EXPECT_EQ(NUM_ALL_MACHINES, 59);
+    EXPECT_EQ(NUM_HIDDEN_MACHINES, 10);
+    EXPECT_EQ(NUM_ALL_MACHINES, 60);
 
     for (i = 1; i <= NUM_TECHNICAL_MACHINES; i++)
     {
@@ -43,6 +50,8 @@ TEST("Whirlpool appends HM09 without renumbering existing machines")
 
         if (i == 8)
             item = ITEM_HM09;
+        else if (i == 9)
+            item = ITEM_HM10;
         else
             item = ITEM_HM01 + i;
 
@@ -82,7 +91,10 @@ TEST("Whirlpool participates in teachability and HM APIs")
     EXPECT(IsMoveHM(MOVE_WHIRLPOOL));
     EXPECT(IsMoveHM(MOVE_DIVE));
     EXPECT(IsMoveHM(MOVE_SURF));
-    EXPECT(!IsMoveHM(MOVE_SPLASH));
+    /* Splash is Cormoria's HM10 since 6be11d394e (test/cormoria/items.c),
+     * so the non-HM sentinel is another Water move. */
+    EXPECT(IsMoveHM(MOVE_SPLASH));
+    EXPECT(!IsMoveHM(MOVE_WATER_GUN));
 
     EXPECT(CanLearnTeachableMove(SPECIES_TOTODILE, MOVE_WHIRLPOOL));
     EXPECT(CanLearnTeachableMove(SPECIES_GYARADOS, MOVE_WHIRLPOOL));

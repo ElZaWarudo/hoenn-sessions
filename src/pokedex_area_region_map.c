@@ -21,7 +21,9 @@ void LoadPokedexAreaMapGfx(void)
     ChangeBgX(POKEDEX_AREA_MAP_BG, 0, BG_COORD_SET);
     ChangeBgY(POKEDEX_AREA_MAP_BG, 0, BG_COORD_SET);
     SetBgAttribute(POKEDEX_AREA_MAP_BG, BG_ATTR_PALETTEMODE, 1);
-    CpuCopy32(gRegionMapInfos[regionMapType].dexMapPalette, &gPlttBufferUnfaded[BG_PLTT_ID(7)], gRegionMapInfos[regionMapType].dexMapPaletteSize);
+    CpuCopy32(gRegionMapInfos[regionMapType].dexMapPalette,
+              &gPlttBufferUnfaded[BG_PLTT_ID(gRegionMapInfos[regionMapType].dexMapPaletteStart)],
+              gRegionMapInfos[regionMapType].dexMapPaletteSize);
 }
 
 bool32 TryShowPokedexAreaMap(void)

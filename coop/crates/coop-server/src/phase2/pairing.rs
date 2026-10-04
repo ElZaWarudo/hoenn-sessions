@@ -191,6 +191,9 @@ pub(crate) fn redeem_code(
             return Err(Phase2Error::Forbidden);
         }
         validate_member(state, inviter)?;
+        if state.handoff_for_member(inviter) {
+            return Err(Phase2Error::Conflict);
+        }
         if state.active_group_by_member.contains_key(&inviter) {
             return Err(Phase2Error::Conflict);
         }

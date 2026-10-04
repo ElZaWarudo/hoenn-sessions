@@ -13,8 +13,8 @@ TEST("Johto section registration keeps current identity boundaries")
     EXPECT_EQ(JOHTO_MAPSEC_START, 209);
     EXPECT_EQ(MAPSEC_JOHTO_CHERRYGROVE_CITY, 210);
     EXPECT_EQ(JOHTO_MAPSEC_END, 249);
-    EXPECT_EQ(MAPSEC_NONE, 250);
-    EXPECT_EQ(MAPSEC_COUNT, 251);
+    EXPECT(MAPSEC_NONE > JOHTO_MAPSEC_END);
+    EXPECT_EQ(MAPSEC_COUNT, MAPSEC_NONE + 1);
     EXPECT_EQ(METLOC_SPECIAL_EGG, 253);
     EXPECT_EQ(METLOC_IN_GAME_TRADE, 254);
     EXPECT_EQ(METLOC_FATEFUL_ENCOUNTER, 255);
@@ -46,7 +46,7 @@ TEST("Johto sections agree across engine and co-op authorities")
     EXPECT(!CoopRegion_Normalize(&normalized, REGION_JOHTO, MAPSEC_KANTO_VICTORY_ROAD));
 }
 
-TEST("Johto section registration rejects sentinel and special met locations")
+TEST("Johto section registration rejects sentinel and out-of-range section IDs")
 {
     u32 section;
     enum CoopRegion normalized;

@@ -14,11 +14,9 @@
 #define JOHTO_SAVE_VARIABLE_COUNT 96
 #define JOHTO_RIVAL_NAME_SIZE 8
 
-/* The last SaveBlock1 sector contains 0x108 bytes of legacy data followed by
- * this record.  The old sector checksum therefore remains unchanged when its
- * zero-filled tail is checked with the larger size. */
-#define JOHTO_SAVE_LEGACY_TAIL_SIZE 0x108
-#define JOHTO_SAVE_SERIALIZED_TAIL_SIZE 0x27C
+/* Both region ROMs share this SaveBlock1 layout. Older saves are not migrated. */
+#define JOHTO_SAVE_LEGACY_TAIL_SIZE 0x420
+#define JOHTO_SAVE_SERIALIZED_TAIL_SIZE 0x594
 
 struct JohtoSaveV1
 {

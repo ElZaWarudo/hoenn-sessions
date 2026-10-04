@@ -51,6 +51,9 @@ use crate::{
     session::CloudFuture,
 };
 
+/// Crash recovery under the same catalog-bound server harness.
+mod recovery_e2e;
+
 const PASSWORD: &str = "ledger e2e password";
 
 /// Each test runs a real server whose password hashing is slow in debug
@@ -249,6 +252,13 @@ impl CloudApi for LossyCloud {
     ) -> CloudFuture<'a, LeaseContract> {
         CloudApi::acquire(&self.inner, auth, request)
     }
+    fn acquire_world<'a>(
+        &'a self,
+        auth: &'a AuthSession,
+        request: AcquireLeaseRequest,
+    ) -> CloudFuture<'a, coop_cloud::AcquireWorldLeaseResponse> {
+        CloudApi::acquire_world(&self.inner, auth, request)
+    }
     fn heartbeat<'a>(
         &'a self,
         auth: &'a AuthSession,
@@ -349,6 +359,12 @@ impl Server {
         )
         .unwrap()
         .with_upload_base_url(base.clone());
+        // World-aware leases bind to a trusted release catalog. Its only world
+        // is the main ROM the test build targets.
+        let catalog = release_catalog();
+        let config = config
+            .with_release_catalog_bytes(&catalog, coop_cloud::Sha256Digest::of_bytes(&catalog))
+            .unwrap();
         let app = Phase2App::new(config).unwrap();
         let (stop, stopped) = tokio::sync::oneshot::channel::<()>();
         let router = app.router();
@@ -586,9 +602,38 @@ fn server_compatibility() -> crate::BuildCompatibility {
     compatibility
 }
 
+/// The main ROM world of the test release catalog.
+fn main_world() -> coop_protocol::RomWorldId {
+    coop_protocol::RomWorldId::new(1).unwrap()
+}
+
+/// A one-world release catalog naming the build identity the server pins
+/// from `dist/bridge_manifest.json`, as the server's own HTTP tests do.
+fn release_catalog() -> Vec<u8> {
+    let dist: serde_json::Value =
+        serde_json::from_str(include_str!("../../../../../../dist/bridge_manifest.json")).unwrap();
+    let catalog = serde_json::json!({
+        "schema_version": 1,
+        "worlds": [{
+            "world_id": main_world().get(),
+            "build": {
+                "game_build_id": dist["game_build"]["id"],
+                "rom_sha256": dist["game_build"]["rom_sha256"],
+                "mgba_version": "0.10.5",
+                "bridge_abi": dist["net_bridge"]["abi_version"],
+                "protocol_version": dist["net_bridge"]["game_protocol_version"]
+            }
+        }]
+    });
+    serde_json::to_vec(&catalog).unwrap()
+}
+
+/// Signs in and materializes a session through the world-aware lease route,
+/// which binds the lease to the server's active world before any snapshot
+/// operation.
 async fn acquire<A: CloudApi>(api: &A, name: &str, root: &Path) -> SessionLifecycle {
     let keychain: Arc<dyn RefreshTokenStore> = Arc::new(TestKeychain::default());
-    let auth = AuthSession::login(
+    let mut auth = AuthSession::login(
         api,
         keychain.as_ref(),
         name,
@@ -609,8 +654,15 @@ async fn acquire<A: CloudApi>(api: &A, name: &str, root: &Path) -> SessionLifecy
         epoch_store: EpochStore::new(root.join("epoch.json")),
         workspace_parent: root.join("sessions"),
         bridge_lua_dir: root.join("bridge"),
+        rom_world_id: main_world(),
     };
-    SessionLifecycle::acquire_with_keychain(api, auth, config, keychain)
+    let request = AcquireLeaseRequest::new(auth.character_id, config.client_instance_id, key());
+    let response =
+        SessionLifecycle::acquire_world_with_keychain(api, &mut auth, request, &keychain)
+            .await
+            .unwrap();
+    assert_eq!(response.active_world_id, main_world());
+    SessionLifecycle::from_world_lease_with_keychain(api, auth, config, keychain, response)
         .await
         .unwrap()
 }

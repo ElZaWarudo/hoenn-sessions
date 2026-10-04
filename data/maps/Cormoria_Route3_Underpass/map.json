@@ -1,0 +1,701 @@
+{
+  "id": "MAP_CORMORIA_ROUTE3_UNDERPASS",
+  "name": "Cormoria_Route3_Underpass",
+  "layout": "LAYOUT_CORMORIA_ROUTE3_UNDERPASS",
+  "music": "MUS_RG_SEVII_CAVE",
+  "region_map_section": "MAPSEC_CORMORIA_ROUTE3_UNDERPASS",
+  "requires_flash": false,
+  "weather": "WEATHER_NONE",
+  "map_type": "MAP_TYPE_UNDERGROUND",
+  "allow_cycling": false,
+  "allow_escaping": false,
+  "allow_running": false,
+  "show_map_name": true,
+  "battle_scene": "MAP_BATTLE_SCENE_NORMAL",
+  "connections": 0,
+  "object_events": [
+    {
+      "graphics_id": "OBJ_EVENT_GFX_MAGMA_MEMBER_F",
+      "x": 44,
+      "y": 8,
+      "elevation": 0,
+      "movement_type": "MOVEMENT_TYPE_FACE_RIGHT",
+      "movement_range_x": 0,
+      "movement_range_y": 0,
+      "trainer_type": "TRAINER_TYPE_NONE",
+      "trainer_sight_or_berry_tree_id": "0",
+      "script": "0x0",
+      "flag": "Cormoria_FLAG_ROUTE3_UNDERPASS_EVILTEAM"
+    },
+    {
+      "graphics_id": "OBJ_EVENT_GFX_HIKER",
+      "x": 45,
+      "y": 8,
+      "elevation": 0,
+      "movement_type": "MOVEMENT_TYPE_FACE_LEFT",
+      "movement_range_x": 0,
+      "movement_range_y": 0,
+      "trainer_type": "TRAINER_TYPE_NONE",
+      "trainer_sight_or_berry_tree_id": "0",
+      "script": "0x0",
+      "flag": "Cormoria_FLAG_ROUTE3_UNDERPASS_EVILTEAM"
+    },
+    {
+      "graphics_id": "OBJ_EVENT_GFX_CAMPER",
+      "x": 9,
+      "y": 8,
+      "elevation": 0,
+      "movement_type": "MOVEMENT_TYPE_WANDER_AROUND",
+      "movement_range_x": 3,
+      "movement_range_y": 1,
+      "trainer_type": "TRAINER_TYPE_NONE",
+      "trainer_sight_or_berry_tree_id": "0",
+      "script": "Cormoria_Route3_Underpass_NPC1",
+      "flag": "0"
+    },
+    {
+      "graphics_id": "OBJ_EVENT_GFX_LIZA",
+      "x": 36,
+      "y": 34,
+      "elevation": 0,
+      "movement_type": "MOVEMENT_TYPE_LOOK_AROUND",
+      "movement_range_x": 0,
+      "movement_range_y": 0,
+      "trainer_type": "TRAINER_TYPE_NONE",
+      "trainer_sight_or_berry_tree_id": "0",
+      "script": "Cormoria_Route3_Underpass_NPC2",
+      "flag": "Cormoria_FLAG_BADGE02_GET"
+    },
+    {
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(CLEFAIRY)",
+      "x": 46,
+      "y": 9,
+      "elevation": 0,
+      "movement_type": "MOVEMENT_TYPE_FACE_LEFT",
+      "movement_range_x": 0,
+      "movement_range_y": 0,
+      "trainer_type": "TRAINER_TYPE_NONE",
+      "trainer_sight_or_berry_tree_id": "0",
+      "script": "NULL",
+      "flag": "Cormoria_FLAG_ROUTE3_UNDERPASS_EVILTEAM"
+    },
+    {
+      "graphics_id": "OBJ_EVENT_GFX_BREAKABLE_ROCK",
+      "x": 5,
+      "y": 4,
+      "elevation": 0,
+      "movement_type": "MOVEMENT_TYPE_NONE",
+      "movement_range_x": 0,
+      "movement_range_y": 0,
+      "trainer_type": "TRAINER_TYPE_NONE",
+      "trainer_sight_or_berry_tree_id": "0",
+      "script": "Cormoria_EventScript_RockSmash",
+      "flag": "Cormoria_FLAG_TEMP_2"
+    },
+    {
+      "graphics_id": "OBJ_EVENT_GFX_BREAKABLE_ROCK",
+      "x": 4,
+      "y": 5,
+      "elevation": 0,
+      "movement_type": "MOVEMENT_TYPE_NONE",
+      "movement_range_x": 0,
+      "movement_range_y": 0,
+      "trainer_type": "TRAINER_TYPE_NONE",
+      "trainer_sight_or_berry_tree_id": "0",
+      "script": "Cormoria_EventScript_RockSmash",
+      "flag": "Cormoria_FLAG_TEMP_3"
+    },
+    {
+      "graphics_id": "OBJ_EVENT_GFX_BREAKABLE_ROCK",
+      "x": 7,
+      "y": 4,
+      "elevation": 0,
+      "movement_type": "MOVEMENT_TYPE_NONE",
+      "movement_range_x": 0,
+      "movement_range_y": 0,
+      "trainer_type": "TRAINER_TYPE_NONE",
+      "trainer_sight_or_berry_tree_id": "0",
+      "script": "Cormoria_EventScript_RockSmash",
+      "flag": "Cormoria_FLAG_TEMP_1"
+    },
+    {
+      "graphics_id": "OBJ_EVENT_GFX_LEADER_INGER",
+      "x": 81,
+      "y": 5,
+      "elevation": 0,
+      "movement_type": "MOVEMENT_TYPE_FACE_UP",
+      "movement_range_x": 0,
+      "movement_range_y": 0,
+      "trainer_type": "TRAINER_TYPE_NORMAL",
+      "trainer_sight_or_berry_tree_id": "0",
+      "script": "Cormoria_GastreeGym_LeaderBattle",
+      "flag": "Cormoria_FLAG_HIDE_ROUTE3_UNDERPASS_GYM"
+    },
+    {
+      "graphics_id": "OBJ_EVENT_GFX_BOY_2",
+      "x": 83,
+      "y": 7,
+      "elevation": 0,
+      "movement_type": "MOVEMENT_TYPE_FACE_LEFT",
+      "movement_range_x": 0,
+      "movement_range_y": 0,
+      "trainer_type": "TRAINER_TYPE_NORMAL",
+      "trainer_sight_or_berry_tree_id": "5",
+      "script": "Cormoria_GastreeGym_TrainerBattle_Skip",
+      "flag": "Cormoria_FLAG_HIDE_ROUTE3_UNDERPASS_GYM"
+    },
+    {
+      "graphics_id": "OBJ_EVENT_GFX_YOUNGSTER",
+      "x": 79,
+      "y": 10,
+      "elevation": 0,
+      "movement_type": "MOVEMENT_TYPE_FACE_RIGHT",
+      "movement_range_x": 0,
+      "movement_range_y": 0,
+      "trainer_type": "TRAINER_TYPE_NORMAL",
+      "trainer_sight_or_berry_tree_id": "5",
+      "script": "Cormoria_GastreeGym_TrainerBattle_Jaco",
+      "flag": "Cormoria_FLAG_HIDE_ROUTE3_UNDERPASS_GYM"
+    },
+    {
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(DUGTRIO_ALOLA)",
+      "x": 43,
+      "y": 25,
+      "elevation": 0,
+      "movement_type": "MOVEMENT_TYPE_WANDER_AROUND",
+      "movement_range_x": 1,
+      "movement_range_y": 1,
+      "trainer_type": "TRAINER_TYPE_NONE",
+      "trainer_sight_or_berry_tree_id": "0",
+      "script": "Cormoria_Common_EventScript_Dugtrio_ToGalecrest",
+      "flag": "0"
+    },
+    {
+      "graphics_id": "OBJ_EVENT_GFX_BREAKABLE_ROCK",
+      "x": 40,
+      "y": 33,
+      "elevation": 0,
+      "movement_type": "MOVEMENT_TYPE_NONE",
+      "movement_range_x": 0,
+      "movement_range_y": 0,
+      "trainer_type": "TRAINER_TYPE_NONE",
+      "trainer_sight_or_berry_tree_id": "0",
+      "script": "Cormoria_EventScript_RockSmash",
+      "flag": "Cormoria_FLAG_TEMP_4"
+    },
+    {
+      "graphics_id": "OBJ_EVENT_GFX_BREAKABLE_ROCK",
+      "x": 41,
+      "y": 34,
+      "elevation": 0,
+      "movement_type": "MOVEMENT_TYPE_NONE",
+      "movement_range_x": 0,
+      "movement_range_y": 0,
+      "trainer_type": "TRAINER_TYPE_NONE",
+      "trainer_sight_or_berry_tree_id": "0",
+      "script": "Cormoria_EventScript_RockSmash",
+      "flag": "Cormoria_FLAG_TEMP_5"
+    }
+  ],
+  "warp_events": [
+    {
+      "x": 5,
+      "y": 13,
+      "elevation": 0,
+      "dest_map": "MAP_CORMORIA_ROUTE3",
+      "dest_warp_id": "2"
+    },
+    {
+      "x": 29,
+      "y": 6,
+      "elevation": 0,
+      "dest_map": "MAP_CORMORIA_ROUTE3_UNDERPASS",
+      "dest_warp_id": "2"
+    },
+    {
+      "x": 28,
+      "y": 27,
+      "elevation": 0,
+      "dest_map": "MAP_CORMORIA_ROUTE3_UNDERPASS",
+      "dest_warp_id": "1"
+    },
+    {
+      "x": 46,
+      "y": 41,
+      "elevation": 0,
+      "dest_map": "MAP_CORMORIA_ROUTE3",
+      "dest_warp_id": "3"
+    },
+    {
+      "x": 63,
+      "y": 47,
+      "elevation": 0,
+      "dest_map": "MAP_CORMORIA_ROUTE3",
+      "dest_warp_id": "4"
+    },
+    {
+      "x": 63,
+      "y": 19,
+      "elevation": 0,
+      "dest_map": "MAP_CORMORIA_GASTREE_CITY",
+      "dest_warp_id": "7"
+    },
+    {
+      "x": 63,
+      "y": 32,
+      "elevation": 0,
+      "dest_map": "MAP_CORMORIA_ROUTE3_UNDERPASS",
+      "dest_warp_id": "7"
+    },
+    {
+      "x": 45,
+      "y": 4,
+      "elevation": 0,
+      "dest_map": "MAP_CORMORIA_ROUTE3_UNDERPASS",
+      "dest_warp_id": "6"
+    },
+    {
+      "x": 81,
+      "y": 13,
+      "elevation": 0,
+      "dest_map": "MAP_CORMORIA_ROUTE3_UNDERPASS",
+      "dest_warp_id": "9"
+    },
+    {
+      "x": 63,
+      "y": 10,
+      "elevation": 0,
+      "dest_map": "MAP_CORMORIA_ROUTE3_UNDERPASS",
+      "dest_warp_id": "8"
+    },
+    {
+      "x": 5,
+      "y": 3,
+      "elevation": 0,
+      "dest_map": "MAP_CORMORIA_ROUTE3_UNDERPASS",
+      "dest_warp_id": "11"
+    },
+    {
+      "x": 14,
+      "y": 28,
+      "elevation": 0,
+      "dest_map": "MAP_CORMORIA_ROUTE3_UNDERPASS",
+      "dest_warp_id": "10"
+    },
+    {
+      "x": 5,
+      "y": 33,
+      "elevation": 0,
+      "dest_map": "MAP_CORMORIA_ROUTE3",
+      "dest_warp_id": "1"
+    },
+    {
+      "x": 48,
+      "y": 28,
+      "elevation": 0,
+      "dest_map": "MAP_CORMORIA_ROUTE3_UNDERPASS_EXTENDED",
+      "dest_warp_id": "0"
+    }
+  ],
+  "coord_events": [
+    {
+      "type": "trigger",
+      "x": 44,
+      "y": 6,
+      "elevation": 0,
+      "var": "VAR_TEMP_0",
+      "var_value": "0",
+      "script": "Cormoria_Route3_Underpass_EvilBattle_Trigger0"
+    },
+    {
+      "type": "trigger",
+      "x": 45,
+      "y": 6,
+      "elevation": 0,
+      "var": "VAR_TEMP_0",
+      "var_value": "0",
+      "script": "Cormoria_Route3_Underpass_EvilBattle_Trigger1"
+    },
+    {
+      "type": "trigger",
+      "x": 46,
+      "y": 6,
+      "elevation": 0,
+      "var": "VAR_TEMP_0",
+      "var_value": "0",
+      "script": "Cormoria_Route3_Underpass_EvilBattle_Trigger2"
+    },
+    {
+      "type": "trigger",
+      "x": 45,
+      "y": 5,
+      "elevation": 0,
+      "var": "VAR_TEMP_C",
+      "var_value": "0",
+      "script": "Cormoria_Route3_Underpass_SaveGameTrigger"
+    },
+    {
+      "type": "trigger",
+      "x": 46,
+      "y": 5,
+      "elevation": 0,
+      "var": "VAR_TEMP_C",
+      "var_value": "0",
+      "script": "Cormoria_Route3_Underpass_SaveGameTrigger"
+    },
+    {
+      "type": "trigger",
+      "x": 44,
+      "y": 5,
+      "elevation": 0,
+      "var": "VAR_TEMP_C",
+      "var_value": "0",
+      "script": "Cormoria_Route3_Underpass_SaveGameTrigger"
+    },
+    {
+      "type": "trigger",
+      "x": 5,
+      "y": 12,
+      "elevation": 0,
+      "var": "VAR_TEMP_0",
+      "var_value": "0",
+      "script": "Cormoria_Common_EventScript_MapPopup_Enable"
+    },
+    {
+      "type": "trigger",
+      "x": 4,
+      "y": 12,
+      "elevation": 0,
+      "var": "VAR_TEMP_0",
+      "var_value": "0",
+      "script": "Cormoria_Common_EventScript_MapPopup_Enable"
+    },
+    {
+      "type": "trigger",
+      "x": 6,
+      "y": 12,
+      "elevation": 0,
+      "var": "VAR_TEMP_0",
+      "var_value": "0",
+      "script": "Cormoria_Common_EventScript_MapPopup_Enable"
+    },
+    {
+      "type": "trigger",
+      "x": 5,
+      "y": 11,
+      "elevation": 0,
+      "var": "VAR_TEMP_0",
+      "var_value": "0",
+      "script": "Cormoria_Common_EventScript_MapPopup_Disable"
+    },
+    {
+      "type": "trigger",
+      "x": 6,
+      "y": 11,
+      "elevation": 0,
+      "var": "VAR_TEMP_0",
+      "var_value": "0",
+      "script": "Cormoria_Common_EventScript_MapPopup_Disable"
+    },
+    {
+      "type": "trigger",
+      "x": 4,
+      "y": 11,
+      "elevation": 0,
+      "var": "VAR_TEMP_0",
+      "var_value": "0",
+      "script": "Cormoria_Common_EventScript_MapPopup_Disable"
+    },
+    {
+      "type": "trigger",
+      "x": 4,
+      "y": 32,
+      "elevation": 0,
+      "var": "VAR_TEMP_0",
+      "var_value": "0",
+      "script": "Cormoria_Common_EventScript_MapPopup_Enable"
+    },
+    {
+      "type": "trigger",
+      "x": 5,
+      "y": 32,
+      "elevation": 0,
+      "var": "VAR_TEMP_0",
+      "var_value": "0",
+      "script": "Cormoria_Common_EventScript_MapPopup_Enable"
+    },
+    {
+      "type": "trigger",
+      "x": 6,
+      "y": 32,
+      "elevation": 0,
+      "var": "VAR_TEMP_0",
+      "var_value": "0",
+      "script": "Cormoria_Common_EventScript_MapPopup_Enable"
+    },
+    {
+      "type": "trigger",
+      "x": 4,
+      "y": 31,
+      "elevation": 0,
+      "var": "VAR_TEMP_0",
+      "var_value": "0",
+      "script": "Cormoria_Common_EventScript_MapPopup_Disable"
+    },
+    {
+      "type": "trigger",
+      "x": 5,
+      "y": 31,
+      "elevation": 0,
+      "var": "VAR_TEMP_0",
+      "var_value": "0",
+      "script": "Cormoria_Common_EventScript_MapPopup_Disable"
+    },
+    {
+      "type": "trigger",
+      "x": 6,
+      "y": 31,
+      "elevation": 0,
+      "var": "VAR_TEMP_0",
+      "var_value": "0",
+      "script": "Cormoria_Common_EventScript_MapPopup_Disable"
+    },
+    {
+      "type": "trigger",
+      "x": 64,
+      "y": 46,
+      "elevation": 0,
+      "var": "VAR_TEMP_0",
+      "var_value": "0",
+      "script": "Cormoria_Common_EventScript_MapPopup_Enable"
+    },
+    {
+      "type": "trigger",
+      "x": 63,
+      "y": 46,
+      "elevation": 0,
+      "var": "VAR_TEMP_0",
+      "var_value": "0",
+      "script": "Cormoria_Common_EventScript_MapPopup_Enable"
+    },
+    {
+      "type": "trigger",
+      "x": 62,
+      "y": 46,
+      "elevation": 0,
+      "var": "VAR_TEMP_0",
+      "var_value": "0",
+      "script": "Cormoria_Common_EventScript_MapPopup_Enable"
+    },
+    {
+      "type": "trigger",
+      "x": 62,
+      "y": 45,
+      "elevation": 0,
+      "var": "VAR_TEMP_0",
+      "var_value": "0",
+      "script": "Cormoria_Common_EventScript_MapPopup_Disable"
+    },
+    {
+      "type": "trigger",
+      "x": 63,
+      "y": 45,
+      "elevation": 0,
+      "var": "VAR_TEMP_0",
+      "var_value": "0",
+      "script": "Cormoria_Common_EventScript_MapPopup_Disable"
+    },
+    {
+      "type": "trigger",
+      "x": 64,
+      "y": 45,
+      "elevation": 0,
+      "var": "VAR_TEMP_0",
+      "var_value": "0",
+      "script": "Cormoria_Common_EventScript_MapPopup_Disable"
+    },
+    {
+      "type": "trigger",
+      "x": 64,
+      "y": 18,
+      "elevation": 0,
+      "var": "VAR_TEMP_0",
+      "var_value": "0",
+      "script": "Cormoria_Common_EventScript_MapPopup_Enable"
+    },
+    {
+      "type": "trigger",
+      "x": 63,
+      "y": 18,
+      "elevation": 0,
+      "var": "VAR_TEMP_0",
+      "var_value": "0",
+      "script": "Cormoria_Common_EventScript_MapPopup_Enable"
+    },
+    {
+      "type": "trigger",
+      "x": 62,
+      "y": 18,
+      "elevation": 0,
+      "var": "VAR_TEMP_0",
+      "var_value": "0",
+      "script": "Cormoria_Common_EventScript_MapPopup_Enable"
+    },
+    {
+      "type": "trigger",
+      "x": 62,
+      "y": 17,
+      "elevation": 0,
+      "var": "VAR_TEMP_0",
+      "var_value": "0",
+      "script": "Cormoria_Common_EventScript_MapPopup_Disable"
+    },
+    {
+      "type": "trigger",
+      "x": 63,
+      "y": 17,
+      "elevation": 0,
+      "var": "VAR_TEMP_0",
+      "var_value": "0",
+      "script": "Cormoria_Common_EventScript_MapPopup_Disable"
+    },
+    {
+      "type": "trigger",
+      "x": 64,
+      "y": 17,
+      "elevation": 0,
+      "var": "VAR_TEMP_0",
+      "var_value": "0",
+      "script": "Cormoria_Common_EventScript_MapPopup_Disable"
+    },
+    {
+      "type": "trigger",
+      "x": 63,
+      "y": 12,
+      "elevation": 0,
+      "var": "VAR_TEMP_0",
+      "var_value": "0",
+      "script": "Cormoria_Common_EventScript_EnableWild"
+    },
+    {
+      "type": "trigger",
+      "x": 80,
+      "y": 13,
+      "elevation": 0,
+      "var": "VAR_TEMP_0",
+      "var_value": "0",
+      "script": "Cormoria_Common_EventScript_DisableWild"
+    },
+    {
+      "type": "trigger",
+      "x": 81,
+      "y": 12,
+      "elevation": 0,
+      "var": "VAR_TEMP_0",
+      "var_value": "0",
+      "script": "Cormoria_Common_EventScript_DisableWild"
+    },
+    {
+      "type": "trigger",
+      "x": 82,
+      "y": 13,
+      "elevation": 0,
+      "var": "VAR_TEMP_0",
+      "var_value": "0",
+      "script": "Cormoria_Common_EventScript_DisableWild"
+    },
+    {
+      "type": "trigger",
+      "x": 62,
+      "y": 12,
+      "elevation": 0,
+      "var": "VAR_TEMP_0",
+      "var_value": "0",
+      "script": "Cormoria_Common_EventScript_EnableWild"
+    }
+  ],
+  "bg_events": [
+    {
+      "type": "hidden_item",
+      "x": 45,
+      "y": 16,
+      "elevation": 0,
+      "item": "ITEM_PEARL",
+      "flag": "Cormoria_FLAG_HIDDEN_ITEM_ROUTE3_D"
+    },
+    {
+      "type": "sign",
+      "x": 81,
+      "y": 4,
+      "elevation": 0,
+      "player_facing_dir": "BG_EVENT_PLAYER_FACING_ANY",
+      "script": "Cormoria_GastreeGym_WeatheredRock"
+    },
+    {
+      "type": "sign",
+      "x": 82,
+      "y": 5,
+      "elevation": 0,
+      "player_facing_dir": "BG_EVENT_PLAYER_FACING_ANY",
+      "script": "Cormoria_GastreeGym_WeatheredRock"
+    },
+    {
+      "type": "sign",
+      "x": 83,
+      "y": 6,
+      "elevation": 0,
+      "player_facing_dir": "BG_EVENT_PLAYER_FACING_ANY",
+      "script": "Cormoria_GastreeGym_WeatheredRock"
+    },
+    {
+      "type": "sign",
+      "x": 78,
+      "y": 8,
+      "elevation": 0,
+      "player_facing_dir": "BG_EVENT_PLAYER_FACING_ANY",
+      "script": "Cormoria_GastreeGym_WeatheredRock"
+    },
+    {
+      "type": "sign",
+      "x": 79,
+      "y": 9,
+      "elevation": 0,
+      "player_facing_dir": "BG_EVENT_PLAYER_FACING_ANY",
+      "script": "Cormoria_GastreeGym_WeatheredRock"
+    },
+    {
+      "type": "sign",
+      "x": 84,
+      "y": 10,
+      "elevation": 0,
+      "player_facing_dir": "BG_EVENT_PLAYER_FACING_ANY",
+      "script": "Cormoria_GastreeGym_WeatheredRock"
+    },
+    {
+      "type": "sign",
+      "x": 83,
+      "y": 12,
+      "elevation": 0,
+      "player_facing_dir": "BG_EVENT_PLAYER_FACING_ANY",
+      "script": "Cormoria_GastreeGym_WeatheredRock"
+    },
+    {
+      "type": "sign",
+      "x": 79,
+      "y": 13,
+      "elevation": 0,
+      "player_facing_dir": "BG_EVENT_PLAYER_FACING_ANY",
+      "script": "Cormoria_GastreeGym_WeatheredRock"
+    },
+    {
+      "type": "sign",
+      "x": 78,
+      "y": 13,
+      "elevation": 0,
+      "player_facing_dir": "BG_EVENT_PLAYER_FACING_ANY",
+      "script": "Cormoria_GastreeGym_WeatheredRock"
+    }
+  ],
+  "rom_world": "cormoria",
+  "region": "REGION_CORMORIA"
+}

@@ -21,21 +21,24 @@ SECTIONS {
     OVERLAY ORIGIN(EWRAM) : NOCROSSREFS
     {
         .test_heap                   { src/malloc.o(.sbss) }
-        .test_johto_save             { . = . + 0x19500; test/johto/save.o(.sbss) }
-        .test_coop_presence_runtime  { . = . + 0x19500; test/coop/presence_runtime.o(.sbss) }
-        .test_coop_net_bridge        { . = . + 0x19500; test/coop/net_bridge.o(.sbss) }
-        .test_coop_battle_runtime     { . = . + 0x19500; test/coop/battle_runtime.o(.sbss) }
-        .test_johto_field_moves      { . = . + 0x19500; test/johto/field_moves.o(.sbss) }
-        .test_johto_bug_contest_save { . = . + 0x19500; test/johto/bug_contest_save.o(.sbss) }
-        .test_johto_bug_settlement   { . = . + 0x19500; test/johto/bug_contest_settlement.o(.sbss) }
-        .test_johto_bug_contest      { . = . + 0x19500; test/johto/bug_contest.o(.sbss) }
-        .test_johto_trainer_slides   { . = . + 0x19500; test/johto/trainer_slide_bounds.o(.sbss) }
-        .test_johto_berry_plots      { . = . + 0x19500; test/johto/berry_plots.o(.sbss) }
-        .test_johto_berry_lifetime   { . = . + 0x19500; test/johto/berry_lifetime.o(.sbss) }
-        .test_johto_berry_harvest    { . = . + 0x19500; test/johto/berry_harvest.o(.sbss) }
-        .test_johto_headbutt         { . = . + 0x19500; test/johto/headbutt.o(.sbss) }
-        .test_coop_save              { . = . + 0x19500; test/coop/save.o(.sbss) }
+        .test_johto_save             { . = . + 0x19500; test/johto/[s]ave.o(.sbss) }
+        .test_coop_presence_runtime  { . = . + 0x19500; test/coop/[p]resence_runtime.o(.sbss) }
+        .test_coop_net_bridge        { . = . + 0x19500; test/coop/[n]et_bridge.o(.sbss) }
+        .test_coop_battle_runtime     { . = . + 0x19500; test/coop/[b]attle_runtime.o(.sbss) }
+        .test_johto_field_moves      { . = . + 0x19500; test/johto/[f]ield_moves.o(.sbss) }
+        .test_johto_bug_contest_save { . = . + 0x19500; test/johto/[b]ug_contest_save.o(.sbss) }
+        .test_johto_bug_settlement   { . = . + 0x19500; test/johto/[b]ug_contest_settlement.o(.sbss) }
+        .test_johto_bug_contest      { . = . + 0x19500; test/johto/[b]ug_contest.o(.sbss) }
+        .test_johto_trainer_slides   { . = . + 0x19500; test/johto/[t]rainer_slide_bounds.o(.sbss) }
+        .test_johto_berry_plots      { . = . + 0x19500; test/johto/[b]erry_plots.o(.sbss) }
+        .test_johto_berry_lifetime   { . = . + 0x19500; test/johto/[b]erry_lifetime.o(.sbss) }
+        .test_johto_berry_harvest    { . = . + 0x19500; test/johto/[b]erry_harvest.o(.sbss) }
+        .test_johto_headbutt         { . = . + 0x19500; test/johto/[h]eadbutt.o(.sbss) }
+        .test_coop_save              { . = . + 0x19500; test/coop/[s]ave.o(.sbss) }
         .test_sprite                 { . = . + 0x19500; test/sprite.o(.sbss) }
+        /* TESTING-only 4 KiB sprite scratch (sPuzzleTestSprites); the puzzle
+         * state pointer beside it is per-test too. Keeps the test ELF in EWRAM. */
+        .test_sliding_puzzle         { . = . + 0x19500; src/[s]liding_puzzle.o(.sbss) }
     } > EWRAM
     __test_ewram_overlay_end = .;
 
@@ -173,7 +176,7 @@ SECTIONS {
     ALIGN(4)
     {
         __start_tests = .;
-        test/test_test_runner.o(.tests); /* Sanity checks first. */
+        test/[t]est_test_runner.o(.tests); /* Sanity checks first, if selected. */
         test/*.o(.tests);
         __stop_tests = .;
         test/*.o(.text);

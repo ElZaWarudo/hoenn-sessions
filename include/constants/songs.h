@@ -543,6 +543,10 @@
 #define PH_NURSE_HELD               608
 #define PH_NURSE_SOLO               609
 
+// Stable song ID in both ROMs; only Cormoria carries the donor arrangement.
+#define MUS_HGSS_CASINO             610
+#define MUS_CASINO_PLUS_1           611
+
 #define MUS_ROUTE118                0x7FFF  // Map is split into 2 music sections. controlled by GetCurrLocationDefaultMusic().
 
 #define MUS_NONE                    0xFFFF

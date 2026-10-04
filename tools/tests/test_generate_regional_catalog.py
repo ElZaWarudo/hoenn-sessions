@@ -2,6 +2,7 @@
 """Focused tests for the complete co-op regional map catalog."""
 
 import importlib.util
+import re
 import sys
 import tempfile
 import unittest
@@ -29,6 +30,43 @@ class RegionalCatalogTests(unittest.TestCase):
         later_kanto = [entry for entry in entries if entry[1].startswith("KANTO_LATER_")]
         self.assertEqual(len(later_kanto), 168)
         self.assertTrue(all(region == "Kanto" for region, _, _, _ in later_kanto))
+        self.assertIn(
+            ("Cormoria", "CORMORIA_RIVETSHORE_CITY_HARBOR", 82, 21), entries
+        )
+
+    def test_cormoria_requires_its_own_engine_and_section(self):
+        sections, sevii, special_area = catalog.source_sections()
+        cormoria = "MAPSEC_CORMORIA_RIVETSHORE_CITY"
+        self.assertEqual(
+            catalog.protocol_region(
+                "REGION_CORMORIA", cormoria, sections, sevii, special_area
+            ),
+            "Cormoria",
+        )
+        for engine in ("REGION_HOENN", "REGION_KANTO", "REGION_JOHTO"):
+            with self.subTest(engine=engine), self.assertRaises(catalog.CatalogError):
+                catalog.protocol_region(engine, cormoria, sections, sevii, special_area)
+        with self.assertRaises(catalog.CatalogError):
+            catalog.protocol_region(
+                "REGION_CORMORIA", "MAPSEC_LITTLEROOT_TOWN", sections, sevii, special_area
+            )
+
+    def test_group_fly_ordinals_keep_host_prefix_and_reject_unassigned_cormoria(self):
+        source = (ROOT / "src/region_map.c").read_text(encoding="utf-8")
+        table = source.split("static const struct FlyLocation sFlyLocations[] =", 1)[1].split("\n};", 1)[0]
+        sections = re.findall(r"\bMAPSEC_[A-Z0-9_]+", table)
+        # These positions define main's group routes 8..17, not just menu order.
+        self.assertEqual(sections[:10], [
+            "MAPSEC_NEW_BARK_TOWN", "MAPSEC_JOHTO_CHERRYGROVE_CITY", "MAPSEC_JOHTO_VIOLET_CITY",
+            "MAPSEC_JOHTO_AZALEA_TOWN", "MAPSEC_JOHTO_GOLDENROD_CITY", "MAPSEC_JOHTO_ECRUTEAK_CITY",
+            "MAPSEC_JOHTO_OLIVINE_CITY", "MAPSEC_JOHTO_CIANWOOD_CITY", "MAPSEC_JOHTO_MAHOGANY_TOWN",
+            "MAPSEC_JOHTO_BLACKTHORN_CITY"])
+        cormoria = [section for section in sections if section.startswith("MAPSEC_CORMORIA_")]
+        self.assertEqual(len(cormoria), 11)
+        self.assertEqual(sections[-11:], cormoria)
+        selector = source.split("u8 CoopRegionMap_GroupFlyRouteForSelection", 1)[1].split("\nbool8 CoopRegionMap_GroupFlyFields", 1)[0]
+        self.assertRegex(selector, r"if \(location->regionMapType == REGION_MAP_CORMORIA\)\s+return 0;")
+        self.assertLess(selector.index("location->regionMapType == REGION_MAP_CORMORIA"), selector.index("index = location - sFlyLocations"))
 
     def test_geographic_kanto_routes_use_engine_region_authority(self):
         sections, sevii, special_area = catalog.source_sections()

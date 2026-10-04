@@ -12,15 +12,18 @@ use std::{
 };
 
 use coop_cloud::{
-    AcquireLeaseRequest, ArtifactIdentity, CharacterId, ClientInstanceId, CommitId,
-    HeartbeatLeaseRequest, IdempotencyKey, LeaseContract, MintRealtimeTicketRequest,
-    PrepareSnapshotRequest, ReconnectLeaseRequest, ReleaseLeaseRequest, ResumePackageManifest,
-    ResumeSelection, Revision, RuntimeLeaseFence, Sha256Digest, SignedManifestEnvelope,
+    AcquireLeaseRequest, AcquireWorldLeaseResponse, ArtifactIdentity, CharacterId,
+    ClientInstanceId, CommitId, HeartbeatLeaseRequest, IdempotencyKey, LeaseContract,
+    MintRealtimeTicketRequest, PrepareSnapshotRequest, ReconnectLeaseRequest, ReleaseLeaseRequest,
+    ResumePackageManifest, ResumeSelection, Revision, RomHandoffCommitRequest,
+    RomHandoffPrepareRequest, RomHandoffPrepareResponse, RomHandoffRecoveryRequest,
+    RomHandoffRecoveryStatus, RuntimeLeaseFence, Sha256Digest, SignedManifestEnvelope,
     SnapshotFile, SnapshotFinalizeFence, SnapshotFinalizeRequest, SnapshotId, SnapshotListRequest,
     SnapshotListResponse, SnapshotPrepareFence, SnapshotPrepareResponse, SnapshotRecord,
     SnapshotRestoreRequest, SnapshotRestoreResponse, TrustedManifestKey, UploadTarget,
 };
-use coop_save::{CharacterSave, RegistryContract, validate_character_save};
+pub use coop_protocol::RomWorldId;
+use coop_save::{CharacterSave, RegistryContract, parse_v2, validate_character_save};
 use coop_sidecar::control::{CheckpointGrant, CommandStatus, ControlCommand, ControlEvent};
 use tempfile::TempDir;
 use thiserror::Error;
@@ -50,12 +53,14 @@ use crate::{
     compat::BuildCompatibility,
     epoch::{EpochError, EpochStore},
     keychain::{KeychainError, RefreshTokenStore},
+    paired_travel::{PairedPhase, PairedTerminal, PairedTravelRecord},
     process::{
         ControlChannel, ProcessError, RawSupervisorEvent, SessionSupervisor, SupervisorEvent,
         new_command_id,
     },
     realtime::{RealtimeApi, RealtimeCoordinator, RealtimeCoordinatorEvent, RealtimeHttpError},
     recovery::RecoveryMarkerV2,
+    rom_travel::{LeaseFenceIdentity, TravelPhase, TravelRecord},
 };
 
 pub type CloudFuture<'a, T> = Pin<Box<dyn Future<Output = Result<T, SessionError>> + Send + 'a>>;
@@ -179,6 +184,11 @@ enum MintWait {
     Unauthorized,
     Unavailable,
     Shutdown,
+    Portal {
+        session_epoch: u32,
+        portal_sequence: u32,
+        portal_id: String,
+    },
     Child(RawSupervisorEvent),
 }
 
@@ -539,6 +549,21 @@ where
                 RawSupervisorEvent::Control(ControlEvent::RomPresenceReset) => {
                     return Err(SessionError::Realtime);
                 }
+                RawSupervisorEvent::Control(portal @ ControlEvent::PortalTravelRequest { .. }) => {
+                    let ControlEvent::PortalTravelRequest {
+                        session_epoch,
+                        portal_sequence,
+                        portal_id,
+                    } = portal
+                    else {
+                        unreachable!("portal mint arm admits only portal requests");
+                    };
+                    return Ok(MintWait::Portal {
+                        session_epoch,
+                        portal_sequence,
+                        portal_id,
+                    });
+                }
                 RawSupervisorEvent::Control(_) => return Err(SessionError::Realtime),
                 child @ (RawSupervisorEvent::SidecarExited(_) | RawSupervisorEvent::MgbaExited(_)) => {
                     return Ok(MintWait::Child(child));
@@ -550,6 +575,70 @@ where
 
 /// HTTP or deterministic fake cloud adapter. Wire values are all coop-cloud DTOs.
 pub trait CloudApi: AuthApi {
+    fn acquire_world<'a>(
+        &'a self,
+        _auth: &'a AuthSession,
+        _request: AcquireLeaseRequest,
+    ) -> CloudFuture<'a, AcquireWorldLeaseResponse> {
+        Box::pin(async { Err(SessionError::PortalHandoffUnavailable) })
+    }
+    fn reconcile_rom_handoff<'a>(
+        &'a self,
+        _auth: &'a AuthSession,
+        _request: RomHandoffRecoveryRequest,
+    ) -> CloudFuture<'a, RomHandoffRecoveryStatus> {
+        Box::pin(async { Err(SessionError::PortalHandoffUnavailable) })
+    }
+    fn prepare_rom_handoff<'a>(
+        &'a self,
+        _auth: &'a AuthSession,
+        _request: RomHandoffPrepareRequest,
+    ) -> CloudFuture<'a, RomHandoffPrepareResponse> {
+        Box::pin(async { Err(SessionError::PortalHandoffUnavailable) })
+    }
+    fn commit_rom_handoff<'a>(
+        &'a self,
+        _auth: &'a AuthSession,
+        _request: RomHandoffCommitRequest,
+    ) -> CloudFuture<'a, SnapshotRecord> {
+        Box::pin(async { Err(SessionError::PortalHandoffUnavailable) })
+    }
+    fn abort_rom_handoff<'a>(
+        &'a self,
+        _auth: &'a AuthSession,
+        _character_id: CharacterId,
+        _stage_id: SnapshotId,
+    ) -> CloudFuture<'a, ()> {
+        Box::pin(async { Err(SessionError::PortalHandoffUnavailable) })
+    }
+    fn join_group_rom_handoff<'a>(
+        &'a self,
+        _auth: &'a AuthSession,
+        _request: coop_cloud::GroupRomHandoffJoinRequest,
+    ) -> CloudFuture<'a, coop_cloud::GroupRomHandoffStatus> {
+        Box::pin(async { Err(SessionError::PortalHandoffUnavailable) })
+    }
+    fn status_group_rom_handoff<'a>(
+        &'a self,
+        _auth: &'a AuthSession,
+        _request: coop_cloud::GroupRomHandoffStatusRequest,
+    ) -> CloudFuture<'a, coop_cloud::GroupRomHandoffStatus> {
+        Box::pin(async { Err(SessionError::PortalHandoffUnavailable) })
+    }
+    fn arrive_group_rom_handoff<'a>(
+        &'a self,
+        _auth: &'a AuthSession,
+        _request: coop_cloud::GroupRomHandoffArrivalRequest,
+    ) -> CloudFuture<'a, coop_cloud::GroupRomHandoffStatus> {
+        Box::pin(async { Err(SessionError::PortalHandoffUnavailable) })
+    }
+    fn abort_group_rom_handoff<'a>(
+        &'a self,
+        _auth: &'a AuthSession,
+        _request: coop_cloud::GroupRomHandoffAbortRequest,
+    ) -> CloudFuture<'a, coop_cloud::GroupRomHandoffStatus> {
+        Box::pin(async { Err(SessionError::PortalHandoffUnavailable) })
+    }
     /// `POST /v1/groups/{group_id}/trade-offers` (an open in-game offer).
     fn trade_offer_create(
         &self,
@@ -888,6 +977,8 @@ pub enum SessionError {
     Cloud,
     #[error("previous session is still active")]
     AcquireConflict,
+    #[error("the persisted world-acquire key is closed and may be cleared")]
+    AcquireClosed,
     #[error("cloud authorization expired")]
     Unauthorized,
     #[error("requested artifact was not found")]
@@ -916,6 +1007,8 @@ pub enum SessionError {
     CheckpointNotAuthorized,
     #[error("checkpoint response did not correlate to the active request")]
     CheckpointCorrelation,
+    #[error("cross-ROM portal handoff is not available")]
+    PortalHandoffUnavailable,
     #[error("checkpoint protocol deadline exceeded")]
     CheckpointTimeout,
     #[error("snapshot finalization conflicted with a newer revision")]
@@ -933,9 +1026,34 @@ pub enum SessionError {
     StoryTravelRecoveryPending,
 }
 
+/// The source checkpoint that is safe to hand to the multi-ROM coordinator.
+///
+/// The launcher only creates this value after the portal request has been
+/// followed immediately by its correlated ready event, the canonical save
+/// has been finalized, and both source children have been stopped and reaped.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PortalTravelSource {
+    pub portal_id: String,
+    pub portal_sequence: u32,
+    pub checkpoint_ready_sequence: u32,
+    pub source_snapshot_id: SnapshotId,
+    pub source_revision: Revision,
+    pub source_save_digest: Sha256Digest,
+    pub source_save_generation: u32,
+}
+
+/// Terminal result of a supervised session that understands region portals.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum SessionRunOutcome {
+    Completed,
+    PortalTravel(PortalTravelSource),
+}
+
 #[derive(Clone)]
 pub struct SessionConfig {
     pub client_instance_id: ClientInstanceId,
+    /// Stable persisted world identity selected by the trusted release catalog.
+    pub rom_world_id: RomWorldId,
     pub manifest: BuildCompatibility,
     pub trusted_manifest_key: TrustedManifestKey,
     pub epoch_store: EpochStore,
@@ -948,6 +1066,7 @@ impl std::fmt::Debug for SessionConfig {
         formatter
             .debug_struct("SessionConfig")
             .field("client_instance_id", &self.client_instance_id)
+            .field("rom_world_id", &self.rom_world_id)
             .field("manifest", &self.manifest)
             .field("trusted_manifest_key", &"[PINNED]")
             .field("epoch_store", &self.epoch_store)
@@ -1209,6 +1328,47 @@ impl SessionWorkspace {
     ///
     /// Returns an error for an unknown filename or filesystem failure.
     pub fn write_atomic(&self, name: &str, bytes: &[u8]) -> Result<PathBuf, SessionError> {
+        self.write_atomic_inner(name, bytes, false)
+    }
+
+    /// Restores the canonical destination save after a verifier has stopped.
+    ///
+    /// The verifier owns this private workspace while it runs and may delete
+    /// or rewrite the emulator's implicit save file.  A clean verifier exit
+    /// must leave the trusted staged bytes available for the coordinator's
+    /// commit-artifact preflight, so an existing changed regular file is
+    /// deliberately replaced and then read back through the fixed-file
+    /// validation path.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the existing artifact is not a regular file,
+    /// when the replacement fails, or when the restored bytes cannot be
+    /// revalidated exactly.
+    pub fn restore_character_save(&self, bytes: &[u8]) -> Result<PathBuf, SessionError> {
+        let path = fixed_path(self.path(), "character.sav")?;
+        match self.read_fixed("character.sav") {
+            Ok(existing) if existing == bytes => return Ok(path),
+            Ok(_) => {}
+            Err(SessionError::Filesystem(error))
+                if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => return Err(error),
+        }
+        let path = self.write_atomic_inner("character.sav", bytes, true)?;
+        if self.read_fixed("character.sav")? != bytes {
+            return Err(SessionError::CorruptActiveSav);
+        }
+        Ok(path)
+    }
+
+    fn write_atomic_inner(
+        &self,
+        name: &str,
+        bytes: &[u8],
+        replace_existing: bool,
+    ) -> Result<PathBuf, SessionError> {
+        #[cfg(not(windows))]
+        let _ = replace_existing;
         if bytes.len() > MAX_SESSION_FILE_BYTES {
             return Err(SessionError::Package);
         }
@@ -1220,7 +1380,7 @@ impl SessionWorkspace {
         reject_symlink(&path)?;
         reject_symlink(&temporary)?;
         #[cfg(windows)]
-        if path.exists() {
+        if path.exists() && !replace_existing {
             // Windows' portable rename operation is not an atomic replace.
             // Refuse to replace an existing fixed file rather than creating
             // a remove-then-rename window in which readers see no file.  The
@@ -1241,6 +1401,21 @@ impl SessionWorkspace {
             file.sync_all().map_err(SessionError::Filesystem)?;
             drop(file);
             reject_symlink_ancestors(&path).map_err(SessionError::Filesystem)?;
+            #[cfg(windows)]
+            if replace_existing {
+                // std::fs::rename cannot replace an existing Windows file.
+                // This remove-then-rename window is bounded to the private
+                // workspace after verifier cleanup; a retry starts by
+                // restoring the same staged bytes and handles a missing SAV.
+                match std::fs::symlink_metadata(&path) {
+                    Ok(metadata) if metadata.file_type().is_symlink() || !metadata.is_file() => {
+                        return Err(SessionError::Package);
+                    }
+                    Ok(_) => std::fs::remove_file(&path).map_err(SessionError::Filesystem)?,
+                    Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+                    Err(error) => return Err(SessionError::Filesystem(error)),
+                }
+            }
             std::fs::rename(&temporary, &path).map_err(SessionError::Filesystem)
         })();
         if result.is_err() {
@@ -1372,6 +1547,17 @@ impl SessionWorkspace {
             }
             self.write_atomic(name, &bytes)?;
         }
+        Ok(())
+    }
+
+    /// Writes the bridge addresses from a compatibility-validated ROM manifest.
+    /// Arrival verification uses the same generated input as normal gameplay.
+    pub fn write_generated_addresses(
+        &self,
+        manifest: &crate::compat::BridgeManifest,
+    ) -> Result<(), SessionError> {
+        let bytes = render_generated_addresses(manifest);
+        self.write_atomic("generated_addresses.lua", bytes.as_bytes())?;
         Ok(())
     }
 }
@@ -1662,6 +1848,15 @@ pub struct SessionLifecycle {
     /// this separate from the cloud revision makes wrap-safe ROM generation
     /// correlation explicit at the launcher boundary.
     save_generation: Option<u32>,
+    /// The source head established by the most recent successful checkpoint.
+    /// Portal travel may reference it only after that checkpoint completes.
+    last_finalized_snapshot_id: Option<SnapshotId>,
+    /// Set only after a portal checkpoint has been finalized and the source
+    /// children have been reaped. The next outer coordinator consumes it.
+    portal_outcome: Option<PortalTravelSource>,
+    /// A portal frame sequence is scoped to one source session. Seeing the
+    /// same sequence twice is an ambiguous replay and fails closed.
+    last_portal_sequence: Option<u32>,
     revision_updates: Option<tokio::sync::watch::Sender<u64>>,
     /// Host UI requests served while realtime runs (see `live_requests`).
     live_requests: Option<tokio::sync::mpsc::Receiver<crate::live_requests::LiveRequest>>,
@@ -1691,6 +1886,12 @@ impl std::fmt::Debug for SessionLifecycle {
                 &self.checkpoint_resume_baseline,
             )
             .field("save_generation", &self.save_generation)
+            .field(
+                "last_finalized_snapshot_id",
+                &self.last_finalized_snapshot_id,
+            )
+            .field("portal_outcome", &self.portal_outcome)
+            .field("last_portal_sequence", &self.last_portal_sequence)
             .field("workspace", &self.workspace)
             .finish_non_exhaustive()
     }
@@ -1716,11 +1917,41 @@ impl SessionLifecycle {
         self.realtime_lifecycle_enqueue_burst = count;
     }
 
+    /// Returns the stable ROM world bound to this source session.
+    #[must_use]
+    pub const fn rom_world_id(&self) -> RomWorldId {
+        self.config.rom_world_id
+    }
+
+    /// Returns the canonical save registry already validated by the signed
+    /// compatibility manifest used to construct this session.
+    pub fn registry_contract(&self) -> Result<RegistryContract, SessionError> {
+        self.config
+            .manifest
+            .manifest
+            .save
+            .registry_contract()
+            .map_err(|_| SessionError::Package)
+    }
+
     /// Returns the generation last accepted from the canonical character
     /// save, if this workspace has materialized one.
     #[must_use]
     pub const fn save_generation(&self) -> Option<u32> {
         self.save_generation
+    }
+
+    /// Server-authoritative checkpoint ID for a portal intent that was
+    /// followed by a successful ordinary save.
+    #[must_use]
+    pub const fn last_finalized_snapshot_id(&self) -> Option<SnapshotId> {
+        self.last_finalized_snapshot_id
+    }
+
+    /// Takes the source record produced by a successful portal cutover.
+    #[must_use]
+    pub fn take_portal_outcome(&mut self) -> Option<PortalTravelSource> {
+        self.portal_outcome.take()
     }
 
     pub(crate) fn active_save_bytes(&self) -> Result<Vec<u8>, SessionError> {
@@ -1742,32 +1973,46 @@ impl SessionLifecycle {
         }
     }
 
-    fn registry_contract(&self) -> Result<RegistryContract, SessionError> {
-        self.config
-            .manifest
-            .manifest
-            .save
-            .registry_contract()
-            .map_err(|_| SessionError::Package)
-    }
-
     fn validate_character_save(
         &self,
         bytes: &[u8],
         cloud_revision: Revision,
-    ) -> Result<CharacterSave, SessionError> {
-        let parsed =
-            validate_character_save(bytes, cloud_revision.value(), self.registry_contract()?)
-                .map_err(|_| SessionError::Package)?;
-        // Revision-zero bootstrap is represented by the parser's erased image.
-        // Once a cloud revision exists, a Version1 save must be online-eligible;
-        // migration-ambiguous saves cannot be admitted to a fenced session.
-        if cloud_revision.value() != 0
-            && matches!(&parsed, CharacterSave::Version1(save) if !save.coop().online_eligible())
-        {
-            return Err(SessionError::Package);
+    ) -> Result<Option<u32>, SessionError> {
+        let registry = self.registry_contract()?;
+        if cloud_revision.is_initial() {
+            return match validate_character_save(bytes, 0, registry) {
+                Ok(CharacterSave::ErasedRevisionZero(_)) => Ok(None),
+                _ => Err(SessionError::Package),
+            };
         }
-        Ok(parsed)
+
+        let save = &self.config.manifest.manifest.save;
+        match save.schema_version {
+            1 if usize::from(save.struct_size) == coop_save::COOP_SAVE_V1_SIZE => {
+                let CharacterSave::Version1(parsed) =
+                    validate_character_save(bytes, cloud_revision.value(), registry)
+                        .map_err(|_| SessionError::Package)?
+                else {
+                    return Err(SessionError::Package);
+                };
+                parsed
+                    .coop()
+                    .online_eligible()
+                    .then_some(parsed.coop().save_generation)
+                    .ok_or(SessionError::Package)
+                    .map(Some)
+            }
+            2 if usize::from(save.struct_size) == coop_save::v2::COOP_SAVE_V2_SIZE => {
+                let parsed = parse_v2(bytes, registry).map_err(|_| SessionError::Package)?;
+                parsed
+                    .coop()
+                    .online_eligible()
+                    .then_some(parsed.coop().save_generation)
+                    .ok_or(SessionError::Package)
+                    .map(Some)
+            }
+            _ => Err(SessionError::Package),
+        }
     }
 
     /// Returns the server-selected heartbeat cadence for this lease.
@@ -2113,7 +2358,7 @@ impl SessionLifecycle {
         auth: AuthSession,
         config: SessionConfig,
     ) -> Result<Self, SessionError> {
-        Self::acquire_inner(api, auth, config, None, false).await
+        Self::acquire_inner(api, auth, config, None, false, None).await
     }
 
     /// Acquires a session with rotating-token support enabled.  Every
@@ -2130,7 +2375,109 @@ impl SessionLifecycle {
         config: SessionConfig,
         keychain: Arc<dyn RefreshTokenStore>,
     ) -> Result<Self, SessionError> {
-        Self::acquire_inner(api, auth, config, Some(keychain), false).await
+        Self::acquire_inner(api, auth, config, Some(keychain), false, None).await
+    }
+
+    /// Acquire the server-selected active world before choosing a local ROM.
+    /// The caller persists `request` before the first send and reuses it after
+    /// restart. A lost or malformed response replays that exact operation.
+    pub async fn acquire_world_with_keychain<A: CloudApi>(
+        api: &A,
+        auth: &mut AuthSession,
+        request: AcquireLeaseRequest,
+        keychain: &Arc<dyn RefreshTokenStore>,
+    ) -> Result<AcquireWorldLeaseResponse, SessionError> {
+        Self::acquire_world_with_keychain_inner(api, auth, request, keychain, false).await
+    }
+
+    /// Acquire a world lease while explicitly replacing an existing lease from
+    /// this same client instance. This method sets the replacement flag; callers
+    /// cannot accidentally opt into replacement by using the ordinary
+    /// world-acquisition API.
+    ///
+    /// The caller persists `request` before the first send and reuses it after
+    /// restart. A lost or malformed response replays that exact operation.
+    pub async fn acquire_world_replacing_same_client_with_keychain<A: CloudApi>(
+        api: &A,
+        auth: &mut AuthSession,
+        request: AcquireLeaseRequest,
+        keychain: &Arc<dyn RefreshTokenStore>,
+    ) -> Result<AcquireWorldLeaseResponse, SessionError> {
+        Self::acquire_world_with_keychain_inner(
+            api,
+            auth,
+            request.replacing_same_client(),
+            keychain,
+            true,
+        )
+        .await
+    }
+
+    async fn acquire_world_with_keychain_inner<A: CloudApi>(
+        api: &A,
+        auth: &mut AuthSession,
+        request: AcquireLeaseRequest,
+        keychain: &Arc<dyn RefreshTokenStore>,
+        replacing_same_client: bool,
+    ) -> Result<AcquireWorldLeaseResponse, SessionError> {
+        if request.character_id != auth.character_id
+            || request.replace_same_client != replacing_same_client
+        {
+            return Err(SessionError::Lease);
+        }
+        refresh_if_needed(auth, api, Some(keychain)).await?;
+        let response = match api.acquire_world(auth, request).await {
+            Err(SessionError::Unauthorized) => {
+                refresh_required(auth, api, Some(keychain)).await?;
+                api.acquire_world(auth, request).await?
+            }
+            Err(SessionError::Cloud) => {
+                tokio::time::sleep(cloud_retry_delay(0)).await;
+                api.acquire_world(auth, request).await?
+            }
+            result => result?,
+        };
+        if response.validate().is_err()
+            || response.lease.character_id != auth.character_id
+            || response.lease.client_instance_id != request.client_instance_id
+        {
+            if response.lease.validate().is_ok() {
+                release_best_effort(api, auth, &response.lease, Some(keychain)).await;
+            }
+            return Err(SessionError::Lease);
+        }
+        auth.set_active_fence(response.lease.fence());
+        Ok(response)
+    }
+
+    /// Release a world-aware lease when its pinned ROM cannot be selected.
+    /// Authentication stays live, and the caller may clear its durable
+    /// acquisition intent only after this returns successfully.
+    pub async fn release_preacquired_world_lease<A: CloudApi>(
+        api: &A,
+        auth: &mut AuthSession,
+        response: AcquireWorldLeaseResponse,
+        keychain: &Arc<dyn RefreshTokenStore>,
+    ) -> Result<(), SessionError> {
+        response.validate().map_err(|_| SessionError::Lease)?;
+        if response.lease.character_id != auth.character_id {
+            return Err(SessionError::Lease);
+        }
+        let request = ReleaseLeaseRequest::new(response.lease.fence(), random_idempotency_key()?);
+        refresh_if_needed(auth, api, Some(keychain)).await?;
+        let result = match api.release(auth, request).await {
+            Err(SessionError::Unauthorized) => {
+                refresh_required(auth, api, Some(keychain)).await?;
+                api.release(auth, request).await.map(|_| ())
+            }
+            Err(SessionError::Cloud) => api.release(auth, request).await.map(|_| ()),
+            Err(error) => Err(error),
+            Ok(_) => Ok(()),
+        };
+        if result.is_ok() {
+            auth.clear_active_fence();
+        }
+        result
     }
 
     /// Replaces a prior lease from this same client instance. Android uses
@@ -2146,7 +2493,20 @@ impl SessionLifecycle {
         config: SessionConfig,
         keychain: Arc<dyn RefreshTokenStore>,
     ) -> Result<Self, SessionError> {
-        Self::acquire_inner(api, auth, config, Some(keychain), true).await
+        Self::acquire_inner(api, auth, config, Some(keychain), true, None).await
+    }
+
+    /// Materializes a lease acquired through the server's world-aware route.
+    /// The caller selects a local ROM only after receiving that response and
+    /// must provide a compatibility-checked configuration for its world.
+    pub async fn from_world_lease_with_keychain<A: CloudApi>(
+        api: &A,
+        auth: AuthSession,
+        config: SessionConfig,
+        keychain: Arc<dyn RefreshTokenStore>,
+        response: AcquireWorldLeaseResponse,
+    ) -> Result<Self, SessionError> {
+        Self::acquire_inner(api, auth, config, Some(keychain), false, Some(response)).await
     }
 
     async fn acquire_inner<A: CloudApi>(
@@ -2155,30 +2515,49 @@ impl SessionLifecycle {
         config: SessionConfig,
         keychain: Option<Arc<dyn RefreshTokenStore>>,
         replace_same_client: bool,
+        preacquired: Option<AcquireWorldLeaseResponse>,
     ) -> Result<Self, SessionError> {
-        let idempotency_key = random_idempotency_key()?;
-        let mut request = AcquireLeaseRequest::new(
-            auth.character_id,
-            config.client_instance_id,
-            idempotency_key,
-        );
-        if replace_same_client {
-            request = request.replacing_same_client();
-        }
-        refresh_if_needed(&mut auth, api, keychain.as_ref()).await?;
-        let lease = match api.acquire(&auth, request).await {
-            Err(SessionError::Unauthorized) => {
-                refresh_required(&mut auth, api, keychain.as_ref()).await?;
-                api.acquire(&auth, request).await?
+        let keep_credentials_on_setup_failure = preacquired.is_some();
+        let expected_head = preacquired
+            .as_ref()
+            .and_then(|response| response.active_snapshot_id);
+        let lease = if let Some(response) = preacquired {
+            if response.validate().is_err() {
+                if response.lease.validate().is_ok() {
+                    release_best_effort(api, &mut auth, &response.lease, keychain.as_ref()).await;
+                }
+                return Err(SessionError::Lease);
             }
-            Err(SessionError::Cloud) => {
-                // The first response may have been lost after the server
-                // committed the idempotent acquire. Replay the exact request
-                // once; never mint a new operation key here.
-                tokio::time::sleep(cloud_retry_delay(0)).await;
-                api.acquire(&auth, request).await?
+            if response.active_world_id != config.rom_world_id {
+                release_best_effort(api, &mut auth, &response.lease, keychain.as_ref()).await;
+                return Err(SessionError::Lease);
             }
-            result => result?,
+            response.lease
+        } else {
+            let idempotency_key = random_idempotency_key()?;
+            let mut request = AcquireLeaseRequest::new(
+                auth.character_id,
+                config.client_instance_id,
+                idempotency_key,
+            );
+            if replace_same_client {
+                request = request.replacing_same_client();
+            }
+            refresh_if_needed(&mut auth, api, keychain.as_ref()).await?;
+            match api.acquire(&auth, request).await {
+                Err(SessionError::Unauthorized) => {
+                    refresh_required(&mut auth, api, keychain.as_ref()).await?;
+                    api.acquire(&auth, request).await?
+                }
+                Err(SessionError::Cloud) => {
+                    // The first response may have been lost after the server
+                    // committed the idempotent acquire. Replay the exact request
+                    // once; never mint a new operation key here.
+                    tokio::time::sleep(cloud_retry_delay(0)).await;
+                    api.acquire(&auth, request).await?
+                }
+                result => result?,
+            }
         };
         if lease.validate().is_err() {
             release_best_effort(api, &mut auth, &lease, keychain.as_ref()).await;
@@ -2195,7 +2574,14 @@ impl SessionLifecycle {
                 .epoch_store
                 .accept(lease.character_id, lease.session_id, lease.session_epoch)
         {
-            release_best_effort(api, &mut auth, &lease, keychain.as_ref()).await;
+            // A preacquired response may replay a still-live lease after this
+            // process crashed, or another local process may own that same
+            // accepted epoch. Never release it on a stale-epoch result: doing
+            // so would disconnect the rightful owner. The durable acquire
+            // key remains available until the server reports it closed.
+            if !keep_credentials_on_setup_failure {
+                release_best_effort(api, &mut auth, &lease, keychain.as_ref()).await;
+            }
             return Err(error.into());
         }
         let workspace = match SessionWorkspace::create(&config.workspace_parent) {
@@ -2230,6 +2616,9 @@ impl SessionLifecycle {
             fresh_resume_save_digest: None,
             checkpoint_resume_baseline: None,
             save_generation: None,
+            last_finalized_snapshot_id: None,
+            portal_outcome: None,
+            last_portal_sequence: None,
             revision_updates: None,
             live_requests: None,
             last_finalized_snapshot: None,
@@ -2237,7 +2626,7 @@ impl SessionLifecycle {
         lifecycle.auth.set_active_fence(lifecycle.lease.fence());
         let setup = async {
             lifecycle.reconcile_story_travel_before_resume(api).await?;
-            lifecycle.restore_or_bootstrap(api).await
+            lifecycle.restore_or_bootstrap(api, expected_head).await
         }
         .await;
         // Re-poll the outcome ledger on every start: an entry a previous
@@ -2250,7 +2639,9 @@ impl SessionLifecycle {
             // No child process has started. A pending story decision needs
             // the saved sign-in; other setup failures keep the existing
             // release-and-logout behavior.
-            if matches!(error, SessionError::StoryTravelRecoveryPending) {
+            if keep_credentials_on_setup_failure
+                || matches!(error, SessionError::StoryTravelRecoveryPending)
+            {
                 let _ = lifecycle.release_lease_keep_credentials(api).await;
             } else {
                 let _ = lifecycle.release(api).await;
@@ -2987,7 +3378,11 @@ impl SessionLifecycle {
         })
     }
 
-    async fn restore_or_bootstrap<A: CloudApi>(&mut self, api: &A) -> Result<(), SessionError> {
+    async fn restore_or_bootstrap<A: CloudApi>(
+        &mut self,
+        api: &A,
+        expected_head: Option<SnapshotId>,
+    ) -> Result<(), SessionError> {
         let character = self.lease.character_id;
         let revision = self.revision;
         let package = self.resume_package_retry(api, character, revision).await?;
@@ -3006,6 +3401,9 @@ impl SessionLifecycle {
         let Some(envelope) = package else {
             return Err(SessionError::MissingPackage);
         };
+        if expected_head.is_some_and(|head| envelope.manifest.snapshot_id != head) {
+            return Err(SessionError::Package);
+        }
         let verified = self.fetch_verified_at(api, envelope, self.revision).await;
         match verified {
             Ok(package) => {
@@ -3063,41 +3461,17 @@ impl SessionLifecycle {
         let parsed_save = self
             .validate_character_save(&sav, revision)
             .map_err(|_| SessionError::CorruptActiveSav)?;
-        let save_generation = match parsed_save {
-            CharacterSave::Version1(save) => save.coop().save_generation,
-            CharacterSave::ErasedRevisionZero(_) => return Err(SessionError::CorruptActiveSav),
-        };
+        let save_generation = parsed_save.ok_or(SessionError::CorruptActiveSav)?;
         if Sha256Digest::of_bytes(&pending) != manifest.pending_commits_sha256 {
             return Err(SessionError::Package);
         }
-        let resume = if manifest.savestate_compatible {
-            match self
-                .authenticated_artifact(api, character, ArtifactIdentity::ResumeSs1, revision)
-                .await
-            {
-                Ok(bytes)
-                    if valid_resume_bytes(&bytes)
-                        && manifest.savestate_sha256 == Some(Sha256Digest::of_bytes(&bytes)) =>
-                {
-                    Some(bytes)
-                }
-                // SAV has already been verified above.  An optional
-                // savestate is an optimization, so an absent, oversized, or
-                // transiently unavailable transport must never strand a
-                // character that can safely resume from SAV.
-                Ok(_) | Err(_) => None,
-            }
-        } else {
-            None
-        };
-        match manifest.select_resume(&target, &sav, resume.as_deref()) {
-            Ok(ResumeSelection::UseSavestate) => Ok(VerifiedPackage {
-                manifest: manifest.clone(),
-                sav,
-                pending,
-                resume,
-                save_generation,
-            }),
+        // A checkpoint state is captured before the ROM's SAVE_DATA_UPDATED
+        // queue entry is consumed. Loading it under a newly acquired epoch
+        // restores a pending update from the old epoch and permanently gates
+        // the next portal behind RECOVERY_REQUIRED. The verified Flash1M SAV
+        // is authoritative across acquisitions; keep optional states out of
+        // the boot path until capture can happen after that acknowledgement.
+        match manifest.select_resume(&target, &sav, None) {
             Ok(ResumeSelection::FallbackToSav(_)) => Ok(VerifiedPackage {
                 manifest: manifest.clone(),
                 sav,
@@ -3105,6 +3479,7 @@ impl SessionLifecycle {
                 resume: None,
                 save_generation,
             }),
+            Ok(ResumeSelection::UseSavestate) => Err(SessionError::Package),
             Err(_) => Err(SessionError::Package),
         }
     }
@@ -3114,10 +3489,7 @@ impl SessionLifecycle {
             return Err(SessionError::Package);
         }
         let parsed = self.validate_character_save(&package.sav, self.revision)?;
-        let parsed_generation = match parsed {
-            CharacterSave::Version1(save) => save.coop().save_generation,
-            CharacterSave::ErasedRevisionZero(_) => return Err(SessionError::Package),
-        };
+        let parsed_generation = parsed.ok_or(SessionError::Package)?;
         if parsed_generation != package.save_generation {
             return Err(SessionError::Package);
         }
@@ -3204,6 +3576,12 @@ impl SessionLifecycle {
         Ok(())
     }
 
+    /// Cold-load the authoritative SAV after an aborted ROM handoff. The
+    /// source savestate was captured while its portal script was in flight.
+    pub fn discard_resume_after_aborted_handoff(&self) -> Result<(), SessionError> {
+        self.retire_optional_resume()
+    }
+
     fn copy_generated_addresses(&self) -> Result<(), SessionError> {
         reject_symlink_ancestors(&self.config.bridge_lua_dir).map_err(SessionError::Filesystem)?;
         #[cfg(windows)]
@@ -3215,10 +3593,8 @@ impl SessionLifecycle {
         // The checked-in generated Lua file is only a development artifact.
         // Render from the manifest that already passed compatibility checks so
         // a stale, missing, or replaced source file cannot change the session.
-        let bytes = render_generated_addresses(&self.config.manifest.manifest);
         self.workspace
-            .write_atomic("generated_addresses.lua", bytes.as_bytes())?;
-        Ok(())
+            .write_generated_addresses(&self.config.manifest.manifest)
     }
 
     async fn recover_corrupt_active<A: CloudApi>(&mut self, api: &A) -> Result<(), SessionError> {
@@ -3238,7 +3614,7 @@ impl SessionLifecycle {
             let character = self.lease.character_id;
             if let Some(envelope) = self.resume_package_retry(api, character, revision).await?
                 && let Ok(package) = self.fetch_verified_at(api, envelope, revision).await
-                && history_record_matches(&record, &package)
+                && history_record_matches(&record, &package, self.config.rom_world_id)
             {
                 self.restore_and_materialize_historical(api, &record)
                     .await?;
@@ -3269,6 +3645,7 @@ impl SessionLifecycle {
         restored.validate().map_err(|_| SessionError::History)?;
         if restored.snapshot.snapshot_id != record.snapshot_id
             || restored.snapshot.character_id != self.lease.character_id
+            || restored.snapshot.rom_world_id != self.config.rom_world_id
             || restored.snapshot.session_id != self.lease.session_id
             || restored.snapshot.session_epoch != self.lease.session_epoch
             || restored.snapshot.parent_revision != expected_revision
@@ -3278,6 +3655,7 @@ impl SessionLifecycle {
         }
         self.revision = restored.snapshot.revision;
         self.lease.current_revision = self.revision;
+        self.last_finalized_snapshot_id = None;
         self.auth.set_active_fence(self.lease.fence());
         let active = self
             .resume_package_retry(api, self.lease.character_id, self.revision)
@@ -3287,9 +3665,14 @@ impl SessionLifecycle {
             .fetch_verified_at(api, active, self.revision)
             .await
             .map_err(|_| SessionError::History)?;
-        if !history_record_matches(&restored.snapshot, &active_package) {
+        if !history_record_matches(
+            &restored.snapshot,
+            &active_package,
+            self.config.rom_world_id,
+        ) {
             return Err(SessionError::History);
         }
+        self.last_finalized_snapshot_id = Some(restored.snapshot.snapshot_id);
         // The SAV is newly restored, so any historical optional savestate is
         // stale and must be retired before the next checkpoint.
         active_package.resume = None;
@@ -3312,6 +3695,7 @@ impl SessionLifecycle {
         expected_revision: Revision,
     ) -> Result<SnapshotRestoreResponse, SessionError> {
         let expected_lease = self.lease;
+        let expected_world = self.config.rom_world_id;
         self.refresh_if_needed(api).await?;
         let first = self
             .run_with_mutating_heartbeats(
@@ -3321,6 +3705,7 @@ impl SessionLifecycle {
                     restore_response_proves_commit(
                         response,
                         snapshot_id,
+                        expected_world,
                         expected_lease,
                         expected_revision,
                     )
@@ -3338,6 +3723,7 @@ impl SessionLifecycle {
                         restore_response_proves_commit(
                             response,
                             snapshot_id,
+                            expected_world,
                             expected_lease,
                             expected_revision,
                         )
@@ -3354,6 +3740,7 @@ impl SessionLifecycle {
                         restore_response_proves_commit(
                             response,
                             snapshot_id,
+                            expected_world,
                             expected_lease,
                             expected_revision,
                         )
@@ -3530,9 +3917,10 @@ impl SessionLifecycle {
             return Err(error);
         }
         self.checkpoint_key = None;
+        self.last_portal_sequence = None;
         self.fresh_resume_save_digest = None;
         self.checkpoint_resume_baseline = None;
-        self.restore_or_bootstrap(api).await
+        self.restore_or_bootstrap(api, None).await
     }
 
     /// Runs the online session until a child exits or a lease/checkpoint
@@ -3554,6 +3942,224 @@ impl SessionLifecycle {
             .await
     }
 
+    /// Runs until the source session stops or a portal has completed its
+    /// source checkpoint. A normal stop is reported as [`Completed`]; portal
+    /// travel carries the exact finalized source head for the coordinator.
+    ///
+    /// The existing [`Self::run_until_shutdown`] API deliberately keeps its
+    /// legacy error behavior and maps a portal result to
+    /// [`SessionError::PortalHandoffUnavailable`].
+    pub async fn run_until_shutdown_with_portal<A, F>(
+        &mut self,
+        api: &A,
+        children: &mut impl SessionSupervisor,
+        shutdown: F,
+    ) -> Result<SessionRunOutcome, SessionError>
+    where
+        A: CloudApi,
+        F: Future<Output = ()> + Send,
+    {
+        self.portal_outcome = None;
+        match self.run_until_shutdown_inner(api, children, shutdown).await {
+            Ok(()) => Ok(SessionRunOutcome::Completed),
+            Err(SessionError::PortalHandoffUnavailable) => self
+                .portal_outcome
+                .take()
+                .map(SessionRunOutcome::PortalTravel)
+                .ok_or(SessionError::PortalHandoffUnavailable),
+            Err(error) => Err(error),
+        }
+    }
+
+    /// Basic supervised session compatibility wrapper. Portal-aware callers
+    /// should use [`Self::run_until_exit_with_portal`].
+    pub async fn run_until_exit_with_portal<A: CloudApi>(
+        &mut self,
+        api: &A,
+        children: &mut impl SessionSupervisor,
+    ) -> Result<SessionRunOutcome, SessionError> {
+        self.run_until_shutdown_with_portal(api, children, std::future::pending())
+            .await
+    }
+
+    fn validate_portal_request(
+        &mut self,
+        session_epoch: u32,
+        portal_sequence: u32,
+        portal_id: &str,
+    ) -> Result<(), SessionError> {
+        if session_epoch != self.lease.session_epoch.value()
+            || portal_sequence == 0
+            || portal_id.len() > 96
+            || !portal_id
+                .bytes()
+                .next()
+                .is_some_and(|byte| byte.is_ascii_lowercase())
+            || !portal_id
+                .bytes()
+                .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'_')
+            || self.last_portal_sequence == Some(portal_sequence)
+        {
+            return Err(SessionError::CheckpointCorrelation);
+        }
+        self.last_portal_sequence = Some(portal_sequence);
+        Ok(())
+    }
+
+    /// Consumes exactly one event after a portal request and finalizes the
+    /// correlated canonical checkpoint. This helper intentionally does not
+    /// accept presence, reset, child, or shutdown events in that slot.
+    async fn prepare_portal_travel<A, F>(
+        &mut self,
+        api: &A,
+        children: &mut impl SessionSupervisor,
+        portal_id: String,
+        portal_sequence: u32,
+        shutdown: &mut Pin<Box<F>>,
+    ) -> Result<PortalTravelSource, SessionError>
+    where
+        A: CloudApi,
+        F: Future<Output = ()> + Send,
+    {
+        let deadline = tokio::time::Instant::now() + CHECKPOINT_PROTOCOL_DEADLINE;
+        let next = tokio::select! {
+            biased;
+            () = shutdown.as_mut() => return Err(SessionError::CheckpointNotAuthorized),
+            event = tokio::time::timeout_at(deadline, children.next_event()) => event,
+        };
+        let ready = match next {
+            Err(_) => return Err(SessionError::CheckpointTimeout),
+            Ok(Err(error)) => return Err(SessionError::Control(error)),
+            Ok(Ok(SupervisorEvent::ChildExited)) => {
+                return Err(SessionError::Control(ProcessError::ChildExited));
+            }
+            Ok(Ok(SupervisorEvent::Control(ready @ ControlEvent::CheckpointReady { .. }))) => ready,
+            Ok(Ok(SupervisorEvent::Control(_))) => {
+                return Err(SessionError::CheckpointCorrelation);
+            }
+        };
+        let checkpoint_ready_sequence = match &ready {
+            ControlEvent::CheckpointReady { ready_sequence, .. } => *ready_sequence,
+            _ => unreachable!("portal helper admits only checkpoint ready"),
+        };
+        let source_revision = self
+            .checkpoint_with_deadline(api, &mut children.control(), ready)
+            .await?;
+        let source_snapshot_id = self
+            .last_finalized_snapshot_id
+            .ok_or(SessionError::FinalizeConflict)?;
+        let source_save_digest = self
+            .active_save_digest()?
+            .ok_or(SessionError::CheckpointCorrelation)?;
+        let source_save_generation = self
+            .save_generation
+            .ok_or(SessionError::CheckpointCorrelation)?;
+        Ok(PortalTravelSource {
+            portal_id,
+            portal_sequence,
+            checkpoint_ready_sequence,
+            source_snapshot_id,
+            source_revision,
+            source_save_digest,
+            source_save_generation,
+        })
+    }
+
+    async fn complete_portal_travel<A, F>(
+        &mut self,
+        api: &A,
+        children: &mut impl SessionSupervisor,
+        session_epoch: u32,
+        portal_sequence: u32,
+        portal_id: String,
+        shutdown: &mut Pin<Box<F>>,
+    ) -> Result<(), SessionError>
+    where
+        A: CloudApi,
+        F: Future<Output = ()> + Send,
+    {
+        self.validate_portal_request(session_epoch, portal_sequence, &portal_id)?;
+        let source = self
+            .prepare_portal_travel(api, children, portal_id, portal_sequence, shutdown)
+            .await?;
+        self.portal_outcome = Some(source);
+        Err(SessionError::PortalHandoffUnavailable)
+    }
+
+    async fn prepare_portal_travel_with_realtime<A, F>(
+        &mut self,
+        api: &A,
+        children: &mut impl SessionSupervisor,
+        realtime: &mut RealtimeCoordinator,
+        session_epoch: u32,
+        portal_sequence: u32,
+        portal_id: String,
+        shutdown: &mut Pin<Box<F>>,
+        heartbeat: &mut tokio::time::Interval,
+    ) -> Result<PortalTravelSource, SessionError>
+    where
+        A: CloudApi,
+        F: Future<Output = ()> + Send,
+    {
+        self.validate_portal_request(session_epoch, portal_sequence, &portal_id)?;
+        let deadline = tokio::time::Instant::now() + CHECKPOINT_PROTOCOL_DEADLINE;
+        let next = tokio::select! {
+            biased;
+            () = shutdown.as_mut() => return Err(SessionError::CheckpointNotAuthorized),
+            event = tokio::time::timeout_at(deadline, children.next_event()) => event,
+        };
+        let ready = match next {
+            Err(_) => return Err(SessionError::CheckpointTimeout),
+            Ok(Err(error)) => return Err(SessionError::Control(error)),
+            Ok(Ok(SupervisorEvent::ChildExited)) => {
+                return Err(SessionError::Control(ProcessError::ChildExited));
+            }
+            Ok(Ok(SupervisorEvent::Control(ready @ ControlEvent::CheckpointReady { .. }))) => ready,
+            Ok(Ok(SupervisorEvent::Control(_))) => {
+                return Err(SessionError::CheckpointCorrelation);
+            }
+        };
+        let checkpoint_ready_sequence = match &ready {
+            ControlEvent::CheckpointReady { ready_sequence, .. } => *ready_sequence,
+            _ => unreachable!("portal helper admits only checkpoint ready"),
+        };
+        match self
+            .checkpoint_with_realtime(
+                api,
+                &mut children.control(),
+                ready,
+                realtime,
+                shutdown,
+                heartbeat,
+            )
+            .await?
+        {
+            RealtimeCheckpointOutcome::Completed => {}
+            RealtimeCheckpointOutcome::Shutdown => {
+                return Err(SessionError::CheckpointNotAuthorized);
+            }
+        }
+        let source_revision = self.revision;
+        let source_snapshot_id = self
+            .last_finalized_snapshot_id
+            .ok_or(SessionError::FinalizeConflict)?;
+        let source_save_digest = self
+            .active_save_digest()?
+            .ok_or(SessionError::CheckpointCorrelation)?;
+        let source_save_generation = self
+            .save_generation
+            .ok_or(SessionError::CheckpointCorrelation)?;
+        Ok(PortalTravelSource {
+            portal_id,
+            portal_sequence,
+            checkpoint_ready_sequence,
+            source_snapshot_id,
+            source_revision,
+            source_save_digest,
+            source_save_generation,
+        })
+    }
+
     /// Runs the fenced lifecycle until either a child exits, a lifecycle
     /// failure occurs, or the caller requests a graceful shutdown.  On a
     /// shutdown request, the control stream is drained for a short bounded
@@ -3566,6 +4172,25 @@ impl SessionLifecycle {
     /// post-grant error stops and reaps children so [`Self::release`] can keep
     /// the recovery SAV.
     pub async fn run_until_shutdown<A, F>(
+        &mut self,
+        api: &A,
+        children: &mut impl SessionSupervisor,
+        shutdown: F,
+    ) -> Result<(), SessionError>
+    where
+        A: CloudApi,
+        F: std::future::Future<Output = ()> + Send,
+    {
+        match self
+            .run_until_shutdown_with_portal(api, children, shutdown)
+            .await?
+        {
+            SessionRunOutcome::Completed => Ok(()),
+            SessionRunOutcome::PortalTravel(_) => Err(SessionError::PortalHandoffUnavailable),
+        }
+    }
+
+    async fn run_until_shutdown_inner<A, F>(
         &mut self,
         api: &A,
         children: &mut impl SessionSupervisor,
@@ -3610,6 +4235,21 @@ impl SessionLifecycle {
                     Ok(SupervisorEvent::Control(ControlEvent::RomPresenceReset)) => {
                         Err(SessionError::CheckpointNotAuthorized)
                     }
+                    Ok(SupervisorEvent::Control(ControlEvent::PortalTravelRequest {
+                        session_epoch,
+                        portal_sequence,
+                        portal_id,
+                    })) => {
+                        self.complete_portal_travel(
+                            api,
+                            children,
+                            session_epoch,
+                            portal_sequence,
+                            portal_id,
+                            &mut shutdown,
+                        )
+                        .await
+                    }
                     Ok(SupervisorEvent::Control(_)) => Ok(()),
                     Err(error) => Err(error),
                 },
@@ -3618,12 +4258,16 @@ impl SessionLifecycle {
                 break Err(error);
             }
         };
-        if !shutdown_completed
-            && (shutdown_requested || result.is_err())
-            && let Err(error) = children.stop_in_place().await
-            && result.is_ok()
-        {
-            return Err(SessionError::Control(error));
+        if !shutdown_completed && (shutdown_requested || result.is_err()) {
+            if let Err(error) = children.stop_in_place().await
+                && (result.is_ok()
+                    || matches!(&result, Err(SessionError::PortalHandoffUnavailable)))
+            {
+                if matches!(&result, Err(SessionError::PortalHandoffUnavailable)) {
+                    self.portal_outcome = None;
+                }
+                return Err(SessionError::Control(error));
+            }
         }
         result
     }
@@ -3656,9 +4300,42 @@ impl SessionLifecycle {
             .await;
         self.live_requests = live.into_receiver();
         if result.is_err() {
-            let _ = children.stop_in_place().await;
+            if let Err(error) = children.stop_in_place().await
+                && matches!(&result, Err(SessionError::PortalHandoffUnavailable))
+            {
+                self.portal_outcome = None;
+                return Err(SessionError::Control(error));
+            }
         }
         result
+    }
+
+    /// Realtime equivalent of [`Self::run_until_shutdown_with_portal`]. The
+    /// coordinator is stopped and joined before the source children are
+    /// reaped, so the returned source record is safe for handoff replay.
+    pub async fn run_until_shutdown_with_realtime_portal<A, F>(
+        &mut self,
+        api: &A,
+        children: &mut impl SessionSupervisor,
+        shutdown: F,
+    ) -> Result<SessionRunOutcome, SessionError>
+    where
+        A: CloudApi + RealtimeApi,
+        F: Future<Output = ()> + Send,
+    {
+        self.portal_outcome = None;
+        match self
+            .run_until_shutdown_with_realtime(api, children, shutdown)
+            .await
+        {
+            Ok(()) => Ok(SessionRunOutcome::Completed),
+            Err(SessionError::PortalHandoffUnavailable) => self
+                .portal_outcome
+                .take()
+                .map(SessionRunOutcome::PortalTravel)
+                .ok_or(SessionError::PortalHandoffUnavailable),
+            Err(error) => Err(error),
+        }
     }
 
     async fn run_until_shutdown_with_realtime_inner<'a, A, F>(
@@ -3906,6 +4583,22 @@ impl SessionLifecycle {
                         RawSupervisorEvent::Control(ControlEvent::RomPresenceReset) => {
                             return Err(SessionError::Realtime);
                         }
+                        RawSupervisorEvent::Control(ControlEvent::PortalTravelRequest {
+                            session_epoch,
+                            portal_sequence,
+                            portal_id,
+                        }) => {
+                            return self
+                                .complete_portal_travel(
+                                    api,
+                                    children,
+                                    session_epoch,
+                                    portal_sequence,
+                                    portal_id,
+                                    shutdown,
+                                )
+                                .await;
+                        }
                         RawSupervisorEvent::Control(_) => return Err(SessionError::Realtime),
                         child @ (RawSupervisorEvent::SidecarExited(_) | RawSupervisorEvent::MgbaExited(_)) => {
                             return children
@@ -4009,6 +4702,25 @@ impl SessionLifecycle {
                             .shutdown_during_realtime_mint(api, children, &mut pending_checkpoint)
                             .await;
                     }
+                    MintWait::Portal {
+                        session_epoch,
+                        portal_sequence,
+                        portal_id,
+                    } => {
+                        if pending_checkpoint.is_some() {
+                            return Err(SessionError::CheckpointCorrelation);
+                        }
+                        return self
+                            .complete_portal_travel(
+                                api,
+                                children,
+                                session_epoch,
+                                portal_sequence,
+                                portal_id,
+                                shutdown,
+                            )
+                            .await;
+                    }
                     MintWait::Child(child) => {
                         return children
                             .settle_raw(child)
@@ -4030,6 +4742,25 @@ impl SessionLifecycle {
             Ok(MintWait::Shutdown) => {
                 return self
                     .shutdown_during_realtime_mint(api, children, &mut pending_checkpoint)
+                    .await;
+            }
+            Ok(MintWait::Portal {
+                session_epoch,
+                portal_sequence,
+                portal_id,
+            }) => {
+                if pending_checkpoint.is_some() {
+                    return Err(SessionError::CheckpointCorrelation);
+                }
+                return self
+                    .complete_portal_travel(
+                        api,
+                        children,
+                        session_epoch,
+                        portal_sequence,
+                        portal_id,
+                        shutdown,
+                    )
                     .await;
             }
             Ok(MintWait::Child(child)) => {
@@ -4619,6 +5350,33 @@ impl SessionLifecycle {
                             // that began before those events were applied.
                             invites.invalidate_poll();
                         }
+                        Ok(RawSupervisorEvent::Control(ControlEvent::PortalTravelRequest {
+                            session_epoch,
+                            portal_sequence,
+                            portal_id,
+                        })) => {
+                            if result.is_ok() {
+                                match self
+                                    .prepare_portal_travel_with_realtime(
+                                        api,
+                                        children,
+                                        realtime,
+                                        session_epoch,
+                                        portal_sequence,
+                                        portal_id,
+                                        shutdown,
+                                        heartbeat,
+                                    )
+                                    .await
+                                {
+                                    Ok(source) => {
+                                        self.portal_outcome = Some(source);
+                                        result = Err(SessionError::PortalHandoffUnavailable);
+                                    }
+                                    Err(error) => result = Err(error),
+                                }
+                            }
+                        }
                         Ok(RawSupervisorEvent::Control(_)) => result = Err(SessionError::Realtime),
                         Ok(
                             child @ (RawSupervisorEvent::SidecarExited(_)
@@ -4725,8 +5483,14 @@ impl SessionLifecycle {
             let retained = self.retain_coordinator_progress(&mut coordinator);
             let stopped = coordinator.stop_and_join().await;
             if (retained.is_err() || stopped.is_err())
-                && matches!(&result, Ok(()) | Err(SessionError::PresenceRecovery { .. }))
+                && matches!(
+                    &result,
+                    Ok(())
+                        | Err(SessionError::PresenceRecovery { .. })
+                        | Err(SessionError::PortalHandoffUnavailable)
+                )
             {
+                self.portal_outcome = None;
                 result = Err(SessionError::Realtime);
             }
         }
@@ -4890,6 +5654,23 @@ impl SessionLifecycle {
                     }
                     RawSupervisorEvent::Control(ready @ ControlEvent::CheckpointReady { .. }) => {
                         if pending_checkpoint.replace(ready).is_some() { return Err(SessionError::Realtime); }
+                    }
+                    RawSupervisorEvent::Control(ControlEvent::PortalTravelRequest {
+                        session_epoch,
+                        portal_sequence,
+                        portal_id,
+                    }) => {
+                        return self
+                            .complete_portal_travel(
+                                api,
+                                children,
+                                session_epoch,
+                                portal_sequence,
+                                portal_id,
+                                shutdown,
+                            )
+                            .await
+                            .map(|_| false);
                     }
                     RawSupervisorEvent::Control(ControlEvent::CommandResult {
                         command_id: echoed, status: CommandStatus::Rejected | CommandStatus::Conflict, ..
@@ -5142,7 +5923,7 @@ impl SessionLifecycle {
         if updated_epoch != session_epoch
             || updated_ready != ready_sequence
             || !is_newer_save_sequence(ready_sequence, save_sequence)
-            || save_generation != self.save_generation.unwrap_or(0).wrapping_add(1)
+            || Some(save_generation) != self.save_generation.unwrap_or(0).checked_add(1)
         {
             return Err(SessionError::CheckpointCorrelation);
         }
@@ -5365,10 +6146,13 @@ impl SessionLifecycle {
                     priority = RealtimeSource::Realtime;
                 }
                 CheckpointInput::Control(Ok(
-                    ControlEvent::RomPresenceReset
+                    ControlEvent::ArrivalVerifierReady { .. }
+                    | ControlEvent::ArrivalProof(_)
+                    | ControlEvent::RomPresenceReset
                     | ControlEvent::OnlineRequest(_)
                     | ControlEvent::PairingRequest(_)
                     | ControlEvent::GroupTravel(_)
+                    | ControlEvent::PortalTravelRequest { .. }
                     | ControlEvent::PresenceRearmed { .. },
                 )) => {
                     return Err(SessionError::Realtime);
@@ -5582,10 +6366,13 @@ impl SessionLifecycle {
             | ControlEvent::TradeCommitApplied(_)
             | ControlEvent::TradeOfferRequest(_)
             | ControlEvent::TradeOfferDecision(_)) => queue_pending_battle(pending_battle, event),
-            ControlEvent::RomPresenceReset
+            ControlEvent::ArrivalVerifierReady { .. }
+            | ControlEvent::ArrivalProof(_)
+            | ControlEvent::RomPresenceReset
             | ControlEvent::OnlineRequest(_)
             | ControlEvent::PairingRequest(_)
             | ControlEvent::GroupTravel(_)
+            | ControlEvent::PortalTravelRequest { .. }
             | ControlEvent::PresenceRearmed { .. }
             | ControlEvent::CheckpointReady { .. }
             | ControlEvent::SaveDataUpdated { .. }
@@ -5639,6 +6426,9 @@ impl SessionLifecycle {
                 }
                 SupervisorEvent::Control(ControlEvent::RomPresenceReset) => {
                     return Err(SessionError::CheckpointNotAuthorized);
+                }
+                SupervisorEvent::Control(ControlEvent::PortalTravelRequest { .. }) => {
+                    return Err(SessionError::PortalHandoffUnavailable);
                 }
                 SupervisorEvent::Control(_) => {}
             }
@@ -5759,7 +6549,11 @@ impl SessionLifecycle {
         if !is_newer_save_sequence(ready_sequence, save_sequence) {
             return Err(SessionError::CheckpointCorrelation);
         }
-        let expected_generation = self.save_generation.unwrap_or(0).wrapping_add(1);
+        let expected_generation = self
+            .save_generation
+            .unwrap_or(0)
+            .checked_add(1)
+            .ok_or(SessionError::CheckpointCorrelation)?;
         if save_generation != expected_generation {
             return Err(SessionError::CheckpointCorrelation);
         }
@@ -5906,9 +6700,14 @@ impl SessionLifecycle {
             idem,
         );
         let pending_digest = Sha256Digest::of_bytes(&pending);
-        let request =
-            PrepareSnapshotRequest::new(snapshot_id, fence, files.clone(), pending_digest)
-                .map_err(|_| SessionError::Package)?;
+        let request = PrepareSnapshotRequest::new(
+            snapshot_id,
+            self.config.rom_world_id,
+            fence,
+            files.clone(),
+            pending_digest,
+        )
+        .map_err(|_| SessionError::Package)?;
         let response = self.prepare_with_retry(api, request.clone()).await?;
         if !response.matches_request(&request) {
             return Err(SessionError::CheckpointCorrelation);
@@ -5940,6 +6739,7 @@ impl SessionLifecycle {
         let record = self.finalize_with_retry(api, finalize).await?;
         if record.validate().is_err()
             || record.snapshot_id != snapshot_id
+            || record.rom_world_id != self.config.rom_world_id
             || record.session_id != self.lease.session_id
             || record.character_id != self.lease.character_id
             || record.parent_revision != self.revision
@@ -5953,6 +6753,7 @@ impl SessionLifecycle {
         }
         self.revision = record.revision;
         self.lease.current_revision = record.revision;
+        self.last_finalized_snapshot_id = Some(record.snapshot_id);
         if let Some(updates) = &self.revision_updates {
             updates.send_replace(record.revision.value());
         }
@@ -5972,16 +6773,12 @@ impl SessionLifecycle {
         loop {
             match self.workspace.read_fixed("character.sav") {
                 Ok(bytes) if !bytes.is_empty() => {
-                    if let Ok(CharacterSave::Version1(save)) =
+                    if let Ok(Some(generation)) =
                         self.validate_character_save(&bytes, target_revision)
+                        && generation == event_generation
                     {
-                        match save.coop().save_generation {
-                            generation if generation == event_generation => {
-                                self.save_generation = Some(event_generation);
-                                return Ok(bytes);
-                            }
-                            _ => {}
-                        }
+                        self.save_generation = Some(event_generation);
+                        return Ok(bytes);
                     }
                 }
                 Ok(_) => {}
@@ -6010,10 +6807,7 @@ impl SessionLifecycle {
             return Err(SessionError::CheckpointCorrelation);
         }
         let parsed = self.validate_character_save(&sav, self.revision)?;
-        let CharacterSave::Version1(save) = parsed else {
-            return Err(SessionError::CheckpointCorrelation);
-        };
-        if save.coop().save_generation != expected_generation {
+        if parsed != Some(expected_generation) {
             return Err(SessionError::CheckpointCorrelation);
         }
         let pending = self.active_pending_bytes()?;
@@ -6036,6 +6830,7 @@ impl SessionLifecycle {
         let pending_digest = Sha256Digest::of_bytes(&pending);
         let request = PrepareSnapshotRequest::new(
             snapshot_id,
+            self.config.rom_world_id,
             SnapshotPrepareFence::new(
                 self.lease.session_id,
                 self.lease.character_id,
@@ -6078,6 +6873,7 @@ impl SessionLifecycle {
         let record = self.finalize_with_retry(api, finalize.clone()).await?;
         if record.validate().is_err()
             || record.snapshot_id != snapshot_id
+            || record.rom_world_id != self.config.rom_world_id
             || record.session_id != self.lease.session_id
             || record.character_id != self.lease.character_id
             || record.parent_revision != self.revision
@@ -6092,6 +6888,7 @@ impl SessionLifecycle {
         self.revision = record.revision;
         self.lease.current_revision = record.revision;
         self.save_generation = Some(expected_generation);
+        self.last_finalized_snapshot_id = Some(record.snapshot_id);
         if let Some(updates) = &self.revision_updates {
             updates.send_replace(record.revision.value());
         }
@@ -6370,6 +7167,86 @@ impl SessionLifecycle {
         self.release_lease_inner(api).await
     }
 
+    /// Transfer the authenticated player to the next ROM after the server
+    /// committed the exact source lease's handoff. The commit transaction has
+    /// already released that lease, so issuing a local release would target a
+    /// stale fence. The returned credentials can acquire the destination
+    /// world without another password prompt or refresh-family revocation.
+    pub fn into_auth_after_committed_handoff(
+        self,
+        committed: &TravelRecord,
+    ) -> Result<AuthSession, SessionError> {
+        let source_fence = LeaseFenceIdentity::new(
+            self.lease.session_id,
+            self.lease.session_epoch,
+            self.lease.client_instance_id,
+        );
+        if committed.phase != TravelPhase::Committed
+            || committed.character_id != self.lease.character_id
+            || committed.lease_fence != Some(source_fence)
+            || committed.source_world != Some(self.config.rom_world_id)
+            || committed.destination_world != Some(committed.active_world)
+            || committed.active_world == self.config.rom_world_id
+            || self.revision.is_initial()
+            || self.lease.current_revision != self.revision
+            || committed.source_snapshot_id.is_none()
+            || committed.source_snapshot_id != self.last_finalized_snapshot_id
+            || committed.source_revision != Some(self.revision)
+            || committed.server_stage_snapshot_id.is_none()
+            || committed.prepare_idempotency_key.is_none()
+            || committed.trusted_catalog_digest.is_none()
+            || committed.source_save_sha256.is_none()
+            || committed.source_save_sha256 != committed.source_head_save_sha256
+            || committed.destination_save_sha256.is_none()
+            || committed.arrival_nonce.is_none_or(|nonce| nonce == [0; 16])
+        {
+            return Err(SessionError::Lease);
+        }
+        let mut auth = self.auth;
+        auth.clear_active_fence();
+        Ok(auth)
+    }
+
+    /// Retain credentials after both group members committed an exact paired
+    /// handoff. The source lease was released by the server transaction.
+    pub fn into_auth_after_committed_paired_handoff(
+        self,
+        committed: &PairedTravelRecord,
+    ) -> Result<AuthSession, SessionError> {
+        let PairedTerminal::Committed(commit) =
+            committed.terminal.as_ref().ok_or(SessionError::Lease)?
+        else {
+            return Err(SessionError::Lease);
+        };
+        let request = &committed.intent.request;
+        let stage = committed.stage.as_ref().ok_or(SessionError::Lease)?;
+        let arrival = committed.verified_arrival.ok_or(SessionError::Lease)?;
+        if !matches!(
+            committed.phase,
+            PairedPhase::Committed | PairedPhase::Adopted
+        ) || committed.character_id != self.lease.character_id
+            || request.fence != self.lease.fence()
+            || committed.intent.source_world_id != self.config.rom_world_id
+            || request.source_snapshot_id
+                != self.last_finalized_snapshot_id.ok_or(SessionError::Lease)?
+            || self.revision.is_initial()
+            || request.fence.current_revision != self.revision
+            || committed.intent.source_save_sha256.as_bytes() == &[0; 32]
+            || stage.destination_world_id == self.config.rom_world_id
+            || commit.own_world_id != stage.destination_world_id
+            || commit.own_snapshot_id != stage.stage_id
+            || commit.own_revision != self.revision.next().map_err(|_| SessionError::Lease)?
+            || arrival.stage_id != stage.stage_id
+            || arrival.destination_save_sha256 != stage.destination_save_sha256
+            || arrival.nonce != stage.expected_nonce
+        {
+            return Err(SessionError::Lease);
+        }
+        let mut auth = self.auth;
+        auth.clear_active_fence();
+        Ok(auth)
+    }
+
     /// Releases the exact active lease fence and revokes the rotating auth
     /// family.  Recovery is scrubbed before either remote mutation, and the
     /// keychain logout is attempted even when lease release fails.
@@ -6413,11 +7290,16 @@ fn validate_history_records(
     Ok(())
 }
 
-fn history_record_matches(record: &SnapshotRecord, package: &VerifiedPackage) -> bool {
+fn history_record_matches(
+    record: &SnapshotRecord,
+    package: &VerifiedPackage,
+    expected_world: RomWorldId,
+) -> bool {
     // Historical epochs and session IDs are provenance, not the current lease
     // fence. The detached signature and both mandatory artifact digests still
     // have to identify this exact character snapshot.
-    record.session_epoch == package.manifest.session_epoch
+    record.rom_world_id == expected_world
+        && record.session_epoch == package.manifest.session_epoch
         && record.revision == package.manifest.revision
         && record.snapshot_id == package.manifest.snapshot_id
         && record.parent_revision == package.manifest.parent_revision
@@ -6435,11 +7317,13 @@ fn history_record_matches(record: &SnapshotRecord, package: &VerifiedPackage) ->
 fn restore_response_proves_commit(
     response: &SnapshotRestoreResponse,
     snapshot_id: SnapshotId,
+    expected_world: RomWorldId,
     lease: LeaseContract,
     expected_revision: Revision,
 ) -> bool {
     response.validate().is_ok()
         && response.snapshot.snapshot_id == snapshot_id
+        && response.snapshot.rom_world_id == expected_world
         && response.snapshot.session_id == lease.session_id
         && response.snapshot.character_id == lease.character_id
         && response.snapshot.session_epoch == lease.session_epoch
@@ -6580,17 +7464,17 @@ mod lifecycle_tests {
     };
 
     use coop_cloud::{
-        AccessToken, ApiVersion, ArtifactIdentity, BridgeAbiVersion, CharacterId, ClientInstanceId,
-        ClientRealtimeFrameV1, CompatibilityTarget, GameBuildId, HeartbeatLeaseRequest,
-        LeaseContract, LeaseFence, LoginRequest, LoginResponse, LogoutRequest, LogoutResponse,
-        MgbaVersion, MintRealtimeTicketRequest, Password, PrepareSnapshotRequest, ProtocolVersion,
-        RealtimeTicket, ReconnectLeaseRequest, RefreshFamilyId, RefreshRequest, RefreshResponse,
-        RefreshToken, ReleaseLeaseRequest, ResumePackageManifest, Revision, RuntimeLeaseFence,
-        ServerRealtimeFrameV1, SessionEpoch, SessionId, Sha256Digest, SnapshotFence,
-        SnapshotFinalizeRequest, SnapshotListRequest, SnapshotListResponse,
-        SnapshotPrepareResponse, SnapshotRecord, SnapshotRestoreRequest, SnapshotRestoreResponse,
-        TrustedManifestKey, UnixTimestampMillis, UploadTarget, UserId,
-        decode_client_realtime_frame, encode_server_realtime_frame,
+        AccessToken, AcquireLeaseRequest, ApiVersion, ArtifactIdentity, BridgeAbiVersion,
+        CharacterId, ClientInstanceId, ClientRealtimeFrameV1, CompatibilityTarget, GameBuildId,
+        HeartbeatLeaseRequest, IdempotencyKey, LeaseContract, LeaseFence, LoginRequest,
+        LoginResponse, LogoutRequest, LogoutResponse, MgbaVersion, MintRealtimeTicketRequest,
+        Password, PrepareSnapshotRequest, ProtocolVersion, RealtimeTicket, ReconnectLeaseRequest,
+        RefreshFamilyId, RefreshRequest, RefreshResponse, RefreshToken, ReleaseLeaseRequest,
+        ResumePackageManifest, Revision, RuntimeLeaseFence, ServerRealtimeFrameV1, SessionEpoch,
+        SessionId, Sha256Digest, SnapshotFence, SnapshotFinalizeRequest, SnapshotId,
+        SnapshotListRequest, SnapshotListResponse, SnapshotPrepareResponse, SnapshotRecord,
+        SnapshotRestoreRequest, SnapshotRestoreResponse, TrustedManifestKey, UnixTimestampMillis,
+        UploadTarget, UserId, decode_client_realtime_frame, encode_server_realtime_frame,
     };
     use coop_protocol::{
         AnimationId, AvatarId, CanonicalUsername, DespawnReason, Direction, LocalPresenceStateV1,
@@ -6627,9 +7511,9 @@ mod lifecycle_tests {
         },
     };
     use coop_save::{
-        COOP_SAVE_OFFSET, COOP_SAVE_V1_MAGIC, COOP_SAVE_V1_SCHEMA_VERSION, COOP_SAVE_V1_SIZE,
-        LOGICAL_SECTOR_DATA_SIZES, SAVE_BLOCK3_CAPACITY, SAVE_BLOCK3_CHUNK_OFFSET,
-        SAVE_BLOCK3_CHUNK_SIZE, SECTOR_SIZE, SECTORS_PER_SLOT, sector_checksum,
+        COOP_SAVE_OFFSET, COOP_SAVE_V1_MAGIC, COOP_SAVE_V1_SIZE, LOGICAL_SECTOR_DATA_SIZES,
+        SAVE_BLOCK3_CAPACITY, SAVE_BLOCK3_CHUNK_OFFSET, SAVE_BLOCK3_CHUNK_SIZE, SECTOR_SIZE,
+        SECTORS_PER_SLOT, sector_checksum,
     };
     use coop_sidecar::control::{CommandStatus, ControlCommand, ControlEvent};
 
@@ -6674,6 +7558,9 @@ mod lifecycle_tests {
         reconnect_transport_once: Mutex<bool>,
         reconnect_requests: Mutex<Vec<ReconnectLeaseRequest>>,
         acquire_requests: Mutex<Vec<coop_cloud::AcquireLeaseRequest>>,
+        world_acquire_transport_once: Mutex<bool>,
+        world_acquire_unauthorized_once: Mutex<bool>,
+        world_acquire_requests: Mutex<Vec<coop_cloud::AcquireLeaseRequest>>,
         heartbeats: Mutex<usize>,
         heartbeat_requests: Mutex<Vec<HeartbeatLeaseRequest>>,
         heartbeat_unauthorized_remaining: Mutex<usize>,
@@ -6726,6 +7613,9 @@ mod lifecycle_tests {
                 reconnect_transport_once: Mutex::new(false),
                 reconnect_requests: Mutex::new(Vec::new()),
                 acquire_requests: Mutex::new(Vec::new()),
+                world_acquire_transport_once: Mutex::new(false),
+                world_acquire_unauthorized_once: Mutex::new(false),
+                world_acquire_requests: Mutex::new(Vec::new()),
                 heartbeats: Mutex::new(0),
                 heartbeat_requests: Mutex::new(Vec::new()),
                 heartbeat_unauthorized_remaining: Mutex::new(0),
@@ -6772,6 +7662,14 @@ mod lifecycle_tests {
 
         fn set_reconnect_transport_once(&self) {
             *self.reconnect_transport_once.lock().unwrap() = true;
+        }
+
+        fn set_world_acquire_transport_once(&self) {
+            *self.world_acquire_transport_once.lock().unwrap() = true;
+        }
+
+        fn set_world_acquire_unauthorized_once(&self) {
+            *self.world_acquire_unauthorized_once.lock().unwrap() = true;
         }
 
         fn set_heartbeat_unauthorized_once(&self) {
@@ -6989,6 +7887,30 @@ mod lifecycle_tests {
             Box::pin(async move { Ok(lease) })
         }
 
+        fn acquire_world<'a>(
+            &'a self,
+            _auth: &'a crate::AuthSession,
+            request: coop_cloud::AcquireLeaseRequest,
+        ) -> CloudFuture<'a, coop_cloud::AcquireWorldLeaseResponse> {
+            self.world_acquire_requests.lock().unwrap().push(request);
+            if *self.world_acquire_unauthorized_once.lock().unwrap() {
+                *self.world_acquire_unauthorized_once.lock().unwrap() = false;
+                return Box::pin(async { Err(SessionError::Unauthorized) });
+            }
+            if *self.world_acquire_transport_once.lock().unwrap() {
+                *self.world_acquire_transport_once.lock().unwrap() = false;
+                return Box::pin(async { Err(SessionError::Cloud) });
+            }
+            let lease = self.lease;
+            Box::pin(async move {
+                Ok(coop_cloud::AcquireWorldLeaseResponse {
+                    lease,
+                    active_world_id: coop_protocol::RomWorldId::new(2).unwrap(),
+                    active_snapshot_id: None,
+                })
+            })
+        }
+
         fn heartbeat<'a>(
             &'a self,
             _auth: &'a crate::AuthSession,
@@ -7157,6 +8079,7 @@ mod lifecycle_tests {
             let updates_heartbeat = *self.finalize_updates_heartbeat.lock().unwrap();
             let record = coop_cloud::SnapshotRecord::new(
                 request.snapshot_id,
+                coop_protocol::RomWorldId::new(1).unwrap(),
                 SnapshotFence::new(
                     request.session_id,
                     request.character_id,
@@ -7221,6 +8144,10 @@ mod lifecycle_tests {
     }
 
     fn compatibility() -> BuildCompatibility {
+        let registry_digest = coop_protocol::IDENTITY_REGISTRY_DIGEST
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect::<String>();
         let manifest = serde_json::from_value(json!({
             "schema_version": 4,
             "emulator": {
@@ -7257,10 +8184,10 @@ mod lifecycle_tests {
                 "generation_offset": 28,
                 "generation_address": 33_554_464,
                 "crc_offset": 668,
-                "schema_version": 1,
+                "schema_version": 2,
                 "struct_size": 672,
-                "registry_version": 1,
-                "registry_digest": "43918833dec646d6a583d124686c8540"
+                "registry_version": coop_protocol::IDENTITY_REGISTRY_VERSION,
+                "registry_digest": registry_digest
             }
         }))
         .unwrap();
@@ -7328,6 +8255,7 @@ mod lifecycle_tests {
         .unwrap();
         let config = SessionConfig {
             client_instance_id,
+            rom_world_id: coop_protocol::RomWorldId::new(1).unwrap(),
             manifest: compatibility(),
             trusted_manifest_key: TrustedManifestKey::new(
                 "test",
@@ -7366,6 +8294,253 @@ mod lifecycle_tests {
         let requests = cloud.acquire_requests.lock().unwrap();
         assert_eq!(requests.len(), 1);
         assert!(requests[0].replace_same_client);
+    }
+
+    #[tokio::test]
+    async fn world_acquire_exposes_replacement_as_an_explicit_api() {
+        let (_, existing, cloud) = bootstrap(false).await;
+        let keychain: Arc<dyn RefreshTokenStore> = Arc::new(TestKeychain::default());
+        let mut auth = AuthSession::login(
+            cloud.as_ref(),
+            keychain.as_ref(),
+            "ash",
+            Password::new("password").unwrap(),
+        )
+        .await
+        .unwrap();
+        let request = AcquireLeaseRequest::new(
+            existing.lease.character_id,
+            existing.lease.client_instance_id,
+            IdempotencyKey::new(Uuid::from_u128(104)).unwrap(),
+        );
+
+        let response = SessionLifecycle::acquire_world_with_keychain(
+            cloud.as_ref(),
+            &mut auth,
+            request,
+            &keychain,
+        )
+        .await;
+        assert!(response.is_ok());
+        assert!(!cloud.world_acquire_requests.lock().unwrap()[0].replace_same_client);
+
+        assert!(matches!(
+            SessionLifecycle::acquire_world_with_keychain(
+                cloud.as_ref(),
+                &mut auth,
+                request.replacing_same_client(),
+                &keychain,
+            )
+            .await,
+            Err(SessionError::Lease)
+        ));
+        assert_eq!(cloud.world_acquire_requests.lock().unwrap().len(), 1);
+
+        let response = SessionLifecycle::acquire_world_replacing_same_client_with_keychain(
+            cloud.as_ref(),
+            &mut auth,
+            request,
+            &keychain,
+        )
+        .await
+        .unwrap();
+        assert_eq!(response.lease.character_id, existing.lease.character_id);
+        let requests = cloud.world_acquire_requests.lock().unwrap();
+        assert_eq!(requests.len(), 2);
+        assert!(!requests[0].replace_same_client);
+        assert!(requests[1].replace_same_client);
+        assert_eq!(requests[1].idempotency_key, request.idempotency_key);
+    }
+
+    #[tokio::test]
+    async fn world_acquire_replays_the_exact_replacement_request_after_cloud_loss() {
+        let (_, existing, cloud) = bootstrap(false).await;
+        cloud.set_world_acquire_transport_once();
+        let keychain: Arc<dyn RefreshTokenStore> = Arc::new(TestKeychain::default());
+        let mut auth = AuthSession::login(
+            cloud.as_ref(),
+            keychain.as_ref(),
+            "ash",
+            Password::new("password").unwrap(),
+        )
+        .await
+        .unwrap();
+        let request = AcquireLeaseRequest::new(
+            existing.lease.character_id,
+            existing.lease.client_instance_id,
+            IdempotencyKey::new(Uuid::from_u128(105)).unwrap(),
+        )
+        .replacing_same_client();
+
+        SessionLifecycle::acquire_world_replacing_same_client_with_keychain(
+            cloud.as_ref(),
+            &mut auth,
+            request,
+            &keychain,
+        )
+        .await
+        .unwrap();
+
+        let requests = cloud.world_acquire_requests.lock().unwrap();
+        assert_eq!(requests.as_slice(), &[request, request]);
+    }
+
+    #[tokio::test]
+    async fn world_acquire_replays_the_exact_replacement_request_after_unauthorized() {
+        let (_, existing, cloud) = bootstrap(false).await;
+        cloud.enable_refresh();
+        cloud.set_world_acquire_unauthorized_once();
+        let keychain: Arc<dyn RefreshTokenStore> = Arc::new(TestKeychain::default());
+        let mut auth = AuthSession::login(
+            cloud.as_ref(),
+            keychain.as_ref(),
+            "ash",
+            Password::new("password").unwrap(),
+        )
+        .await
+        .unwrap();
+        let request = AcquireLeaseRequest::new(
+            existing.lease.character_id,
+            existing.lease.client_instance_id,
+            IdempotencyKey::new(Uuid::from_u128(106)).unwrap(),
+        )
+        .replacing_same_client();
+
+        SessionLifecycle::acquire_world_replacing_same_client_with_keychain(
+            cloud.as_ref(),
+            &mut auth,
+            request,
+            &keychain,
+        )
+        .await
+        .unwrap();
+
+        let requests = cloud.world_acquire_requests.lock().unwrap();
+        assert_eq!(requests.as_slice(), &[request, request]);
+    }
+
+    #[tokio::test]
+    async fn world_lease_materializes_selected_region_without_acquiring_again() {
+        let (root, existing, cloud) = bootstrap(false).await;
+        let keychain: Arc<dyn RefreshTokenStore> = Arc::new(TestKeychain::default());
+        let auth = AuthSession::login(
+            cloud.as_ref(),
+            keychain.as_ref(),
+            "ash",
+            Password::new("password").unwrap(),
+        )
+        .await
+        .unwrap();
+        let destination = coop_protocol::RomWorldId::new(2).unwrap();
+        let mut config = existing.config.clone();
+        config.rom_world_id = destination;
+        config.epoch_store = EpochStore::new(root.path().join("world-epoch.json"));
+        config.workspace_parent = root.path().join("world-sessions");
+        let response = coop_cloud::AcquireWorldLeaseResponse {
+            lease: existing.lease,
+            active_world_id: destination,
+            active_snapshot_id: None,
+        };
+        let selected = SessionLifecycle::from_world_lease_with_keychain(
+            cloud.as_ref(),
+            auth,
+            config,
+            keychain,
+            response,
+        )
+        .await
+        .unwrap();
+        assert_eq!(selected.config.rom_world_id, destination);
+        assert_eq!(selected.lease, response.lease);
+        assert_eq!(cloud.acquire_requests.lock().unwrap().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn replayed_world_lease_with_accepted_epoch_does_not_release_live_owner() {
+        let (root, existing, cloud) = bootstrap(false).await;
+        let release_count = cloud.release_requests.lock().unwrap().len();
+        let keychain: Arc<dyn RefreshTokenStore> = Arc::new(TestKeychain::default());
+        let auth = AuthSession::login(
+            cloud.as_ref(),
+            keychain.as_ref(),
+            "ash",
+            Password::new("password").unwrap(),
+        )
+        .await
+        .unwrap();
+        let mut config = existing.config.clone();
+        config.workspace_parent = root.path().join("replayed-world-sessions");
+        let response = coop_cloud::AcquireWorldLeaseResponse {
+            lease: existing.lease,
+            active_world_id: config.rom_world_id,
+            active_snapshot_id: None,
+        };
+        assert!(matches!(
+            SessionLifecycle::from_world_lease_with_keychain(
+                cloud.as_ref(),
+                auth,
+                config,
+                keychain,
+                response,
+            )
+            .await,
+            Err(SessionError::Epoch(_))
+        ));
+        assert_eq!(cloud.release_requests.lock().unwrap().len(), release_count);
+    }
+
+    #[tokio::test]
+    async fn committed_handoff_transfers_credentials_without_source_release() {
+        let (_, mut session, cloud) = bootstrap(false).await;
+        let next_revision = Revision::new(1);
+        session.lease = LeaseContract::new(
+            LeaseFence::new(
+                session.lease.session_id,
+                session.lease.character_id,
+                next_revision,
+                session.lease.session_epoch,
+                session.lease.client_instance_id,
+            ),
+            session.lease.expires_at,
+            session.lease.heartbeat_interval_ms,
+        )
+        .unwrap();
+        session.revision = next_revision;
+        let source_snapshot_id = SnapshotId::new(Uuid::new_v4()).unwrap();
+        session.last_finalized_snapshot_id = Some(source_snapshot_id);
+        let destination = coop_protocol::RomWorldId::new(2).unwrap();
+        let committed = super::TravelRecord {
+            format_version: 1,
+            sequence: 1,
+            character_id: session.lease.character_id,
+            checkpoint: 1,
+            active_world: destination,
+            phase: super::TravelPhase::Committed,
+            source_world: Some(session.config.rom_world_id),
+            destination_world: Some(destination),
+            portal_id: Some("main_to_cormoria".to_string()),
+            source_snapshot_id: Some(source_snapshot_id),
+            source_revision: Some(next_revision),
+            server_stage_snapshot_id: Some(SnapshotId::new(Uuid::new_v4()).unwrap()),
+            prepare_idempotency_key: Some(IdempotencyKey::new(Uuid::new_v4()).unwrap()),
+            trusted_catalog_digest: Some(Sha256Digest::of_bytes(b"trusted catalog")),
+            lease_fence: Some(super::LeaseFenceIdentity::new(
+                session.lease.session_id,
+                session.lease.session_epoch,
+                session.lease.client_instance_id,
+            )),
+            source_head_save_sha256: Some(Sha256Digest::of_bytes(b"source save")),
+            source_save_sha256: Some(Sha256Digest::of_bytes(b"source save")),
+            destination_save_sha256: Some(Sha256Digest::of_bytes(b"destination save")),
+            arrival_nonce: Some([1; 16]),
+        };
+        let auth = session
+            .into_auth_after_committed_handoff(&committed)
+            .unwrap();
+        assert!(auth.access_token().is_some());
+        assert!(auth.active_fence().is_none());
+        assert_eq!(*cloud.releases.lock().unwrap(), 0);
+        assert_eq!(*cloud.logouts.lock().unwrap(), 0);
     }
 
     fn story_recovery_view(
@@ -7541,22 +8716,24 @@ mod lifecycle_tests {
     fn valid_save_with_status(generation: u32, status_flags: u32) -> Vec<u8> {
         let mut payload = [0_u8; COOP_SAVE_V1_SIZE];
         write_u32(&mut payload, 0, COOP_SAVE_V1_MAGIC);
-        write_u16(&mut payload, 4, COOP_SAVE_V1_SCHEMA_VERSION);
+        write_u16(&mut payload, 4, coop_save::v2::COOP_SAVE_V2_SCHEMA_VERSION);
         write_u16(
             &mut payload,
             6,
             u16::try_from(COOP_SAVE_V1_SIZE).expect("frozen save ABI fits u16"),
         );
-        write_u32(&mut payload, 8, 1);
-        payload[12..28].copy_from_slice(&[
-            0x43, 0x91, 0x88, 0x33, 0xde, 0xc6, 0x46, 0xd6, 0xa5, 0x83, 0xd1, 0x24, 0x68, 0x6c,
-            0x85, 0x40,
-        ]);
+        write_u32(&mut payload, 8, coop_protocol::IDENTITY_REGISTRY_VERSION);
+        payload[12..28].copy_from_slice(&coop_protocol::IDENTITY_REGISTRY_DIGEST);
         write_u32(&mut payload, 28, generation);
-        write_u32(&mut payload, 32, status_flags);
+        write_u32(
+            &mut payload,
+            32,
+            status_flags | coop_save::v2::COOP_SAVE_STATUS_MET_LOCATION_NORMALIZED,
+        );
         for (index, region) in [1_u8, 2, 3, 4].into_iter().enumerate() {
             payload[36 + index * 8] = region;
         }
+        payload[coop_save::v2::COOP_SAVE_V2_CORMORIA_PROGRESS_OFFSET] = RegionId::Cormoria.wire();
         let payload_crc = crc32(&payload[..668]);
         write_u32(&mut payload, 668, payload_crc);
         let mut block3 = [0xff_u8; SAVE_BLOCK3_CAPACITY];
@@ -7642,7 +8819,8 @@ mod lifecycle_tests {
                 coop_sidecar::control::ControlCommand::ShutdownRequest(_) => {
                     panic!("checkpoint fixture must not receive shutdown")
                 }
-                coop_sidecar::control::ControlCommand::RemotePlayerSpawn(_)
+                coop_sidecar::control::ControlCommand::ArrivalChallenge { .. }
+                | coop_sidecar::control::ControlCommand::RemotePlayerSpawn(_)
                 | coop_sidecar::control::ControlCommand::OnlineStatus { .. }
                 | coop_sidecar::control::ControlCommand::PairingStatus { .. }
                 | coop_sidecar::control::ControlCommand::GroupStateChanged { .. }
@@ -7827,6 +9005,7 @@ mod lifecycle_tests {
             .await
             .unwrap();
         assert_eq!(revision, Revision::new(1));
+        assert!(session.last_finalized_snapshot_id().is_some());
         let finalized = session
             .last_finalized_snapshot()
             .expect("validated snapshot");
@@ -8132,6 +9311,40 @@ mod lifecycle_tests {
     }
 
     #[tokio::test]
+    async fn nonzero_revision_admits_eligible_v2_save_and_rejects_v1_schema() {
+        let (_root, session, _cloud) = bootstrap(false).await;
+        let save = valid_save(7);
+        assert_eq!(
+            session
+                .validate_character_save(&save, Revision::new(1))
+                .unwrap(),
+            Some(7)
+        );
+
+        let mut old_schema = save;
+        for slot in 0..2 {
+            let base = slot * SECTORS_PER_SLOT * SECTOR_SIZE;
+            for logical in 0..SECTORS_PER_SLOT {
+                let offset = base + logical * SECTOR_SIZE;
+                if logical == 0 {
+                    let payload_offset = offset + SAVE_BLOCK3_CHUNK_OFFSET + COOP_SAVE_OFFSET;
+                    write_u16(&mut old_schema, payload_offset + 4, 1);
+                    let payload_crc = crc32(&old_schema[payload_offset..payload_offset + 668]);
+                    write_u32(&mut old_schema, payload_offset + 668, payload_crc);
+                }
+                let checksum = sector_checksum(
+                    &old_schema[offset..offset + LOGICAL_SECTOR_DATA_SIZES[logical]],
+                );
+                write_u16(&mut old_schema, offset + 4086, checksum);
+            }
+        }
+        assert!(matches!(
+            session.validate_character_save(&old_schema, Revision::new(1)),
+            Err(SessionError::Package)
+        ));
+    }
+
+    #[tokio::test]
     async fn nonzero_revision_rejects_migration_ambiguous_save() {
         let (_root, session, _cloud) = bootstrap(false).await;
         let save = valid_save_with_status(1, coop_save::COOP_SAVE_STATUS_MIGRATION_AMBIGUOUS);
@@ -8142,13 +9355,13 @@ mod lifecycle_tests {
     }
 
     #[tokio::test]
-    async fn save_data_updated_requires_next_generation_and_wraps() {
+    async fn save_data_updated_requires_next_generation_without_wraparound() {
         for (cached, event, accepted) in [
             (Some(9), 9, false),
             (Some(9), 8, false),
             (Some(9), 11, false),
             (Some(9), 10, true),
-            (Some(u32::MAX), 0, true),
+            (Some(u32::MAX), 0, false),
         ] {
             let (_root, mut session, cloud) = bootstrap(false).await;
             session.save_generation = cached;
@@ -8885,6 +10098,15 @@ mod lifecycle_tests {
 
     #[tokio::test]
     async fn live_requests_are_served_by_a_running_realtime_session() {
+        assert_live_requests_are_served(false).await;
+    }
+
+    #[tokio::test]
+    async fn live_requests_are_served_by_a_running_realtime_portal_session() {
+        assert_live_requests_are_served(true).await;
+    }
+
+    async fn assert_live_requests_are_served(portal: bool) {
         let (_root, mut session, cloud) = bootstrap(false).await;
         let (live, requests) = crate::live_requests::live_request_channel();
         session.serve_live_requests(requests);
@@ -8924,12 +10146,25 @@ mod lifecycle_tests {
             drop(shutdown_tx);
             (status, redeemed)
         });
-        let _ = timeout(
-            Duration::from_secs(5),
-            session.run_until_shutdown_with_realtime(cloud.as_ref(), &mut children, async {
+        let _ = timeout(Duration::from_secs(5), async {
+            let shutdown = async {
                 let _ = shutdown_rx.await;
-            }),
-        )
+            };
+            if portal {
+                session
+                    .run_until_shutdown_with_realtime_portal(
+                        cloud.as_ref(),
+                        &mut children,
+                        shutdown,
+                    )
+                    .await
+                    .map(|_| ())
+            } else {
+                session
+                    .run_until_shutdown_with_realtime(cloud.as_ref(), &mut children, shutdown)
+                    .await
+            }
+        })
         .await
         .expect("live requests do not stall the session");
         let (status, redeemed) = timeout(Duration::from_secs(1), host)
@@ -10037,6 +11272,81 @@ mod lifecycle_tests {
         timeout(Duration::from_secs(1), server)
             .await
             .expect("checkpoint and pump teardown joined")
+            .unwrap();
+    }
+
+    #[tokio::test]
+    async fn portal_request_validation_is_epoch_bound_and_replay_safe() {
+        let (_root, mut session, _cloud) = bootstrap(false).await;
+
+        session
+            .validate_portal_request(1, 6, "to_cormoria")
+            .expect("first portal request is accepted");
+        assert!(matches!(
+            session.validate_portal_request(1, 6, "to_cormoria"),
+            Err(SessionError::CheckpointCorrelation)
+        ));
+        assert!(matches!(
+            session.validate_portal_request(2, 7, "to_cormoria"),
+            Err(SessionError::CheckpointCorrelation)
+        ));
+        assert!(matches!(
+            session.validate_portal_request(1, 8, "To_cormoria"),
+            Err(SessionError::CheckpointCorrelation)
+        ));
+        assert!(matches!(
+            session.validate_portal_request(1, 9, "to-cormoria"),
+            Err(SessionError::CheckpointCorrelation)
+        ));
+    }
+
+    #[tokio::test]
+    async fn shutdown_drain_rejects_portal_intent_before_checkpoint() {
+        let (_root, mut session, cloud) = bootstrap(false).await;
+        let listener = TcpListener::bind(("127.0.0.1", 0)).await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            write_control_event(
+                &mut stream,
+                &ControlEvent::PortalTravelRequest {
+                    session_epoch: 1,
+                    portal_sequence: 6,
+                    portal_id: "to_cormoria".into(),
+                },
+            )
+            .await;
+            write_control_event(
+                &mut stream,
+                &ControlEvent::CheckpointReady {
+                    session_epoch: 1,
+                    ready_sequence: 7,
+                },
+            )
+            .await;
+            let mut remainder = Vec::new();
+            stream.read_to_end(&mut remainder).await.unwrap();
+        });
+        let stream = tokio::net::TcpStream::connect(address).await.unwrap();
+        let control = ControlChannel::from_stream_for_test(stream);
+        let mut children = SupervisedChildren::for_test(
+            long_running_test_child(),
+            long_running_test_child(),
+            control,
+        );
+        let result = session
+            .drain_shutdown_checkpoint(cloud.as_ref(), &mut children)
+            .await;
+        assert!(matches!(
+            result,
+            Err(SessionError::PortalHandoffUnavailable)
+        ));
+        assert_eq!(*cloud.prepares.lock().unwrap(), 0);
+        assert_eq!(*cloud.finalizes.lock().unwrap(), 0);
+        children.stop_in_place().await.unwrap();
+        timeout(Duration::from_secs(1), server)
+            .await
+            .unwrap()
             .unwrap();
     }
 
@@ -11209,6 +12519,7 @@ mod lifecycle_tests {
         ];
         SnapshotRecord::new(
             coop_cloud::SnapshotId::new(Uuid::new_v4()).unwrap(),
+            coop_protocol::RomWorldId::new(1).unwrap(),
             SnapshotFence::new(session, character, SessionEpoch::new(1).unwrap()),
             Revision::new((revision - 1).into()),
             Revision::new(revision.into()),
@@ -11288,14 +12599,29 @@ mod lifecycle_tests {
             session_epoch: record.session_epoch,
             pending_commits_sha256: Sha256Digest::of_bytes(b"[]"),
         };
-        let package = super::VerifiedPackage {
+        let mut package = super::VerifiedPackage {
             manifest,
             sav: b"save".to_vec(),
             pending: b"[]".to_vec(),
             resume: None,
             save_generation: 1,
         };
-        assert!(!super::history_record_matches(&record, &package));
+        assert!(!super::history_record_matches(
+            &record,
+            &package,
+            coop_protocol::RomWorldId::new(1).unwrap(),
+        ));
+        package.manifest.snapshot_id = record.snapshot_id;
+        assert!(super::history_record_matches(
+            &record,
+            &package,
+            coop_protocol::RomWorldId::new(1).unwrap(),
+        ));
+        assert!(!super::history_record_matches(
+            &record,
+            &package,
+            coop_protocol::RomWorldId::new(2).unwrap(),
+        ));
     }
 
     #[test]

@@ -471,6 +471,7 @@ version = "0.1.0"
 dependencies = [
  "coop-protocol",
  "ed25519-dalek",
+ "hmac 0.12.1",
  "serde",
  "serde_jcs",
  "serde_json",
@@ -487,6 +488,7 @@ dependencies = [
  "axum",
  "coop-cloud",
  "coop-launcher",
+ "coop-protocol",
  "ed25519-dalek",
  "eframe",
  "http-body-util",
@@ -566,6 +568,7 @@ version = "0.1.0"
 dependencies = [
  "coop-protocol",
  "crc32fast",
+ "sha2 0.10.9",
  "thiserror 2.0.20",
 ]
 

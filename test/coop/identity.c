@@ -22,7 +22,10 @@ TEST("Cloud Coop trainer registry resolves every Hoenn opponent without raw flag
     u16 i;
 
     EXPECT_EQ(HOENN_TRAINER_IDENTITY_COUNT, 854);
-    EXPECT_EQ(COOP_TRAINER_IDENTITY_COUNT, 856);
+    /* Cormoria trainers are appended after the Hoenn, Kanto and Johto
+     * ordinals, so every earlier ordinal keeps its value. */
+    EXPECT_EQ(COOP_TRAINER_CORMORIA_TRAINER_CERAMBASECAMPGYM_A_ORDINAL, 856);
+    EXPECT_EQ(COOP_TRAINER_IDENTITY_COUNT, 1050);
     for (i = 0; i < HOENN_TRAINER_IDENTITY_COUNT; i++)
     {
         const struct CoopIdentityRegistryEntry *entry = &gCoopTrainerIdentityRegistry[i];

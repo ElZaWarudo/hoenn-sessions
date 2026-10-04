@@ -81,3 +81,22 @@ EVs: 252 Atk / 252 SpA / 6 SpD
 - Wing Attack
 - Double Team
 - Steel Wing
+
+=== PARTNER_CORMORIA_GABRIELLE ===
+Name: Gabrielle
+Class: Pkmn Trainer 2
+Pic: Cormoria Gabrielle
+Gender: Female
+Music: Female
+
+Baltoy
+Level: 29
+IVs: 24 HP / 24 Atk / 24 Def / 24 SpA / 24 SpD / 24 Spe
+
+Mawile
+Level: 32
+IVs: 24 HP / 24 Atk / 24 Def / 24 SpA / 24 SpD / 24 Spe
+
+Zoroark-Hisui
+Level: 33
+IVs: 24 HP / 24 Atk / 24 Def / 24 SpA / 24 SpD / 24 Spe

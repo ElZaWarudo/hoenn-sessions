@@ -5,6 +5,11 @@
 
 extern u8 *const gTVStringVarPtrs[3];
 
+bool8 TVShow_SetMapSection(TVShow *show, mapsec_u16_t section);
+mapsec_u16_t TVShow_GetMapSection(const TVShow *show);
+bool8 GabbyAndTy_SetMapSection(struct GabbyAndTyData *data, mapsec_u16_t section);
+mapsec_u16_t GabbyAndTy_GetMapSection(const struct GabbyAndTyData *data);
+
 void ClearTVShowData(void);
 void TryPutBreakingNewsOnAir(void);
 void TryPutBattleSeminarOnAir(enum Species foeSpecies, enum Species species, u8 moveIndex, const u16 *movePtr, enum Move betterMove);
@@ -14,6 +19,7 @@ void DoTVShowInSearchOfTrainers(void);
 void TryPutTreasureInvestigatorsOnAir(void);
 void TryPutLotteryWinnerReportOnAir(void);
 void TryPutTrainerFanClubOnAir(void);
+void ChangePokemonNickname(void);
 void IncrementDailyPlantedBerries(void);
 void IncrementDailyPickedBerries(void);
 void IncrementDailyBattlePoints(u16 delta);

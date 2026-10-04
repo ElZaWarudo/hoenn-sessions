@@ -1,4 +1,6 @@
 #include "global.h"
+#include "event_data.h"
+#include "coop/arrival_proof.h"
 #include "coop/net_bridge.h"
 #include "coop/battle_consent.h"
 #include "coop/battle_runtime.h"
@@ -11,6 +13,7 @@
 #include "coop/trade_offer.h"
 #include "coop/trade_runtime.h"
 #include "johto/bug_contest.h"
+#include "script.h"
 #include "constants/map_groups.h"
 #include "../data/map_group_count.h"
 
@@ -85,13 +88,13 @@ static EWRAM_DATA struct CoopNetRuntime sCoopNetRuntime = {0};
 static bool8 IsOutboundMessageType(u16 type)
 {
     return type >= COOP_BRIDGE_MESSAGE_ROM_READY
-        && type <= COOP_BRIDGE_MESSAGE_TRADE_OFFER_DECISION;
+        && type <= COOP_BRIDGE_MESSAGE_ARRIVAL_PROOF;
 }
 
 static bool8 IsInboundMessageType(u16 type)
 {
     return type >= COOP_BRIDGE_MESSAGE_SESSION_READY
-        && type <= COOP_BRIDGE_MESSAGE_TRADE_OFFER_STATUS;
+        && type <= COOP_BRIDGE_MESSAGE_ARRIVAL_CHALLENGE;
 }
 
 static bool8 IsKnownMessageType(u16 type)
@@ -313,11 +316,36 @@ static void TryAnnounceRomReady(void)
 {
     if ((gCoopNetBridge.status_flags & COOP_BRIDGE_STATUS_INITIALIZED) == 0
      || (gCoopNetBridge.status_flags & COOP_BRIDGE_STATUS_ROM_READY_SENT) != 0
-     || !CoopSave_IsOnlineEnabled())
+     || !CoopSave_IsOnlineEnabled()
+     || CoopArrivalProof_IsVerifierMode())
         return;
 
     if (CoopNetBridge_EnqueueGameToNetwork(COOP_BRIDGE_MESSAGE_ROM_READY, NULL, 0))
         gCoopNetBridge.status_flags |= COOP_BRIDGE_STATUS_ROM_READY_SENT;
+}
+
+static bool8 IsZeroPayloadTail(const struct CoopBridgeMessage *message, u16 first)
+{
+    u16 i;
+
+    for (i = first; i < COOP_NET_BRIDGE_PAYLOAD_SIZE; i++)
+    {
+        if (message->payload[i] != 0)
+            return FALSE;
+    }
+    return TRUE;
+}
+
+static void TrySendArrivalProof(void)
+{
+    u8 payload[COOP_ARRIVAL_PROOF_PAYLOAD_SIZE];
+
+    if (!CoopArrivalProof_GetPayload(payload, sizeof(payload)))
+        return;
+    if (CoopNetBridge_EnqueueGameToNetwork(COOP_BRIDGE_MESSAGE_ARRIVAL_PROOF,
+                                            payload,
+                                            sizeof(payload)))
+        CoopArrivalProof_MarkEmitted();
 }
 
 static void CancelCheckpointAuthorization(void)
@@ -592,6 +620,10 @@ bool8 CoopNetBridge_EnqueueGameToNetwork(u16 type, const void *payload, u16 payl
 
     if ((gCoopNetBridge.status_flags & COOP_BRIDGE_STATUS_INITIALIZED) == 0
      || !IsOutboundMessageType(type)
+     || (CoopArrivalProof_IsVerifierMode()
+         && type != COOP_BRIDGE_MESSAGE_ARRIVAL_PROOF)
+     || (type == COOP_BRIDGE_MESSAGE_ARRIVAL_PROOF
+         && !CoopArrivalProof_IsProofReady())
      || !CoopBridgeMessage_Seal(&message, type, sCoopNetRuntime.tx_sequence,
                                 sCoopNetRuntime.session_epoch, payload, payload_size))
         return FALSE;
@@ -825,6 +857,11 @@ bool8 CoopNetBridge_CanSendBattle(void)
         && sCoopNetRuntime.checkpoint_state == COOP_CHECKPOINT_STATE_IDLE;
 }
 
+static bool8 IsPortalAvailable(void)
+{
+    return CoopNetBridge_IsCloudMode();
+}
+
 static bool8 DecodeOnlineName(u8 *out, const u8 *in)
 {
     u32 i;
@@ -923,13 +960,46 @@ bool8 CoopNetBridge_IsRecoveryRequired(void)
     return sCoopNetRuntime.recovery_required;
 }
 
-enum CoopCheckpointRequestResult CoopNetBridge_RequestCheckpoint(void)
+static u16 ValidPortalIdLength(const char *portal_id)
 {
+    u16 length;
+
+    if (portal_id == NULL)
+        return 0;
+    for (length = 0; length <= 96; length++)
+    {
+        char c = portal_id[length];
+
+        if (c == '\0')
+            return length;
+        if (length == 0)
+        {
+            if (c < 'a' || c > 'z')
+                return 0;
+        }
+        else if ((c < 'a' || c > 'z')
+              && (c < '0' || c > '9')
+              && c != '_')
+            return 0;
+    }
+    return 0;
+}
+
+static enum CoopCheckpointRequestResult RequestCheckpoint(const char *portal_id)
+{
+    u16 portal_id_length = 0;
+
+    if (portal_id != NULL)
+    {
+        portal_id_length = ValidPortalIdLength(portal_id);
+        if (portal_id_length == 0)
+            return COOP_CHECKPOINT_REQUEST_REJECTED;
+    }
     if (JohtoBugContest_IsSerializationBlocked())
         return COOP_CHECKPOINT_REQUEST_REJECTED;
 
     if (!sCoopNetRuntime.cloud_epoch_accepted)
-        return COOP_CHECKPOINT_REQUEST_OFFLINE;
+        return portal_id == NULL ? COOP_CHECKPOINT_REQUEST_OFFLINE : COOP_CHECKPOINT_REQUEST_REJECTED;
 
     if (!IsCloudSessionActive()
      || sCoopNetRuntime.checkpoint_state != COOP_CHECKPOINT_STATE_IDLE
@@ -943,9 +1013,15 @@ enum CoopCheckpointRequestResult CoopNetBridge_RequestCheckpoint(void)
      || CoopBridgeQueue_IsFull(&gCoopNetBridge.network_to_game))
         return COOP_CHECKPOINT_REQUEST_REJECTED;
 
+    /* The queues are empty at this point, so the two critical frames fit in
+     * one turn while Lua cannot interleave with this ROM call. */
+    if (portal_id != NULL
+     && !CoopNetBridge_EnqueueGameToNetwork(COOP_BRIDGE_MESSAGE_PORTAL_TRAVEL_REQUEST,
+                                             portal_id, portal_id_length))
+        return COOP_CHECKPOINT_REQUEST_REJECTED;
+
     /* Do not transition to WaitingForGrant until the critical ready event is
-     * actually published. A full queue therefore leaves tx_sequence intact
-     * and permits a later, deterministic retry. */
+     * actually published. */
     if (!CoopNetBridge_EnqueueGameToNetwork(COOP_BRIDGE_MESSAGE_CHECKPOINT_READY,
                                             NULL,
                                             0))
@@ -954,6 +1030,90 @@ enum CoopCheckpointRequestResult CoopNetBridge_RequestCheckpoint(void)
     sCoopNetRuntime.checkpoint_state = COOP_CHECKPOINT_STATE_WAITING_FOR_GRANT;
     sCoopNetRuntime.checkpoint_started_frame = sCoopNetRuntime.frame_counter;
     return COOP_CHECKPOINT_REQUEST_STARTED;
+}
+
+enum CoopCheckpointRequestResult CoopNetBridge_RequestCheckpoint(void)
+{
+    return RequestCheckpoint(NULL);
+}
+
+bool8 CoopNetBridge_ShouldRetryCheckpointRequest(u16 *attempts)
+{
+    if (attempts == NULL || !CoopNetBridge_IsCloudMode())
+        return FALSE;
+    return ++*attempts < COOP_NET_BRIDGE_CHECKPOINT_REQUEST_FRAMES;
+}
+
+enum CoopCheckpointRequestResult CoopNetBridge_RequestPortalTravel(const char *portal_id)
+{
+    if (portal_id == NULL || !IsPortalAvailable())
+        return COOP_CHECKPOINT_REQUEST_REJECTED;
+    return RequestCheckpoint(portal_id);
+}
+
+void CoopNetBridge_ScriptPortalAvailable(void)
+{
+    gSpecialVar_Result = IsPortalAvailable();
+}
+
+/* The bridge Lua runs at VBlank, before the next frame's script step, and
+ * hands the ROM every frame it read from the sidecar; CoopNetBridge_Poll only
+ * consumes them after the callbacks. A harbor YES therefore regularly sees an
+ * ordinary in-flight frame (partner presence, companion, party chunk) or a
+ * not-yet-drained outbound one, and RequestCheckpoint must refuse that frame.
+ * Refusing the voyage on that alone told a ready player "try again once your
+ * session is ready". Retry once per frame, after each Poll/VBlank exchange,
+ * and give up with the same refusal only when the window expires or cloud
+ * mode is gone. */
+static const char *sScriptPortalId;
+static u16 sScriptPortalAttempts;
+
+static bool8 TryScriptPortalTravel(void)
+{
+    if (sScriptPortalId != NULL
+     && CoopNetBridge_RequestPortalTravel(sScriptPortalId) == COOP_CHECKPOINT_REQUEST_STARTED)
+    {
+        gSpecialVar_Result = TRUE;
+    }
+    else if (sScriptPortalId != NULL && IsPortalAvailable()
+          && CoopNetBridge_ShouldRetryCheckpointRequest(&sScriptPortalAttempts))
+    {
+        return FALSE;
+    }
+    else
+    {
+        gSpecialVar_Result = FALSE;
+    }
+    sScriptPortalId = NULL;
+    sScriptPortalAttempts = 0;
+    return TRUE;
+}
+
+static void BeginScriptPortalTravel(struct ScriptContext *ctx, const char *portal_id)
+{
+    sScriptPortalId = portal_id;
+    sScriptPortalAttempts = 0;
+    if (TryScriptPortalTravel())
+        return;
+    if (ctx == NULL)
+    {
+        sScriptPortalId = NULL;
+        sScriptPortalAttempts = 0;
+        gSpecialVar_Result = FALSE;
+        return;
+    }
+    SetupNativeScript(ctx, TryScriptPortalTravel);
+    ctx->waitAfterCallNative = TRUE;
+}
+
+void CoopNetBridge_ScriptTravelToCormoria(struct ScriptContext *ctx)
+{
+    BeginScriptPortalTravel(ctx, "to_cormoria");
+}
+
+void CoopNetBridge_ScriptTravelToMain(struct ScriptContext *ctx)
+{
+    BeginScriptPortalTravel(ctx, "to_main");
 }
 
 bool8 CoopNetBridge_ConsumeCheckpointGrant(void)
@@ -1063,6 +1223,31 @@ static bool8 ProcessInboundMessage(const struct CoopBridgeMessage *message)
     }
 
     if (!IsInboundMessageType(message->type))
+    {
+        gCoopNetBridge.status_flags |= COOP_BRIDGE_STATUS_PROTOCOL_ERROR;
+        return FALSE;
+    }
+
+    if (message->type == COOP_BRIDGE_MESSAGE_ARRIVAL_CHALLENGE)
+    {
+        if (message->session_epoch != 0
+         || sCoopNetRuntime.session_epoch != 0
+         || (gCoopNetBridge.status_flags & COOP_BRIDGE_STATUS_SESSION_READY) != 0
+         || message->length != COOP_ARRIVAL_CHALLENGE_NONCE_SIZE
+         || !IsZeroPayloadTail(message, COOP_ARRIVAL_CHALLENGE_NONCE_SIZE)
+         || !CoopArrivalProof_BeginChallenge(message->payload, message->length))
+        {
+            gCoopNetBridge.status_flags |= COOP_BRIDGE_STATUS_PROTOCOL_ERROR;
+            return FALSE;
+        }
+        /* A verifier challenge is a separate offline exchange. Discard any
+         * pre-session ROM_READY or gameplay frames before entering it. */
+        CoopBridgeQueue_Init(&gCoopNetBridge.game_to_network);
+        gCoopNetBridge.status_flags &= ~COOP_BRIDGE_STATUS_ROM_READY_SENT;
+        return FALSE;
+    }
+
+    if (CoopArrivalProof_IsVerifierMode())
     {
         gCoopNetBridge.status_flags |= COOP_BRIDGE_STATUS_PROTOCOL_ERROR;
         return FALSE;
@@ -1661,6 +1846,7 @@ void CoopNetBridge_Init(void)
 {
     memset(&gCoopNetBridge, 0, sizeof(gCoopNetBridge));
     memset(&sCoopNetRuntime, 0, sizeof(sCoopNetRuntime));
+    CoopArrivalProof_Reset();
     if (!CoopSave_LoadRuntimeProgress())
         CoopProgress_Init(&gCoopProgress);
     CoopBridgeQueue_Init(&gCoopNetBridge.game_to_network);
@@ -1695,6 +1881,7 @@ void CoopNetBridge_Poll(void)
     sCoopNetRuntime.frame_counter++;
     CoopPresenceRuntime_AdvanceFrame();
     CoopGroupTravel_Poll();
+    CoopArrivalProof_Poll();
     CoopBattleConsent_Poll();
     /* AgbMain initializes the bridge before flash is loaded. Do not invite a
      * cloud session until the save layer has classified and validated V1. */
@@ -1731,6 +1918,7 @@ void CoopNetBridge_Poll(void)
         }
     }
 
+    TrySendArrivalProof();
     CoopOnline_PollInviteNotice();
     /* Runs before the checkpoint early returns below: it owns the trade
      * checkpoint it requests and must observe the grant. */

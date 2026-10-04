@@ -360,7 +360,6 @@ static void AddHatchedMonToParty(u8 id)
     enum NationalDexOrder nationalDexNum;
     u8 name[POKEMON_NAME_LENGTH + 1];
     u16 metLevel;
-    metloc_u8_t metLocation;
     struct Pokemon *mon = &gParties[B_TRAINER_0][id];
 
     CreateHatchedMon(mon, &gParties[B_TRAINER_1][0]);
@@ -380,8 +379,7 @@ static void AddHatchedMonToParty(u8 id)
     metLevel = 0;
     SetMonData(mon, MON_DATA_MET_LEVEL, &metLevel);
 
-    metLocation = GetCurrentRegionMapSectionId();
-    SetMonData(mon, MON_DATA_MET_LOCATION, &metLocation);
+    SetMonMetLocation(mon, GetCurrentRegionMapSectionId());
 
     MonRestorePP(mon);
     CalculateMonStats(mon);

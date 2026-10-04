@@ -1,0 +1,7 @@
+{
+  "schema_version": 1,
+  "worlds": [
+    {"name": "main", "world_id": 1},
+    {"name": "cormoria", "world_id": 2}
+  ]
+}

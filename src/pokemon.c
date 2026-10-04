@@ -757,20 +757,15 @@ void ZeroBoxMonData(struct BoxPokemon *boxMon)
 
 void ZeroMonData(struct Pokemon *mon)
 {
-    u32 arg;
-    ZeroBoxMonData(&mon->box);
-    arg = 0;
-    SetMonData(mon, MON_DATA_STATUS, &arg);
-    SetMonData(mon, MON_DATA_LEVEL, &arg);
-    SetMonData(mon, MON_DATA_HP, &arg);
-    SetMonData(mon, MON_DATA_MAX_HP, &arg);
-    SetMonData(mon, MON_DATA_ATK, &arg);
-    SetMonData(mon, MON_DATA_DEF, &arg);
-    SetMonData(mon, MON_DATA_SPEED, &arg);
-    SetMonData(mon, MON_DATA_SPATK, &arg);
-    SetMonData(mon, MON_DATA_SPDEF, &arg);
-    arg = MAIL_NONE;
-    SetMonData(mon, MON_DATA_MAIL, &arg);
+    /* Setting MON_DATA_HP through SetMonData also stores the box's HP_LOST
+     * as maxHP - hp, and maxHP still held the previous occupant's value at
+     * that point. The "empty" slot then kept a trace of whatever lived there
+     * before, so two ROMs with different histories hashed different bytes
+     * for the same empty party slot (co-op battle digests hash whole party
+     * records). Clear every byte instead; the result equals the old one for
+     * a slot that was already empty. */
+    memset(mon, 0, sizeof(*mon));
+    mon->mail = MAIL_NONE;
 }
 
 void ZeroPartyMons(struct Pokemon *party)
@@ -963,8 +958,7 @@ void CreateBoxMon(struct BoxPokemon *boxMon, enum Species species, u8 level, u32
     SetBoxMonData(boxMon, MON_DATA_SPECIES, &species);
     SetBoxMonData(boxMon, MON_DATA_EXP, &gExperienceTables[gSpeciesInfo[species].growthRate][level]);
     SetBoxMonData(boxMon, MON_DATA_FRIENDSHIP, &gSpeciesInfo[species].friendship);
-    value = GetCurrentRegionMapSectionId();
-    SetBoxMonData(boxMon, MON_DATA_MET_LOCATION, &value);
+    SetBoxMonMetLocation(boxMon, GetCurrentRegionMapSectionId());
     SetBoxMonData(boxMon, MON_DATA_MET_LEVEL, &level);
     SetBoxMonData(boxMon, MON_DATA_MET_GAME, &gGameVersion);
     value = ITEM_POKE_BALL;
@@ -1992,6 +1986,208 @@ static ALWAYS_INLINE struct PokemonSubstruct2 *GetSubstruct2(struct BoxPokemon *
 static ALWAYS_INLINE struct PokemonSubstruct3 *GetSubstruct3(struct BoxPokemon *boxMon)
 {
     return &(GetSubstruct(boxMon, boxMon->personality, SUBSTRUCT_TYPE_3)->type3);
+}
+
+#define MET_LOCATION_V2_MARKER_NONE (0)
+#define MET_LOCATION_V2_MARKER_250 (0x20)
+#define MET_LOCATION_V2_MARKER_256 (0x21)
+
+static bool32 DecodeBoxMonMetLocationV2(u16 marker, u8 metLocation, u16 *location)
+{
+    if (location == NULL)
+        return FALSE;
+
+    switch (marker)
+    {
+    case MET_LOCATION_V2_MARKER_NONE:
+        // Values 250..255 are the legacy V1 encodings.  Keep their meanings
+        // distinct from the V2 range by exposing them as reserved values.
+        if (metLocation < 250)
+            *location = metLocation;
+        else if (metLocation == 250)
+            *location = MET_LOCATION_V2_NONE;
+        else
+            *location = MET_LOCATION_V2_LEGACY_251 + (metLocation - 251);
+        return TRUE;
+    case MET_LOCATION_V2_MARKER_250:
+        if (metLocation > 5)
+            return FALSE;
+        *location = 250 + metLocation;
+        return TRUE;
+    case MET_LOCATION_V2_MARKER_256:
+        if (metLocation > 44)
+            return FALSE;
+        *location = 256 + metLocation;
+        return TRUE;
+    default:
+        return FALSE;
+    }
+}
+
+static bool32 EncodeBoxMonMetLocationV2(u16 location, u16 *marker, u8 *metLocation)
+{
+    if (marker == NULL || metLocation == NULL)
+        return FALSE;
+
+    if (location < 250)
+    {
+        *marker = MET_LOCATION_V2_MARKER_NONE;
+        *metLocation = location;
+    }
+    else if (location <= 255)
+    {
+        *marker = MET_LOCATION_V2_MARKER_250;
+        *metLocation = location - 250;
+    }
+    else if (location <= MET_LOCATION_V2_MAX)
+    {
+        *marker = MET_LOCATION_V2_MARKER_256;
+        *metLocation = location - 256;
+    }
+    else if (location == MET_LOCATION_V2_NONE)
+    {
+        *marker = MET_LOCATION_V2_MARKER_NONE;
+        *metLocation = 250;
+    }
+    else if (location >= MET_LOCATION_V2_LEGACY_251
+          && location <= MET_LOCATION_V2_LEGACY_255)
+    {
+        *marker = MET_LOCATION_V2_MARKER_NONE;
+        *metLocation = 251 + (location - MET_LOCATION_V2_LEGACY_251);
+    }
+    else
+    {
+        return FALSE;
+    }
+
+    return TRUE;
+}
+
+bool32 GetBoxMonMetLocationV2(const struct BoxPokemon *boxMon, u16 *location)
+{
+    struct BoxPokemon decoded;
+    struct PokemonSubstruct0 *substruct0;
+    struct PokemonSubstruct3 *substruct3;
+
+    if (boxMon == NULL || location == NULL)
+        return FALSE;
+
+    decoded = *boxMon;
+    if (CalculateBoxMonChecksumDecrypt(&decoded) != decoded.checksum)
+        return FALSE;
+
+    substruct0 = GetSubstruct0(&decoded);
+    if (substruct0->species == SPECIES_NONE)
+        return FALSE;
+
+    substruct3 = GetSubstruct3(&decoded);
+    return DecodeBoxMonMetLocationV2(substruct0->unused_02, substruct3->metLocation, location);
+}
+
+bool32 SetBoxMonMetLocationV2(struct BoxPokemon *boxMon, u16 location)
+{
+    struct BoxPokemon updated;
+    struct PokemonSubstruct0 *substruct0;
+    struct PokemonSubstruct3 *substruct3;
+    u16 marker;
+    u8 metLocation;
+    u16 oldLocation;
+
+    if (boxMon == NULL
+     || !EncodeBoxMonMetLocationV2(location, &marker, &metLocation))
+        return FALSE;
+
+    updated = *boxMon;
+    if (CalculateBoxMonChecksumDecrypt(&updated) != updated.checksum)
+        return FALSE;
+
+    substruct0 = GetSubstruct0(&updated);
+    if (substruct0->species == SPECIES_NONE)
+        return FALSE;
+
+    substruct3 = GetSubstruct3(&updated);
+    // Refuse to overwrite an invalid existing marker.  Migration must clear
+    // V1 data explicitly before any V2 producer writes a wide location.
+    if (!DecodeBoxMonMetLocationV2(substruct0->unused_02, substruct3->metLocation, &oldLocation))
+        return FALSE;
+
+    substruct0->unused_02 = marker;
+    substruct3->metLocation = metLocation;
+    updated.checksum = CalculateBoxMonChecksum(&updated);
+    EncryptBoxMon(&updated);
+    *boxMon = updated;
+    return TRUE;
+}
+
+// Map sections and met locations share one value space; the legacy special
+// bytes keep their reserved logical values in the V2 codec.
+STATIC_ASSERT(MAPSEC_NONE == MET_LOCATION_V2_NONE, MetLocationV2NoneIsMapsecNone);
+STATIC_ASSERT(METLOC_SPECIAL_EGG == 0xFD, MetLocationSpecialEggByte);
+STATIC_ASSERT(METLOC_IN_GAME_TRADE == 0xFE, MetLocationInGameTradeByte);
+STATIC_ASSERT(METLOC_FATEFUL_ENCOUNTER == 0xFF, MetLocationFatefulEncounterByte);
+
+bool32 IsMetLocationV2FormatActive(void)
+{
+    u32 status;
+
+    // Raw Pokemon bytes cannot prove the V2 marker format, so it is only used
+    // for a save that was created met-location-normalized and is not a
+    // migration-ambiguous legacy save.
+    if (gSaveBlock3Ptr == NULL)
+        return FALSE;
+    status = gSaveBlock3Ptr->coop.status_flags;
+    return (status & COOP_SAVE_STATUS_MET_LOCATION_NORMALIZED) != 0
+        && (status & COOP_SAVE_STATUS_MIGRATION_AMBIGUOUS) == 0;
+}
+
+u16 MetLocationFromLegacyByte(u8 legacyByte)
+{
+    u16 location = MET_LOCATION_V2_NONE;
+
+    (void)DecodeBoxMonMetLocationV2(MET_LOCATION_V2_MARKER_NONE, legacyByte, &location);
+    return location;
+}
+
+u8 MetLocationToLegacyByte(u16 location)
+{
+    u16 marker;
+    u8 legacyByte;
+
+    if (!EncodeBoxMonMetLocationV2(location, &marker, &legacyByte)
+     || marker != MET_LOCATION_V2_MARKER_NONE)
+        return 250; // Legacy "none": never alias another section.
+    return legacyByte;
+}
+
+u16 GetBoxMonMetLocation(struct BoxPokemon *boxMon)
+{
+    u16 location;
+
+    if (IsMetLocationV2FormatActive() && GetBoxMonMetLocationV2(boxMon, &location))
+        return location;
+    return MetLocationFromLegacyByte(GetBoxMonData(boxMon, MON_DATA_MET_LOCATION));
+}
+
+u16 GetMonMetLocation(struct Pokemon *mon)
+{
+    return GetBoxMonMetLocation(&mon->box);
+}
+
+void SetBoxMonMetLocation(struct BoxPokemon *boxMon, u16 location)
+{
+    u8 legacyByte;
+
+    if (IsMetLocationV2FormatActive() && SetBoxMonMetLocationV2(boxMon, location))
+        return;
+    // Legacy save, empty/corrupt Pokemon or an undecodable marker: keep the
+    // legacy byte write (identical bytes for every legacy-encodable value).
+    legacyByte = MetLocationToLegacyByte(location);
+    SetBoxMonData(boxMon, MON_DATA_MET_LOCATION, &legacyByte);
+}
+
+void SetMonMetLocation(struct Pokemon *mon, u16 location)
+{
+    SetBoxMonMetLocation(&mon->box, location);
 }
 
 static bool32 IsBadEgg(struct BoxPokemon *boxMon)
@@ -4974,7 +5170,7 @@ s32 CalculateFriendshipBonuses(struct Pokemon *mon, s32 modifier, enum HoldEffec
     if (GetMonData(mon, MON_DATA_POKEBALL) == ITEM_LUXURY_BALL)
         bonus += ITEM_FRIENDSHIP_LUXURY_BONUS;
 
-    if (GetMonData(mon, MON_DATA_MET_LOCATION) == GetCurrentRegionMapSectionId())
+    if (GetMonMetLocation(mon) == GetCurrentRegionMapSectionId())
         bonus += ITEM_FRIENDSHIP_MAPSEC_BONUS;
 
     return bonus;

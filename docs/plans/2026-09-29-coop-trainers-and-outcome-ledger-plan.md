@@ -83,7 +83,8 @@ GET route (2 d); launcher redelivery (3 d); codec, ROM trade apply,
 auto-checkpoint, manifest (4 d); end-to-end fault tests (3 d).
 
 Already fixed while planning: SaveBlock1 vars were read at the stale 0x139C
-offset (real 0x13FC); see `include/coop/save_layout.h`.
+offset (real 0x1514 after the Cormoria merge; was 0x13FC before it); see
+`include/coop/save_layout.h`. The enlarged Bag pockets add 0x118 bytes ahead of flags/vars.
 
 Follow-ups recorded while implementing B2/B3:
 - Prune Applied/Voided ledger entries after a retention window (keep an id

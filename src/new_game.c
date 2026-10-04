@@ -53,13 +53,13 @@
 #include "coop/save.h"
 #include "johto/save.h"
 #include "johto/berry_plots.h"
+#include "cormoria/berry_plots.h"
 
 extern const u8 EventScript_ResetAllMapFlags[];
 extern const u8 EventScript_ResetAllMapFlagsFrlg[];
 extern const u8 EventScript_SetFlagIsFrlg[];
 
 static void ClearFrontierRecord(void);
-static void WarpToTruck(void);
 static void ResetMiniGamesRecords(void);
 static void ResetItemFlags(void);
 static void ResetDexNav(void);
@@ -136,12 +136,18 @@ static void ClearFrontierRecord(void)
     gSaveBlock2Ptr->frontier.opponentNames[1][0] = EOS;
 }
 
-static void WarpToTruck(void)
+void NewGame_WarpToStart(void)
 {
+#if ROM_WORLD == 2
+    /* The second ROM starts at the donor campaign's home. A portal arrival
+     * restores its own destination after the fresh save has been created. */
+    SetWarpDestination(MAP_GROUP(MAP_CORMORIA_CARABRUE_TOWN_HOME1F), MAP_NUM(MAP_CORMORIA_CARABRUE_TOWN_HOME1F), WARP_ID_NONE, -1, -1);
+#else
     if (gSaveBlock2Ptr->playerRegion == REGION_KANTO)
         SetWarpDestination(MAP_GROUP(MAP_PALLET_TOWN_PLAYERS_HOUSE_2F), MAP_NUM(MAP_PALLET_TOWN_PLAYERS_HOUSE_2F), WARP_ID_NONE, 6, 6);
     else
         SetWarpDestination(MAP_GROUP(MAP_INSIDE_OF_TRUCK), MAP_NUM(MAP_INSIDE_OF_TRUCK), WARP_ID_NONE, -1, -1);
+#endif
     WarpIntoMap();
 }
 
@@ -177,6 +183,7 @@ void NewGameInitData(void)
     ClearSav1();
     ClearSav3();
     JohtoSave_InitializeCurrent();
+    WorldEventSave_InitializeCurrent();
     CoopSave_InitializeCurrent();
     ClearAllMail();
     gSaveBlock2Ptr->specialSaveWarpFlags = 0;
@@ -190,6 +197,7 @@ void NewGameInitData(void)
     ClearSecretBases();
     ClearBerryTrees();
     JohtoBerryPlots_InitializeNewGame();
+    CormoriaBerryPlots_SeedNewGame();
     SetMoney(&gSaveBlock1Ptr->money, 3000);
     SetCoins(0);
     ResetLinkContestBoolean();
@@ -212,7 +220,7 @@ void NewGameInitData(void)
     InitDewfordTrend();
     ResetFanClub();
     ResetLotteryCorner();
-    WarpToTruck();
+    NewGame_WarpToStart();
     RunScriptImmediately(EventScript_ResetAllMapFlagsFrlg);
     RunScriptImmediately(EventScript_ResetAllMapFlags);
     if (gSaveBlock2Ptr->playerRegion == REGION_KANTO)

@@ -38,11 +38,17 @@ pub(super) fn accept(
     if !observation.is_valid() {
         return Err(Phase2Error::InvalidRequest);
     }
-    let build = super::super::saves::current_runtime_build_identity()?;
+    let catalog = store
+        .config
+        .release_catalog
+        .as_ref()
+        .ok_or(Phase2Error::Internal)?;
+    let build = runtime.build.clone();
     let _gate = store.lock_runtime_transition_gate();
     let now = store.now();
     store.write_transaction(|state| {
         super::validate_runtime_state_in_state(state, actor, &runtime, now, &build)?;
+        super::validate_bound_runtime(state, catalog, actor, &runtime)?;
         if observation.session_epoch != runtime.session.session_epoch.value() {
             return Err(Phase2Error::Authentication);
         }

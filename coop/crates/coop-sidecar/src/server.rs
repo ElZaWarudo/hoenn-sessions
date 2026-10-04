@@ -35,8 +35,8 @@ use crate::{
     BRIDGE_ABI_VERSION, BRIDGE_FRAME_SIZE, BridgeFrame, Direction, FrameCodecError,
     GAME_PROTOCOL_VERSION, MessageType,
     control::{
-        CONTROL_PROTOCOL_VERSION, CheckpointAbort, CheckpointGrant, CheckpointKey, CommandId,
-        CommandReason, CommandStatus, ControlCommand, ControlConnection, ControlError,
+        ArrivalProof, CONTROL_PROTOCOL_VERSION, CheckpointAbort, CheckpointGrant, CheckpointKey,
+        CommandId, CommandReason, CommandStatus, ControlCommand, ControlConnection, ControlError,
         ControlEvent, ControlListener, ControlWriter, MAX_CONTROL_LINE_BYTES, ShutdownRequest,
     },
 };
@@ -1718,13 +1718,21 @@ fn rotate_expired_tombstone(frame: &BridgeFrame, expired_checkpoint: &mut Option
 
 /// A loopback-only listener pair. `serve` accepts one authenticated bridge and
 /// one authenticated control peer before entering the checkpoint session loop.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum SidecarMode {
+    Gameplay,
+    ArrivalVerifier,
+}
+
 pub struct LocalSidecar {
     bridge_listener: Arc<TcpListener>,
     bridge_address: SocketAddr,
     bridge_secret: SessionSecret,
     control_listener: ControlListener,
     session_epoch: u32,
+    mode: SidecarMode,
     sequence_state: SessionSequenceState,
+    bootstrap_ready_sequence: Option<u32>,
     command_history: HashMap<CommandId, CommandRecord>,
     applied_shutdown: Option<CommandId>,
     // A ROM reboot closes the launcher realtime generation.  This latch is
@@ -1757,6 +1765,16 @@ impl LocalSidecar {
         if session_epoch == 0 {
             return Err(SidecarError::SessionEpochZero);
         }
+        Self::bind_for_mode(session_epoch, SidecarMode::Gameplay).await
+    }
+
+    /// Starts a credential-free, epoch-zero verifier process. It has no
+    /// gameplay or checkpoint session path and accepts one challenge/proof.
+    pub async fn bind_arrival_verifier() -> Result<Self, SidecarError> {
+        Self::bind_for_mode(0, SidecarMode::ArrivalVerifier).await
+    }
+
+    async fn bind_for_mode(session_epoch: u32, mode: SidecarMode) -> Result<Self, SidecarError> {
         let bridge_listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0))
             .await
             .map_err(SidecarError::Listener)?;
@@ -1770,7 +1788,9 @@ impl LocalSidecar {
             bridge_secret: SessionSecret::generate(),
             control_listener,
             session_epoch,
+            mode,
             sequence_state: SessionSequenceState::default(),
+            bootstrap_ready_sequence: None,
             command_history: HashMap::new(),
             applied_shutdown: None,
             lifecycle_forwarding_disabled: false,
@@ -1947,6 +1967,9 @@ impl LocalSidecar {
     ///
     /// Returns an error when a listener itself can no longer accept clients.
     pub async fn serve(mut self) -> Result<(), SidecarError> {
+        if self.mode == SidecarMode::ArrivalVerifier {
+            return self.serve_arrival_verifier().await;
+        }
         let mut reconnect = ReconnectContext::default();
         loop {
             let pair = self.accept_pair(reconnect).await?;
@@ -1959,6 +1982,81 @@ impl LocalSidecar {
             {
                 SessionExit::Reconnect(next) => reconnect = next,
                 SessionExit::Shutdown => return Ok(()),
+            }
+        }
+    }
+
+    async fn serve_arrival_verifier(&mut self) -> Result<(), SidecarError> {
+        // The control owner arrives first and does not supply any cloud
+        // credential. Never call the gameplay pair/session machinery here.
+        let control = authenticate_control_candidates(self.control_listener.clone()).await?;
+        let mut bridge = self.start_bridge_authentication_pump().await?;
+        bridge.send_handshake_accepted().await?;
+        let (mut control_reader, mut control_writer) = control.into_split();
+        let (mut bridge_reader, mut bridge_writer) = bridge.into_split();
+        let mut nonce = None;
+        let mut saw_boot_ready = false;
+        let mut last_rom_sequence = 0;
+
+        loop {
+            tokio::select! {
+                command = control_reader.receive_command() => {
+                    let command = command?;
+                    let ControlCommand::ArrivalChallenge { nonce: challenge } = command else {
+                        return Err(SidecarError::ProtocolViolation("verifier rejects gameplay command"));
+                    };
+                    if !saw_boot_ready || nonce.is_some() || challenge == [0; 16] {
+                        return Err(SidecarError::ProtocolViolation("invalid or repeated arrival challenge"));
+                    }
+                    nonce = Some(challenge);
+                    let frame = BridgeFrame::new(MessageType::ArrivalChallenge, 1, 0, &challenge)?;
+                    bridge_writer.send(&frame, Direction::SidecarToRom).await?;
+                }
+                received = bridge_reader.receive(Direction::RomToSidecar) => {
+                    let frame = received?.ok_or(SidecarError::ProtocolViolation("verifier bridge closed before proof"))?;
+                    if frame.session_epoch() != 0 {
+                        return Err(SidecarError::ProtocolViolation("verifier received nonzero epoch"));
+                    }
+                    if frame.message_type() == MessageType::RomReady
+                        && !saw_boot_ready && frame.sequence() == 1 && frame.payload().is_empty() {
+                        saw_boot_ready = true;
+                        last_rom_sequence = frame.sequence();
+                        control_writer.send_event(&ControlEvent::ArrivalVerifierReady {}).await?;
+                        continue;
+                    }
+                    if frame.message_type() != MessageType::ArrivalProof || nonce.is_none() || !saw_boot_ready {
+                        return Err(SidecarError::ProtocolViolation("verifier rejects gameplay or premature proof"));
+                    }
+                    if frame.sequence() != last_rom_sequence + 1 {
+                        return Err(SidecarError::ProtocolViolation("arrival proof sequence replay or gap"));
+                    }
+                    let proof = ArrivalProof::from_rom_payload(frame.payload())
+                        .ok_or(SidecarError::ProtocolViolation("invalid arrival proof"))?;
+                    if proof.nonce != nonce.expect("nonce checked above") {
+                        return Err(SidecarError::ProtocolViolation("arrival proof nonce mismatch"));
+                    }
+                    control_writer.send_event(&ControlEvent::ArrivalProof(proof)).await?;
+                    // Keep the verifier process alive while the launcher reads
+                    // the proof. An immediate child exit can win the launcher's
+                    // child/control observation race and discard that event.
+                    let mut bridge_open = true;
+                    loop {
+                        tokio::select! {
+                            biased;
+                            received = bridge_reader.receive(Direction::RomToSidecar), if bridge_open => {
+                                if received?.is_some() {
+                                    return Err(SidecarError::ProtocolViolation("verifier received frame after proof"));
+                                }
+                                bridge_open = false;
+                            }
+                            command = control_reader.receive_command() => match command {
+                                Err(ControlError::LineClosed) => return Ok(()),
+                                Ok(_) => return Err(SidecarError::ProtocolViolation("verifier received command after proof")),
+                                Err(error) => return Err(error.into()),
+                            }
+                        }
+                    }
+                }
             }
         }
     }
@@ -2595,6 +2693,11 @@ impl LocalSidecar {
     ) -> Result<bool, SidecarError> {
         match result {
             Some(Ok(command)) => {
+                if matches!(command, ControlCommand::ArrivalChallenge { .. }) {
+                    return Err(SidecarError::ProtocolViolation(
+                        "arrival challenge requires verifier mode",
+                    ));
+                }
                 if matches!(
                     command,
                     ControlCommand::OnlineStatus { .. }
@@ -2866,19 +2969,27 @@ impl LocalSidecar {
         timeout(HANDSHAKE_TIMEOUT, connection.stream.write_all(&frame_bytes))
             .await
             .map_err(|_| SidecarError::HandshakeWriteTimeout)?
-            .map_err(SidecarError::Connection)
+            .map_err(SidecarError::Connection)?;
+        self.bootstrap_ready_sequence = Some(sequence);
+        Ok(())
     }
 
-    async fn send_session_ready_to_stream(
-        &mut self,
+    async fn repeat_initial_session_ready(
+        &self,
         connection: &mut BridgeWriter,
     ) -> Result<(), SidecarError> {
-        self.send_session_ready_to_stream_at(
-            connection,
-            self.presence_generation.load(Ordering::Acquire),
-            BridgeWriteClass::Critical,
-        )
-        .await
+        let sequence = self.bootstrap_ready_sequence.ok_or(
+            SidecarError::ProtocolViolation("missing bootstrap session ready"),
+        )?;
+        let frame = BridgeFrame::new(MessageType::SessionReady, sequence, self.session_epoch, &[])?;
+        connection
+            .send_with_class(
+                &frame,
+                Direction::SidecarToRom,
+                BridgeWriteClass::Critical,
+                self.presence_generation.load(Ordering::Acquire),
+            )
+            .await
     }
 
     async fn send_session_ready_to_stream_at(
@@ -3504,6 +3615,11 @@ impl LocalSidecar {
             Ok(command) => command,
             Err(error) => return Err(error),
         };
+        if matches!(command, ControlCommand::ArrivalChallenge { .. }) {
+            return Err(SidecarError::ProtocolViolation(
+                "arrival challenge requires verifier mode",
+            ));
+        }
         if is_presence_command(&command) {
             return self.handle_presence_command(command, bridge, session);
         }
@@ -3618,7 +3734,18 @@ impl LocalSidecar {
         }
         let (command_id, _, _, _) = command_parts(&command);
         let can_replay = self.command_history.contains_key(&command_id);
-        if !deferred_commands.is_empty() && !can_replay {
+        // A grant can race the replacement bridge's active READY even when
+        // there is no older deferred command. Keep it pending until admission
+        // rather than recording a permanent stale-checkpoint rejection.
+        if !can_replay
+            && (!deferred_commands.is_empty()
+                || (matches!(command, ControlCommand::CheckpointGrant(_))
+                    && deferred_command_waits_for_bridge_state(
+                        &command,
+                        session,
+                        self.session_epoch,
+                    )))
+        {
             let shutdown_at_capacity = deferred_commands.len() == MAX_DEFERRED_ROUTINE_COMMANDS
                 && matches!(command, ControlCommand::ShutdownRequest(_));
             if !shutdown_at_capacity {
@@ -4057,6 +4184,11 @@ impl LocalSidecar {
         control: &mut ControlWriter,
         session: &mut ActiveSessionState,
     ) -> Result<(), SidecarError> {
+        if frame.message_type() == MessageType::ArrivalProof {
+            return Err(SidecarError::ProtocolViolation(
+                "arrival proof requires verifier mode",
+            ));
+        }
         self.expire_checkpoint_if_due(session, control, Instant::now())
             .await?;
         if self
@@ -4089,6 +4221,16 @@ impl LocalSidecar {
                 return Ok(());
             }
             if session.acknowledged_rom_ready && frame.sequence() != 1 {
+                #[cfg(debug_assertions)]
+                eprintln!(
+                    "test diagnostic: unsolicited ROM_READY epoch={} sequence={} last_boot={} last_session={} expected_epoch={} pending_rearm={}",
+                    frame.session_epoch(),
+                    frame.sequence(),
+                    self.sequence_state.last_boot_rom,
+                    self.sequence_state.last_session_rom,
+                    self.session_epoch,
+                    self.pending_presence_rearm.is_some()
+                );
                 return Err(SidecarError::ProtocolViolation("unsolicited rom ready"));
             }
         }
@@ -4124,6 +4266,39 @@ impl LocalSidecar {
                 control
                     .send_event(&ControlEvent::GroupTravel(record))
                     .await?;
+            }
+            MessageType::PortalTravelRequest => {
+                if frame.session_epoch() != self.session_epoch
+                    || !session.acknowledged_rom_ready
+                    || self.pending_presence_rearm.is_some()
+                    || !matches!(session.checkpoint_state, CheckpointState::Idle)
+                {
+                    return Err(SidecarError::ProtocolViolation(
+                        "invalid portal travel request",
+                    ));
+                }
+                let portal_id = std::str::from_utf8(frame.payload()).map_err(|_| {
+                    SidecarError::ProtocolViolation("invalid portal travel request")
+                })?;
+                if !super::control::valid_portal_id(portal_id) {
+                    return Err(SidecarError::ProtocolViolation(
+                        "invalid portal travel request",
+                    ));
+                }
+                if !self
+                    .sequence_state
+                    .inspect_rom_frame(&frame, self.session_epoch)
+                {
+                    return Ok(());
+                }
+                control
+                    .send_event(&ControlEvent::PortalTravelRequest {
+                        session_epoch: self.session_epoch,
+                        portal_sequence: frame.sequence(),
+                        portal_id: portal_id.to_owned(),
+                    })
+                    .await?;
+                self.sequence_state.commit_rom_frame(&frame);
             }
             MessageType::TrainerBattleReserve
             | MessageType::BattleJoinResponse
@@ -4312,8 +4487,16 @@ impl LocalSidecar {
                 }
                 if frame.message_type() == MessageType::RomReady && !session.acknowledged_rom_ready
                 {
-                    self.send_session_ready_to_stream(bridge).await?;
-                    self.acknowledge_rom_ready(bridge, session);
+                    // Boot READY may mean the authentication SESSION_READY
+                    // arrived before online save state was available. Repeat
+                    // that exact sequence: a ROM which already accepted it
+                    // ignores the duplicate; otherwise it can install it now.
+                    if frame.session_epoch() == 0 {
+                        self.repeat_initial_session_ready(bridge).await?;
+                    } else if frame.session_epoch() == self.session_epoch {
+                        self.acknowledge_rom_ready(bridge, session);
+                        self.bootstrap_ready_sequence = None;
+                    }
                 }
                 rotate_expired_tombstone(&frame, &mut session.expired_checkpoint);
             }
@@ -4482,6 +4665,11 @@ impl LocalSidecar {
         now: Instant,
         session: &mut ActiveSessionState,
     ) -> Result<(), SidecarError> {
+        if matches!(command, ControlCommand::ArrivalChallenge { .. }) {
+            return Err(SidecarError::ProtocolViolation(
+                "arrival challenge requires verifier mode",
+            ));
+        }
         if matches!(command, ControlCommand::GroupTravel { .. }) || is_battle_command(&command) {
             return if is_battle_command(&command) {
                 self.handle_battle_command(command, bridge, session).await
@@ -5254,6 +5442,9 @@ fn command_parts(
         | ControlCommand::GroupStateChanged { .. }
         | ControlCommand::GroupInviteReceived { .. } => {
             unreachable!("Online messages bypass ledger")
+        },
+        ControlCommand::ArrivalChallenge { .. } => {
+            unreachable!("arrival challenge bypasses gameplay ledger")
         }
         ControlCommand::CheckpointGrant(CheckpointGrant {
             command_id,
@@ -5322,6 +5513,9 @@ fn command_parts(
 fn command_epoch(command: &ControlCommand) -> u32 {
     match command {
         ControlCommand::PresenceRearm(value) => value.session_epoch,
+        ControlCommand::ArrivalChallenge { .. } => {
+            unreachable!("arrival challenge has no gameplay epoch")
+        }
         ControlCommand::OnlineStatus { session_epoch, .. }
         | ControlCommand::PairingStatus { session_epoch, .. }
         | ControlCommand::GroupStateChanged { session_epoch, .. }
@@ -5433,6 +5627,7 @@ fn deferred_command_waits_for_bridge_state(
         ControlCommand::CheckpointAbort(command) => (Some(command.key()), false),
         ControlCommand::ShutdownRequest(_) => (None, false),
         ControlCommand::PresenceRearm(_)
+        | ControlCommand::ArrivalChallenge { .. }
         | ControlCommand::OnlineStatus { .. }
         | ControlCommand::PairingStatus { .. }
         | ControlCommand::GroupStateChanged { .. }
@@ -5806,16 +6001,62 @@ mod tests {
     }
 
     async fn establish_rom_session(stream: &mut TcpStream) {
-        let ready = BridgeFrame::new(MessageType::RomReady, 1, 0, &[]).unwrap();
-        stream.write_all(&ready.encode()).await.unwrap();
-        let mut session_ready = [0; BRIDGE_FRAME_SIZE];
-        stream.read_exact(&mut session_ready).await.unwrap();
-        assert_eq!(
-            BridgeFrame::decode_for(&session_ready, Direction::SidecarToRom)
-                .unwrap()
-                .message_type(),
-            MessageType::SessionReady
-        );
+        // write_handshake consumed the authentication SESSION_READY. A boot
+        // READY may arrive after that initial frame; the sidecar repeats the
+        // exact bootstrap sequence without acknowledging it. The active
+        // reply completes admission, and all later ROM frames start at two.
+        let boot = BridgeFrame::new(MessageType::RomReady, 1, 0, &[]).unwrap();
+        stream.write_all(&boot.encode()).await.unwrap();
+        let mut repeated_bytes = [0_u8; BRIDGE_FRAME_SIZE];
+        stream.read_exact(&mut repeated_bytes).await.unwrap();
+        let repeated = BridgeFrame::decode_for(&repeated_bytes, Direction::SidecarToRom).unwrap();
+        assert_eq!(repeated.message_type(), MessageType::SessionReady);
+        assert_ne!(repeated.sequence(), 0);
+        assert_eq!(repeated.session_epoch(), TEST_SESSION_EPOCH);
+        let active = BridgeFrame::new(MessageType::RomReady, 1, TEST_SESSION_EPOCH, &[]).unwrap();
+        stream.write_all(&active.encode()).await.unwrap();
+    }
+
+    async fn acknowledge_reconnected_rom_session(stream: &mut TcpStream, sequence: u32) {
+        // Same-epoch SESSION_READY preserves the ROM transmit cursor. Sequence
+        // one after an admitted checkpoint represents a reboot, so reconnect
+        // fixtures must continue the existing sequence.
+        let active =
+            BridgeFrame::new(MessageType::RomReady, sequence, TEST_SESSION_EPOCH, &[]).unwrap();
+        stream.write_all(&active.encode()).await.unwrap();
+    }
+
+    async fn queue_boot_before_reading_initial_session_ready(
+        stream: &mut TcpStream,
+        descriptor: &SessionDescriptor,
+        secret: &str,
+    ) -> (BridgeFrame, BridgeFrame) {
+        let mut line = serde_json::to_vec(&TestHandshake {
+            secret,
+            bridge_abi: BRIDGE_ABI_VERSION,
+            protocol_version: GAME_PROTOCOL_VERSION,
+        })
+        .unwrap();
+        line.push(b'\n');
+        let boot = BridgeFrame::new(MessageType::RomReady, 1, 0, &[]).unwrap();
+        stream.write_all(&line).await.unwrap();
+        stream.write_all(&boot.encode()).await.unwrap();
+
+        let mut accepted = [0; HANDSHAKE_ACCEPTED_LINE.len()];
+        stream.read_exact(&mut accepted).await.unwrap();
+        assert_eq!(accepted, HANDSHAKE_ACCEPTED_LINE);
+        let mut initial_bytes = [0_u8; BRIDGE_FRAME_SIZE];
+        stream.read_exact(&mut initial_bytes).await.unwrap();
+        let initial = BridgeFrame::decode_for(&initial_bytes, Direction::SidecarToRom).unwrap();
+        assert_eq!(initial.message_type(), MessageType::SessionReady);
+        assert_eq!(initial.session_epoch(), TEST_SESSION_EPOCH);
+        assert_eq!(stream.peer_addr().unwrap(), descriptor.address());
+
+        let mut repeated_bytes = [0_u8; BRIDGE_FRAME_SIZE];
+        stream.read_exact(&mut repeated_bytes).await.unwrap();
+        let repeated = BridgeFrame::decode_for(&repeated_bytes, Direction::SidecarToRom).unwrap();
+        assert_eq!(repeated, initial);
+        (initial, repeated)
     }
 
     fn rearm_command() -> ControlCommand {
@@ -6139,7 +6380,9 @@ mod tests {
     ) {
         let event = timeout(Duration::from_secs(2), read_event(stream))
             .await
-            .expect("command result must arrive within the test bound");
+            .unwrap_or_else(|_| {
+                panic!("command result for {command_id} must arrive within the test bound")
+            });
         match event {
             ControlEvent::CommandResult {
                 command_id: actual_command_id,
@@ -6205,6 +6448,220 @@ mod tests {
         let mut bytes = serde_json::to_vec(command).unwrap();
         bytes.push(b'\n');
         stream.write_all(&bytes).await.unwrap();
+    }
+
+    async fn connect_arrival_verifier() -> (
+        tokio::task::JoinHandle<Result<(), SidecarError>>,
+        TcpStream,
+        TcpStream,
+    ) {
+        let sidecar = LocalSidecar::bind_arrival_verifier().await.unwrap();
+        let descriptor = sidecar.session_descriptor();
+        assert_eq!(descriptor.session_epoch(), 0);
+        let task = tokio::spawn(sidecar.serve());
+        let mut control = TcpStream::connect(descriptor.control_address())
+            .await
+            .unwrap();
+        write_control_handshake(&mut control, &descriptor, descriptor.control_secret(), 0).await;
+        let mut bridge = TcpStream::connect(descriptor.address()).await.unwrap();
+        let mut handshake = serde_json::to_vec(&TestHandshake {
+            secret: descriptor.secret(),
+            bridge_abi: BRIDGE_ABI_VERSION,
+            protocol_version: GAME_PROTOCOL_VERSION,
+        })
+        .unwrap();
+        handshake.push(b'\n');
+        bridge.write_all(&handshake).await.unwrap();
+        let mut accepted = [0; HANDSHAKE_ACCEPTED_LINE.len()];
+        bridge.read_exact(&mut accepted).await.unwrap();
+        assert_eq!(accepted, HANDSHAKE_ACCEPTED_LINE);
+        (task, control, bridge)
+    }
+
+    fn arrival_payload(nonce: [u8; 16]) -> [u8; 64] {
+        let mut payload = [0; 64];
+        payload[..16].copy_from_slice(&nonce);
+        payload[16..48].fill(0xa5);
+        payload[48..52].copy_from_slice(&2_u32.to_le_bytes());
+        payload[52..56].copy_from_slice(&7_u32.to_le_bytes());
+        payload[56] = 3;
+        payload[57] = 4;
+        payload
+    }
+
+    async fn send_arrival_ready(control: &mut TcpStream, bridge: &mut TcpStream) {
+        let boot = BridgeFrame::new(MessageType::RomReady, 1, 0, &[]).unwrap();
+        bridge.write_all(&boot.encode()).await.unwrap();
+        assert_eq!(
+            timeout(Duration::from_secs(2), read_event(control))
+                .await
+                .unwrap(),
+            ControlEvent::ArrivalVerifierReady {}
+        );
+    }
+
+    #[tokio::test]
+    async fn offline_verifier_round_trips_one_nonce_and_typed_proof_without_session_ready() {
+        let (mut task, mut control, mut bridge) = connect_arrival_verifier().await;
+        assert_no_bridge_data(&mut bridge).await;
+        send_arrival_ready(&mut control, &mut bridge).await;
+        let nonce = [0x5a; 16];
+        send_command(&mut control, &ControlCommand::ArrivalChallenge { nonce }).await;
+        let mut bytes = [0; BRIDGE_FRAME_SIZE];
+        bridge.read_exact(&mut bytes).await.unwrap();
+        let challenge = BridgeFrame::decode_for(&bytes, Direction::SidecarToRom).unwrap();
+        assert_eq!(challenge.message_type(), MessageType::ArrivalChallenge);
+        assert_eq!(challenge.session_epoch(), 0);
+        assert_eq!(challenge.payload(), &nonce);
+        let proof =
+            BridgeFrame::new(MessageType::ArrivalProof, 2, 0, &arrival_payload(nonce)).unwrap();
+        bridge.write_all(&proof.encode()).await.unwrap();
+        let event = timeout(Duration::from_secs(2), read_event(&mut control))
+            .await
+            .unwrap();
+        assert_eq!(
+            event,
+            ControlEvent::ArrivalProof(ArrivalProof {
+                nonce,
+                flash_sha256: [0xa5; 32],
+                world_id: 2,
+                save_generation: 7,
+                map_group: 3,
+                map_num: 4,
+            })
+        );
+        assert!(timeout(Duration::from_millis(50), &mut task).await.is_err());
+        drop(bridge);
+        assert!(timeout(Duration::from_millis(50), &mut task).await.is_err());
+        drop(control);
+        assert!(task.await.unwrap().is_ok());
+    }
+
+    #[tokio::test]
+    async fn offline_verifier_rejects_traffic_after_emitting_proof() {
+        let nonce = [0x5a; 16];
+        for extra_command in [false, true] {
+            let (task, mut control, mut bridge) = connect_arrival_verifier().await;
+            send_arrival_ready(&mut control, &mut bridge).await;
+            send_command(&mut control, &ControlCommand::ArrivalChallenge { nonce }).await;
+            let mut challenge = [0; BRIDGE_FRAME_SIZE];
+            bridge.read_exact(&mut challenge).await.unwrap();
+            let proof =
+                BridgeFrame::new(MessageType::ArrivalProof, 2, 0, &arrival_payload(nonce)).unwrap();
+            bridge.write_all(&proof.encode()).await.unwrap();
+            assert!(matches!(
+                read_event(&mut control).await,
+                ControlEvent::ArrivalProof(_)
+            ));
+            if extra_command {
+                send_command(&mut control, &ControlCommand::ArrivalChallenge { nonce }).await;
+            } else {
+                let duplicate =
+                    BridgeFrame::new(MessageType::ArrivalProof, 3, 0, &arrival_payload(nonce))
+                        .unwrap();
+                bridge.write_all(&duplicate.encode()).await.unwrap();
+            }
+            assert!(matches!(
+                task.await.unwrap(),
+                Err(SidecarError::ProtocolViolation(_))
+            ));
+        }
+    }
+
+    #[tokio::test]
+    async fn offline_verifier_rejects_challenge_before_rom_ready() {
+        let nonce = [0x5a; 16];
+        let (task, mut control, _bridge) = connect_arrival_verifier().await;
+        send_command(&mut control, &ControlCommand::ArrivalChallenge { nonce }).await;
+        assert!(matches!(
+            task.await.unwrap(),
+            Err(SidecarError::ProtocolViolation(_))
+        ));
+    }
+
+    #[tokio::test]
+    async fn offline_verifier_rejects_premature_malformed_and_mismatched_proofs() {
+        let nonce = [0x5a; 16];
+        let (task, _control, mut bridge) = connect_arrival_verifier().await;
+        let premature =
+            BridgeFrame::new(MessageType::ArrivalProof, 1, 0, &arrival_payload(nonce)).unwrap();
+        bridge.write_all(&premature.encode()).await.unwrap();
+        assert!(matches!(
+            task.await.unwrap(),
+            Err(SidecarError::ProtocolViolation(_))
+        ));
+
+        for (index, mut payload) in [arrival_payload(nonce), arrival_payload(nonce)]
+            .into_iter()
+            .enumerate()
+        {
+            let (task, mut control, mut bridge) = connect_arrival_verifier().await;
+            send_arrival_ready(&mut control, &mut bridge).await;
+            send_command(&mut control, &ControlCommand::ArrivalChallenge { nonce }).await;
+            let mut challenge = [0; BRIDGE_FRAME_SIZE];
+            bridge.read_exact(&mut challenge).await.unwrap();
+            if index == 0 {
+                payload[58] = 1;
+            } else {
+                payload[0] ^= 1;
+            }
+            let frame = BridgeFrame::new(MessageType::ArrivalProof, 2, 0, &payload).unwrap();
+            bridge.write_all(&frame.encode()).await.unwrap();
+            assert!(matches!(
+                task.await.unwrap(),
+                Err(SidecarError::ProtocolViolation(_))
+            ));
+        }
+
+        let (task, mut control, mut bridge) = connect_arrival_verifier().await;
+        send_arrival_ready(&mut control, &mut bridge).await;
+        send_command(&mut control, &ControlCommand::ArrivalChallenge { nonce }).await;
+        let mut challenge = [0; BRIDGE_FRAME_SIZE];
+        bridge.read_exact(&mut challenge).await.unwrap();
+        let replayed_sequence =
+            BridgeFrame::new(MessageType::ArrivalProof, 1, 0, &arrival_payload(nonce)).unwrap();
+        bridge.write_all(&replayed_sequence.encode()).await.unwrap();
+        assert!(matches!(
+            task.await.unwrap(),
+            Err(SidecarError::ProtocolViolation(_))
+        ));
+
+        let (task, mut control, mut bridge) = connect_arrival_verifier().await;
+        send_arrival_ready(&mut control, &mut bridge).await;
+        send_command(&mut control, &ControlCommand::ArrivalChallenge { nonce }).await;
+        let mut challenge = [0; BRIDGE_FRAME_SIZE];
+        bridge.read_exact(&mut challenge).await.unwrap();
+        send_command(&mut control, &ControlCommand::ArrivalChallenge { nonce }).await;
+        assert!(matches!(
+            task.await.unwrap(),
+            Err(SidecarError::ProtocolViolation(_))
+        ));
+    }
+
+    #[tokio::test]
+    async fn offline_verifier_rejects_gameplay_commands_and_frames() {
+        let (task, mut control, _bridge) = connect_arrival_verifier().await;
+        send_command(
+            &mut control,
+            &ControlCommand::CheckpointGrant(CheckpointGrant {
+                command_id: CommandId::parse("00000000-0000-4000-8000-000000000001").unwrap(),
+                session_epoch: 0,
+                ready_sequence: 1,
+            }),
+        )
+        .await;
+        assert!(matches!(
+            task.await.unwrap(),
+            Err(SidecarError::ProtocolViolation(_))
+        ));
+
+        let (task, _control, mut bridge) = connect_arrival_verifier().await;
+        let gameplay = BridgeFrame::new(MessageType::PlayerState, 1, 0, &[0; 28]).unwrap();
+        bridge.write_all(&gameplay.encode()).await.unwrap();
+        assert!(matches!(
+            task.await.unwrap(),
+            Err(SidecarError::ProtocolViolation(_))
+        ));
     }
 
     async fn await_prefix(prefixes: &mut mpsc::Receiver<()>, description: &str) {
@@ -6419,13 +6876,16 @@ mod tests {
         write_handshake(&mut bridge, &descriptor, descriptor.secret()).await;
         establish_rom_session(&mut bridge).await;
 
-        // The first active-epoch READY is a legitimate initial session frame,
-        // not a reboot. Lifecycle forwarding must remain enabled afterwards.
-        let active_ready =
-            BridgeFrame::new(MessageType::RomReady, 1, TEST_SESSION_EPOCH, &[]).unwrap();
-        bridge.write_all(&active_ready.encode()).await.unwrap();
-        send_command(&mut control, &remote_update_command()).await;
+        // The helper queued boot then active READY; no second SESSION_READY
+        // may be sent in response to either frame.
         let mut bytes = [0_u8; BRIDGE_FRAME_SIZE];
+        assert!(
+            timeout(Duration::from_millis(50), bridge.read_exact(&mut bytes))
+                .await
+                .is_err(),
+            "the initial ROM_READY must not trigger a second SESSION_READY"
+        );
+        send_command(&mut control, &remote_update_command()).await;
         timeout(Duration::from_millis(500), bridge.read_exact(&mut bytes))
             .await
             .expect("post-ready lifecycle frame must be forwarded")
@@ -6449,6 +6909,125 @@ mod tests {
         drop(control);
         server_task.abort();
         let _ = server_task.await;
+    }
+
+    #[tokio::test]
+    async fn queued_boot_before_initial_accept_repeats_exact_session_ready() {
+        let server = LocalSidecar::bind_with_epoch(TEST_SESSION_EPOCH)
+            .await
+            .unwrap();
+        let descriptor = server.session_descriptor();
+        let server_task = tokio::spawn(server.serve());
+        let mut control = TcpStream::connect(descriptor.control_address())
+            .await
+            .unwrap();
+        write_control_handshake(
+            &mut control,
+            &descriptor,
+            descriptor.control_secret(),
+            TEST_SESSION_EPOCH,
+        )
+        .await;
+        let mut bridge = TcpStream::connect(descriptor.address()).await.unwrap();
+        let (initial, repeated) = queue_boot_before_reading_initial_session_ready(
+            &mut bridge,
+            &descriptor,
+            descriptor.secret(),
+        )
+        .await;
+        assert_eq!(repeated.sequence(), initial.sequence());
+
+        let active = BridgeFrame::new(MessageType::RomReady, 1, TEST_SESSION_EPOCH, &[]).unwrap();
+        bridge.write_all(&active.encode()).await.unwrap();
+        let mut bytes = [0_u8; BRIDGE_FRAME_SIZE];
+        assert!(
+            timeout(Duration::from_millis(50), bridge.read_exact(&mut bytes))
+                .await
+                .is_err(),
+            "active epoch acceptance must not emit another SESSION_READY"
+        );
+
+        send_command(
+            &mut control,
+            &shutdown("00000000-0000-4000-8000-0000000000f5", TEST_SESSION_EPOCH),
+        )
+        .await;
+        assert_command_result(
+            &mut control,
+            "00000000-0000-4000-8000-0000000000f5",
+            CommandStatus::Applied,
+            None,
+        )
+        .await;
+        drop(bridge);
+        drop(control);
+        server_task.abort();
+        let _ = server_task.await;
+    }
+
+    #[tokio::test]
+    async fn first_active_rom_ready_acks_bootstrap_without_repeating_session_ready() {
+        let mut sidecar = LocalSidecar::bind_with_epoch(TEST_SESSION_EPOCH)
+            .await
+            .unwrap();
+        let (mut bridge, mut bridge_peer) = bridge_writer_pair().await;
+        let (mut control, _control_peer) = control_writer_pair().await;
+        let mut session = ActiveSessionState::from_reconnect(ReconnectState::default(), true);
+        let ready =
+            BridgeFrame::new(MessageType::RomReady, 1, TEST_SESSION_EPOCH, &[]).unwrap();
+
+        sidecar
+            .handle_bridge_frame(ready, &mut bridge, &mut control, &mut session)
+            .await
+            .unwrap();
+
+        assert!(session.acknowledged_rom_ready);
+        assert_eq!(sidecar.sequence_state.last_session_rom, 1);
+        let mut bytes = [0_u8; BRIDGE_FRAME_SIZE];
+        assert!(
+            timeout(Duration::from_millis(50), bridge_peer.read_exact(&mut bytes))
+                .await
+                .is_err(),
+            "an active-epoch acknowledgement must not trigger a second SESSION_READY"
+        );
+    }
+
+    #[tokio::test]
+    async fn queued_boot_ready_waits_for_active_ack_without_repeating_session_ready() {
+        let mut sidecar = LocalSidecar::bind_with_epoch(TEST_SESSION_EPOCH)
+            .await
+            .unwrap();
+        let (mut bridge, mut bridge_peer) = bridge_writer_pair().await;
+        let (mut control, _control_peer) = control_writer_pair().await;
+        let mut session = ActiveSessionState::from_reconnect(ReconnectState::default(), true);
+        sidecar.bootstrap_ready_sequence = Some(BOOTSTRAP_SEQUENCE);
+        let boot = BridgeFrame::new(MessageType::RomReady, 1, 0, &[]).unwrap();
+        sidecar
+            .handle_bridge_frame(boot, &mut bridge, &mut control, &mut session)
+            .await
+            .unwrap();
+        assert!(!session.acknowledged_rom_ready);
+        assert_eq!(sidecar.sequence_state.last_boot_rom, 1);
+        let mut bytes = [0_u8; BRIDGE_FRAME_SIZE];
+        bridge_peer.read_exact(&mut bytes).await.unwrap();
+        let repeated = BridgeFrame::decode_for(&bytes, Direction::SidecarToRom).unwrap();
+        assert_eq!(repeated.message_type(), MessageType::SessionReady);
+        assert_eq!(repeated.sequence(), BOOTSTRAP_SEQUENCE);
+        assert_eq!(repeated.session_epoch(), TEST_SESSION_EPOCH);
+        let active =
+            BridgeFrame::new(MessageType::RomReady, 1, TEST_SESSION_EPOCH, &[]).unwrap();
+        sidecar
+            .handle_bridge_frame(active, &mut bridge, &mut control, &mut session)
+            .await
+            .unwrap();
+        assert!(session.acknowledged_rom_ready);
+        assert_eq!(sidecar.sequence_state.last_session_rom, 1);
+        assert!(
+            timeout(Duration::from_millis(50), bridge_peer.read_exact(&mut bytes))
+                .await
+                .is_err(),
+            "queued boot and active READY must not emit a second SESSION_READY"
+        );
     }
 
     #[tokio::test]
@@ -6753,7 +7332,7 @@ mod tests {
             .unwrap();
         let frame = BridgeFrame::decode_for(&bytes, Direction::SidecarToRom).unwrap();
         assert_eq!(frame.message_type(), MessageType::RemotePlayerUpdate);
-        assert_eq!(frame.sequence(), 3);
+        assert_eq!(frame.sequence(), 2);
 
         send_command(
             &mut control,
@@ -7996,7 +8575,7 @@ mod tests {
         write_handshake(&mut first_bridge, &descriptor, descriptor.secret()).await;
         establish_rom_session(&mut first_bridge).await;
         let ready =
-            BridgeFrame::new(MessageType::CheckpointReady, 1, TEST_SESSION_EPOCH, &[]).unwrap();
+            BridgeFrame::new(MessageType::CheckpointReady, 2, TEST_SESSION_EPOCH, &[]).unwrap();
         first_bridge.write_all(&ready.encode()).await.unwrap();
         assert!(matches!(
             read_event(&mut first_control).await,
@@ -8026,7 +8605,7 @@ mod tests {
         let grant_command = grant(
             "00000000-0000-4000-8000-00000000002d",
             TEST_SESSION_EPOCH,
-            1,
+            2,
         );
         send_command(&mut replacement_control, &grant_command).await;
         send_command(
@@ -8037,7 +8616,7 @@ mod tests {
 
         let mut replacement_bridge = TcpStream::connect(descriptor.address()).await.unwrap();
         write_handshake(&mut replacement_bridge, &descriptor, descriptor.secret()).await;
-        establish_rom_session(&mut replacement_bridge).await;
+        acknowledge_reconnected_rom_session(&mut replacement_bridge, 3).await;
         assert_command_result(
             &mut replacement_control,
             "00000000-0000-4000-8000-00000000002d",
@@ -8134,7 +8713,7 @@ mod tests {
             .await
             .is_err()
         );
-        establish_rom_session(&mut replacement_bridge).await;
+        acknowledge_reconnected_rom_session(&mut replacement_bridge, 2).await;
         assert_command_result(
             &mut replacement_control,
             "00000000-0000-4000-8000-000000000031",
@@ -8419,12 +8998,12 @@ mod tests {
         write_handshake(&mut bridge, &descriptor, descriptor.secret()).await;
         establish_rom_session(&mut bridge).await;
         let ready =
-            BridgeFrame::new(MessageType::CheckpointReady, 1, TEST_SESSION_EPOCH, &[]).unwrap();
+            BridgeFrame::new(MessageType::CheckpointReady, 2, TEST_SESSION_EPOCH, &[]).unwrap();
         bridge.write_all(&ready.encode()).await.unwrap();
         assert!(matches!(
             read_event(&mut first_control).await,
             ControlEvent::CheckpointReady {
-                ready_sequence: 1,
+                ready_sequence: 2,
                 ..
             }
         ));
@@ -8455,7 +9034,7 @@ mod tests {
                 .await
                 .expect("elapsed decision deadline must hand off without a bridge"),
             ControlEvent::CheckpointExpired {
-                ready_sequence: 1,
+                ready_sequence: 2,
                 ..
             }
         ));
@@ -8777,7 +9356,7 @@ mod tests {
             BridgeFrame::decode_for(&first_session_ready, Direction::SidecarToRom)
                 .unwrap()
                 .sequence(),
-            BOOTSTRAP_SEQUENCE + 1
+            first_bootstrap.sequence()
         );
 
         let command_id = "00000000-0000-4000-8000-000000000008";
@@ -8814,7 +9393,10 @@ mod tests {
         let mut second_bridge = TcpStream::connect(descriptor.address()).await.unwrap();
         let second_bootstrap =
             write_handshake(&mut second_bridge, &descriptor, descriptor.secret()).await;
-        assert_eq!(second_bootstrap.sequence(), BOOTSTRAP_SEQUENCE + 2);
+        assert_eq!(
+            second_bootstrap.sequence(),
+            first_bootstrap.sequence().wrapping_add(1)
+        );
         send_command(
             &mut second_control,
             &abort(command_id, TEST_SESSION_EPOCH, 1),
@@ -8856,7 +9438,7 @@ mod tests {
         write_handshake(&mut first_bridge, &descriptor, descriptor.secret()).await;
         establish_rom_session(&mut first_bridge).await;
         let ready =
-            BridgeFrame::new(MessageType::CheckpointReady, 1, TEST_SESSION_EPOCH, &[]).unwrap();
+            BridgeFrame::new(MessageType::CheckpointReady, 2, TEST_SESSION_EPOCH, &[]).unwrap();
         first_bridge.write_all(&ready.encode()).await.unwrap();
         assert!(matches!(
             read_event(&mut first_control).await,
@@ -8883,16 +9465,22 @@ mod tests {
                 .await
                 .is_err()
         );
-        establish_rom_session(&mut second_bridge).await;
         send_command(
             &mut second_control,
             &grant(
                 "00000000-0000-4000-8000-000000000011",
                 TEST_SESSION_EPOCH,
-                1,
+                2,
             ),
         )
         .await;
+        assert!(
+            timeout(Duration::from_millis(100), read_event(&mut second_control))
+                .await
+                .is_err(),
+            "a grant arriving before replacement ROM_READY must remain pending"
+        );
+        acknowledge_reconnected_rom_session(&mut second_bridge, 3).await;
         assert!(matches!(
             read_event(&mut second_control).await,
             ControlEvent::CommandResult {
@@ -8902,14 +9490,14 @@ mod tests {
         ));
         let mut granted = [0; BRIDGE_FRAME_SIZE];
         second_bridge.read_exact(&mut granted).await.unwrap();
-        let save = save_update(2, 17);
+        let save = save_update(4, 17);
         second_bridge.write_all(&save.encode()).await.unwrap();
         assert_eq!(
             read_event(&mut second_control).await,
             ControlEvent::SaveDataUpdated {
                 session_epoch: TEST_SESSION_EPOCH,
-                ready_sequence: 1,
-                save_sequence: 2,
+                ready_sequence: 2,
+                save_sequence: 4,
                 save_generation: 17,
             }
         );
@@ -8957,14 +9545,14 @@ mod tests {
         )
         .await;
         let ready =
-            BridgeFrame::new(MessageType::CheckpointReady, 1, TEST_SESSION_EPOCH, &[]).unwrap();
+            BridgeFrame::new(MessageType::CheckpointReady, 2, TEST_SESSION_EPOCH, &[]).unwrap();
         bridge.write_all(&ready.encode()).await.unwrap();
         assert!(matches!(
             timeout(Duration::from_secs(1), read_event(&mut second_control))
                 .await
                 .unwrap(),
             ControlEvent::CheckpointReady {
-                ready_sequence: 1,
+                ready_sequence: 2,
                 ..
             }
         ));
@@ -8979,7 +9567,7 @@ mod tests {
             &abort(
                 "00000000-0000-4000-8000-000000000013",
                 TEST_SESSION_EPOCH,
-                1,
+                2,
             ),
         )
         .await;
@@ -9055,6 +9643,50 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn pregrant_active_epoch_sequence_one_expires_checkpoint_after_activity() {
+        let mut sidecar = LocalSidecar::bind_with_epoch(TEST_SESSION_EPOCH)
+            .await
+            .unwrap();
+        let (mut bridge, mut bridge_peer) = bridge_writer_pair().await;
+        let (mut control, mut control_peer) = control_writer_pair().await;
+        let key = CheckpointKey::new(TEST_SESSION_EPOCH, 2).unwrap();
+        let mut session = ActiveSessionState::from_reconnect(ReconnectState::default(), false);
+        session.acknowledged_rom_ready = true;
+        session.checkpoint_state = CheckpointState::AwaitDecision {
+            key,
+            deadline: Instant::now() + DECISION_TIMEOUT,
+        };
+        sidecar.sequence_state.last_session_rom = 2;
+        let reboot = BridgeFrame::new(MessageType::RomReady, 1, TEST_SESSION_EPOCH, &[]).unwrap();
+
+        sidecar
+            .handle_bridge_frame(reboot, &mut bridge, &mut control, &mut session)
+            .await
+            .unwrap();
+
+        assert_eq!(
+            read_event(&mut control_peer).await,
+            ControlEvent::CheckpointExpired {
+                session_epoch: TEST_SESSION_EPOCH,
+                ready_sequence: 2,
+            }
+        );
+        assert_eq!(
+            read_event(&mut control_peer).await,
+            ControlEvent::RomPresenceReset
+        );
+        assert!(matches!(session.checkpoint_state, CheckpointState::Idle));
+        let mut bytes = [0; BRIDGE_FRAME_SIZE];
+        bridge_peer.read_exact(&mut bytes).await.unwrap();
+        assert_eq!(
+            BridgeFrame::decode_for(&bytes, Direction::SidecarToRom)
+                .unwrap()
+                .message_type(),
+            MessageType::SessionReady
+        );
+    }
+
+    #[tokio::test]
     async fn pregrant_boot_epoch_rom_ready_expires_and_rearms_checkpoint() {
         let server = LocalSidecar::bind_with_epoch(TEST_SESSION_EPOCH)
             .await
@@ -9078,6 +9710,9 @@ mod tests {
         bridge.write_all(&initial_ready.encode()).await.unwrap();
         let mut initial_session_ready = [0; BRIDGE_FRAME_SIZE];
         bridge.read_exact(&mut initial_session_ready).await.unwrap();
+        let active_ready =
+            BridgeFrame::new(MessageType::RomReady, 1, TEST_SESSION_EPOCH, &[]).unwrap();
+        bridge.write_all(&active_ready.encode()).await.unwrap();
 
         let ready =
             BridgeFrame::new(MessageType::CheckpointReady, 2, TEST_SESSION_EPOCH, &[]).unwrap();
@@ -9373,17 +10008,17 @@ mod tests {
         ));
 
         let ready =
-            BridgeFrame::new(MessageType::CheckpointReady, 1, TEST_SESSION_EPOCH, &[]).unwrap();
+            BridgeFrame::new(MessageType::CheckpointReady, 2, TEST_SESSION_EPOCH, &[]).unwrap();
         bridge.write_all(&ready.encode()).await.unwrap();
         assert_eq!(
             read_event(&mut control).await,
             ControlEvent::CheckpointReady {
                 session_epoch: TEST_SESSION_EPOCH,
-                ready_sequence: 1
+                ready_sequence: 2
             }
         );
         let command_id = "00000000-0000-4000-8000-000000000001";
-        send_command(&mut control, &grant(command_id, TEST_SESSION_EPOCH, 1)).await;
+        send_command(&mut control, &grant(command_id, TEST_SESSION_EPOCH, 2)).await;
         let granted = read_event(&mut control).await;
         assert!(matches!(
             granted,
@@ -9399,7 +10034,7 @@ mod tests {
         assert_eq!(frame.message_type(), MessageType::CheckpointGranted);
         assert!(frame.payload().is_empty());
 
-        send_command(&mut control, &grant(command_id, TEST_SESSION_EPOCH, 1)).await;
+        send_command(&mut control, &grant(command_id, TEST_SESSION_EPOCH, 2)).await;
         assert!(matches!(
             read_event(&mut control).await,
             ControlEvent::CommandResult {
@@ -9413,14 +10048,14 @@ mod tests {
                 .is_err()
         );
 
-        let save = save_update(2, 0x7856_3412);
+        let save = save_update(3, 0x7856_3412);
         bridge.write_all(&save.encode()).await.unwrap();
         assert_eq!(
             read_event(&mut control).await,
             ControlEvent::SaveDataUpdated {
                 session_epoch: TEST_SESSION_EPOCH,
-                ready_sequence: 1,
-                save_sequence: 2,
+                ready_sequence: 2,
+                save_sequence: 3,
                 save_generation: 0x7856_3412,
             }
         );
@@ -9560,7 +10195,7 @@ mod tests {
         establish_rom_session(&mut bridge).await;
 
         let ready =
-            BridgeFrame::new(MessageType::CheckpointReady, 1, TEST_SESSION_EPOCH, &[]).unwrap();
+            BridgeFrame::new(MessageType::CheckpointReady, 2, TEST_SESSION_EPOCH, &[]).unwrap();
         bridge.write_all(&ready.encode()).await.unwrap();
         assert!(matches!(
             read_event(&mut control).await,
@@ -9571,7 +10206,7 @@ mod tests {
             &grant(
                 "00000000-0000-4000-8000-000000000099",
                 TEST_SESSION_EPOCH,
-                1,
+                2,
             ),
         )
         .await;
@@ -9585,7 +10220,7 @@ mod tests {
         let mut granted = [0; BRIDGE_FRAME_SIZE];
         bridge.read_exact(&mut granted).await.unwrap();
 
-        let mut malformed = save_update(2, 33).encode();
+        let mut malformed = save_update(3, 33).encode();
         malformed[BRIDGE_FRAME_SIZE - 1] ^= 1;
         bridge.write_all(&malformed).await.unwrap();
 
@@ -9636,7 +10271,7 @@ mod tests {
         await_prefix(&mut bridge_prefixes, "ROM_READY frame").await;
 
         let ready =
-            BridgeFrame::new(MessageType::CheckpointReady, 1, TEST_SESSION_EPOCH, &[]).unwrap();
+            BridgeFrame::new(MessageType::CheckpointReady, 2, TEST_SESSION_EPOCH, &[]).unwrap();
         let ready_bytes = ready.encode();
         bridge.write_all(&ready_bytes[..17]).await.unwrap();
         // The bridge reader task owns the partial frame while control remains
@@ -9669,7 +10304,7 @@ mod tests {
         let command = grant(
             "00000000-0000-4000-8000-000000000005",
             TEST_SESSION_EPOCH,
-            1,
+            2,
         );
         let mut command_bytes = serde_json::to_vec(&command).unwrap();
         command_bytes.push(b'\n');
@@ -9682,7 +10317,7 @@ mod tests {
         // cancelling or losing the control decoder's partial line.
         let player_state = BridgeFrame::new(
             MessageType::PlayerState,
-            2,
+            3,
             TEST_SESSION_EPOCH,
             &valid_local_presence_state(),
         )
@@ -9694,7 +10329,7 @@ mod tests {
         let mut granted = [0; BRIDGE_FRAME_SIZE];
         bridge.read_exact(&mut granted).await.unwrap();
 
-        let save = save_update(3, 0x0403_0201);
+        let save = save_update(4, 0x0403_0201);
         let save_bytes = save.encode();
         bridge.write_all(&save_bytes[..23]).await.unwrap();
         await_prefix(&mut bridge_prefixes, "fragmented save-data frame").await;
@@ -9703,8 +10338,8 @@ mod tests {
             read_event(&mut control).await,
             ControlEvent::SaveDataUpdated {
                 session_epoch: TEST_SESSION_EPOCH,
-                ready_sequence: 1,
-                save_sequence: 3,
+                ready_sequence: 2,
+                save_sequence: 4,
                 save_generation: 0x0403_0201,
             }
         );
@@ -9734,7 +10369,7 @@ mod tests {
         write_handshake(&mut bridge, &descriptor, descriptor.secret()).await;
         establish_rom_session(&mut bridge).await;
         let ready =
-            BridgeFrame::new(MessageType::CheckpointReady, 1, TEST_SESSION_EPOCH, &[]).unwrap();
+            BridgeFrame::new(MessageType::CheckpointReady, 2, TEST_SESSION_EPOCH, &[]).unwrap();
         bridge.write_all(&ready.encode()).await.unwrap();
         let _ = read_event(&mut control).await;
         send_command(
@@ -9742,7 +10377,7 @@ mod tests {
             &abort(
                 "00000000-0000-4000-8000-000000000002",
                 TEST_SESSION_EPOCH,
-                1,
+                2,
             ),
         )
         .await;
@@ -9786,12 +10421,12 @@ mod tests {
         write_handshake(&mut bridge, &descriptor, descriptor.secret()).await;
         establish_rom_session(&mut bridge).await;
         let ready =
-            BridgeFrame::new(MessageType::CheckpointReady, 1, TEST_SESSION_EPOCH, &[]).unwrap();
+            BridgeFrame::new(MessageType::CheckpointReady, 2, TEST_SESSION_EPOCH, &[]).unwrap();
         bridge.write_all(&ready.encode()).await.unwrap();
         let _ = read_event(&mut control).await;
 
         let command_id = "00000000-0000-4000-8000-000000000003";
-        send_command(&mut control, &grant(command_id, TEST_SESSION_EPOCH, 1)).await;
+        send_command(&mut control, &grant(command_id, TEST_SESSION_EPOCH, 2)).await;
         let _ = read_event(&mut control).await;
         let mut bytes = [0; BRIDGE_FRAME_SIZE];
         bridge.read_exact(&mut bytes).await.unwrap();
@@ -9850,7 +10485,7 @@ mod tests {
         write_handshake(&mut bridge, &descriptor, descriptor.secret()).await;
         establish_rom_session(&mut bridge).await;
         let ready =
-            BridgeFrame::new(MessageType::CheckpointReady, 1, TEST_SESSION_EPOCH, &[]).unwrap();
+            BridgeFrame::new(MessageType::CheckpointReady, 2, TEST_SESSION_EPOCH, &[]).unwrap();
         bridge.write_all(&ready.encode()).await.unwrap();
         let _ = read_event(&mut control).await;
         assert!(matches!(
@@ -9861,7 +10496,7 @@ mod tests {
             .await
             .unwrap(),
             ControlEvent::CheckpointExpired {
-                ready_sequence: 1,
+                ready_sequence: 2,
                 ..
             }
         ));
@@ -9870,7 +10505,7 @@ mod tests {
             &grant(
                 "00000000-0000-4000-8000-000000000009",
                 TEST_SESSION_EPOCH,
-                1,
+                2,
             ),
         )
         .await;
@@ -9937,7 +10572,7 @@ mod tests {
         write_handshake(&mut bridge, &descriptor, descriptor.secret()).await;
         establish_rom_session(&mut bridge).await;
         let ready =
-            BridgeFrame::new(MessageType::CheckpointReady, 1, TEST_SESSION_EPOCH, &[]).unwrap();
+            BridgeFrame::new(MessageType::CheckpointReady, 2, TEST_SESSION_EPOCH, &[]).unwrap();
         bridge.write_all(&ready.encode()).await.unwrap();
         assert!(matches!(
             read_event(&mut control).await,
@@ -9948,7 +10583,7 @@ mod tests {
             &grant(
                 "00000000-0000-4000-8000-000000000016",
                 TEST_SESSION_EPOCH,
-                1,
+                2,
             ),
         )
         .await;
@@ -9975,13 +10610,13 @@ mod tests {
             !server_task.is_finished(),
             "flash work must outlive the transport timeout"
         );
-        bridge.write_all(&save_update(2, 1).encode()).await.unwrap();
+        bridge.write_all(&save_update(3, 1).encode()).await.unwrap();
         assert_eq!(
             read_event(&mut control).await,
             ControlEvent::SaveDataUpdated {
                 session_epoch: TEST_SESSION_EPOCH,
-                ready_sequence: 1,
-                save_sequence: 2,
+                ready_sequence: 2,
+                save_sequence: 3,
                 save_generation: 1,
             }
         );
@@ -10013,7 +10648,7 @@ mod tests {
         establish_rom_session(&mut bridge).await;
 
         let ready =
-            BridgeFrame::new(MessageType::CheckpointReady, 1, TEST_SESSION_EPOCH, &[]).unwrap();
+            BridgeFrame::new(MessageType::CheckpointReady, 2, TEST_SESSION_EPOCH, &[]).unwrap();
         bridge.write_all(&ready.encode()).await.unwrap();
         assert!(matches!(
             read_event(&mut control).await,
@@ -10024,7 +10659,7 @@ mod tests {
             &grant(
                 "00000000-0000-4000-8000-000000000006",
                 TEST_SESSION_EPOCH,
-                1,
+                2,
             ),
         )
         .await;
@@ -10076,8 +10711,11 @@ mod tests {
         bridge.write_all(&initial_ready.encode()).await.unwrap();
         let mut initial_session_ready = [0; BRIDGE_FRAME_SIZE];
         bridge.read_exact(&mut initial_session_ready).await.unwrap();
+        let active_ready =
+            BridgeFrame::new(MessageType::RomReady, 1, TEST_SESSION_EPOCH, &[]).unwrap();
+        bridge.write_all(&active_ready.encode()).await.unwrap();
         let ready =
-            BridgeFrame::new(MessageType::CheckpointReady, 1, TEST_SESSION_EPOCH, &[]).unwrap();
+            BridgeFrame::new(MessageType::CheckpointReady, 2, TEST_SESSION_EPOCH, &[]).unwrap();
         bridge.write_all(&ready.encode()).await.unwrap();
         assert!(matches!(
             read_event(&mut control).await,
@@ -10088,7 +10726,7 @@ mod tests {
             &grant(
                 "00000000-0000-4000-8000-000000000007",
                 TEST_SESSION_EPOCH,
-                1,
+                2,
             ),
         )
         .await;
@@ -10134,8 +10772,11 @@ mod tests {
         bridge.write_all(&initial_ready.encode()).await.unwrap();
         let mut initial_session_ready = [0; BRIDGE_FRAME_SIZE];
         bridge.read_exact(&mut initial_session_ready).await.unwrap();
+        let active_ready =
+            BridgeFrame::new(MessageType::RomReady, 1, TEST_SESSION_EPOCH, &[]).unwrap();
+        bridge.write_all(&active_ready.encode()).await.unwrap();
         let ready =
-            BridgeFrame::new(MessageType::CheckpointReady, 1, TEST_SESSION_EPOCH, &[]).unwrap();
+            BridgeFrame::new(MessageType::CheckpointReady, 2, TEST_SESSION_EPOCH, &[]).unwrap();
         bridge.write_all(&ready.encode()).await.unwrap();
         assert!(matches!(
             read_event(&mut control).await,
@@ -10146,7 +10787,7 @@ mod tests {
             &grant(
                 "00000000-0000-4000-8000-000000000012",
                 TEST_SESSION_EPOCH,
-                1,
+                2,
             ),
         )
         .await;
@@ -10226,7 +10867,7 @@ mod tests {
 
         fill_command_ledger(&mut control).await;
         let ready =
-            BridgeFrame::new(MessageType::CheckpointReady, 1, TEST_SESSION_EPOCH, &[]).unwrap();
+            BridgeFrame::new(MessageType::CheckpointReady, 2, TEST_SESSION_EPOCH, &[]).unwrap();
         bridge.write_all(&ready.encode()).await.unwrap();
         assert!(matches!(
             read_event(&mut control).await,
@@ -10403,14 +11044,14 @@ mod tests {
         fill_command_ledger(&mut control).await;
 
         let ready =
-            BridgeFrame::new(MessageType::CheckpointReady, 1, TEST_SESSION_EPOCH, &[]).unwrap();
+            BridgeFrame::new(MessageType::CheckpointReady, 2, TEST_SESSION_EPOCH, &[]).unwrap();
         bridge.write_all(&ready.encode()).await.unwrap();
         assert!(matches!(
             read_event(&mut control).await,
             ControlEvent::CheckpointReady { .. }
         ));
         let overflow_id = format!("00000000-0000-4000-8000-{:012x}", MAX_COMMAND_HISTORY + 2);
-        send_command(&mut control, &grant(&overflow_id, TEST_SESSION_EPOCH, 1)).await;
+        send_command(&mut control, &grant(&overflow_id, TEST_SESSION_EPOCH, 2)).await;
         assert!(
             timeout(Duration::from_secs(2), server_task)
                 .await

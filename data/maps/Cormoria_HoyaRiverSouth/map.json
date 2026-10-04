@@ -1,0 +1,47 @@
+{
+  "id": "MAP_CORMORIA_HOYA_RIVER_SOUTH",
+  "name": "Cormoria_HoyaRiverSouth",
+  "layout": "LAYOUT_CORMORIA_HOYA_RIVER_SOUTH",
+  "music": "SE_M_WATERFALL",
+  "region_map_section": "MAPSEC_CORMORIA_HOYA_RIVER_SOUTH",
+  "requires_flash": false,
+  "weather": "WEATHER_SHADE",
+  "map_type": "MAP_TYPE_ROUTE",
+  "allow_cycling": true,
+  "allow_escaping": false,
+  "allow_running": true,
+  "show_map_name": true,
+  "battle_scene": "MAP_BATTLE_SCENE_NORMAL",
+  "connections": [
+    {
+      "map": "MAP_CORMORIA_ROUTE6",
+      "offset": -92,
+      "direction": "right"
+    },
+    {
+      "map": "MAP_CORMORIA_PELLUCA_CITY",
+      "offset": 0,
+      "direction": "left"
+    },
+    {
+      "map": "MAP_CORMORIA_PELLUCA_CITY",
+      "offset": 0,
+      "direction": "left"
+    }
+  ],
+  "object_events": [],
+  "warp_events": [],
+  "coord_events": [],
+  "bg_events": [
+    {
+      "type": "sign",
+      "x": 5,
+      "y": 13,
+      "elevation": 0,
+      "player_facing_dir": "BG_EVENT_PLAYER_FACING_NORTH",
+      "script": "Cormoria_WhiteSign_HoyaRiverSouth"
+    }
+  ],
+  "rom_world": "cormoria",
+  "region": "REGION_CORMORIA"
+}

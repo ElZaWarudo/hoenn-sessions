@@ -297,6 +297,13 @@ graphics/pokenav/region_map/johtomap.8bpp.smol: graphics/pokenav/region_map/joht
 
 graphics/pokenav/region_map/johtomap.bin.smolTM: graphics/pokenav/region_map/johtomap.bin
 
+graphics/pokenav/region_map/map_cormoria.8bpp: %.8bpp: %.png
+	$(GFX) $< $@
+
+graphics/pokenav/region_map/map_cormoria.8bpp.smol: graphics/pokenav/region_map/map_cormoria.8bpp
+
+graphics/pokenav/region_map/map_cormoria.bin.smolTM: graphics/pokenav/region_map/map_cormoria.bin
+
 $(MISCGFXDIR)/japanese_hof.4bpp: %.4bpp: %.png
 	$(GFX) $< $@ -num_tiles 29 -Wnum_tiles
 

@@ -30,6 +30,7 @@
 #include "overworld.h"
 #include "palette.h"
 #include "party_menu.h"
+#include "pokemon.h"
 #include "pokedex.h"
 #include "pokenav.h"
 #include "safari_zone.h"
@@ -53,6 +54,10 @@
 #include "dexnav.h"
 #include "wild_encounter.h"
 #include "constants/battle_frontier.h"
+#if ROM_WORLD == 2
+#include "constants/cormoria_event_ids.h"
+#include "cormoria/quest_menu.h"
+#endif
 #include "constants/rgb.h"
 #include "constants/songs.h"
 #include "constants/characters.h"
@@ -79,6 +84,9 @@ enum
     MENU_ACTION_DEXNAV,
     MENU_ACTION_ONLINE,
     MENU_ACTION_CHARACTER,
+#if ROM_WORLD == 2
+    MENU_ACTION_QUESTS,
+#endif
 };
 
 // Save status
@@ -98,7 +106,7 @@ EWRAM_DATA static u8 sSafariBallsWindowId = 0;
 EWRAM_DATA static u8 sBattlePyramidFloorWindowId = 0;
 EWRAM_DATA static u8 sStartMenuCursorPos = 0;
 EWRAM_DATA static u8 sNumStartMenuActions = 0;
-EWRAM_DATA static u8 sCurrentStartMenuActions[11] = {0};
+EWRAM_DATA static u8 sCurrentStartMenuActions[12] = {0};
 EWRAM_DATA static u8 sStartMenuScroll = 0;
 EWRAM_DATA static s8 sInitStartMenuData[2] = {0};
 
@@ -107,6 +115,7 @@ EWRAM_DATA static u8 sSaveDialogTimer = 0;
 EWRAM_DATA static bool8 sSavingComplete = FALSE;
 EWRAM_DATA static u8 sSaveInfoWindowId = 0;
 EWRAM_DATA static bool8 sSaveCheckpointRequired = FALSE;
+EWRAM_DATA static u16 sSaveCheckpointRequestAttempts = 0;
 #if TESTING
 static bool8 sSaveCheckpointDryRun;
 #endif
@@ -128,6 +137,9 @@ static bool8 StartMenuDebugCallback(void);
 static bool8 StartMenuDexNavCallback(void);
 static bool8 StartMenuOnlineCallback(void);
 static bool8 StartMenuCharacterCallback(void);
+#if ROM_WORLD == 2
+static bool8 StartMenuQuestCallback(void);
+#endif
 
 // Menu callbacks
 static bool8 SaveStartCallback(void);
@@ -149,6 +161,7 @@ static u8 SaveSavingMessageCallback(void);
 static u8 SaveDoSaveCallback(void);
 static u8 SaveDoSaveAuthorizedCallback(void);
 static u8 SaveCheckpointWaitCallback(void);
+static u8 SaveCheckpointRetryCallback(void);
 static u8 SaveCheckpointAbortCallback(void);
 static u8 SaveSuccessCallback(void);
 static u8 SaveReturnSuccessCallback(void);
@@ -210,6 +223,9 @@ static const struct WindowTemplate sWindowTemplate_PyramidPeak = {
 static const u8 sText_MenuDebug[] = _("DEBUG");
 static const u8 sText_MenuOnline[] = _("ONLINE");
 static const u8 sText_MenuCharacter[] = _("CHARACTER");
+#if ROM_WORLD == 2
+static const u8 sText_MenuQuests[] = _("QUESTS");
+#endif
 
 static const struct MenuAction sStartMenuItems[] =
 {
@@ -230,6 +246,9 @@ static const struct MenuAction sStartMenuItems[] =
     [MENU_ACTION_DEXNAV]          = {gText_MenuDexNav,  {.u8_void = StartMenuDexNavCallback}},
     [MENU_ACTION_ONLINE]          = {sText_MenuOnline,  {.u8_void = StartMenuOnlineCallback}},
     [MENU_ACTION_CHARACTER]       = {sText_MenuCharacter, {.u8_void = StartMenuCharacterCallback}},
+#if ROM_WORLD == 2
+    [MENU_ACTION_QUESTS]          = {sText_MenuQuests, {.u8_void = StartMenuQuestCallback}},
+#endif
 };
 
 static const struct BgTemplate sBgTemplates_LinkBattleSave[] =
@@ -361,7 +380,7 @@ static void BuildNormalStartMenu(void)
     if (DN_FLAG_DEXNAV_GET != 0 && FlagGet(DN_FLAG_DEXNAV_GET))
         AddStartMenuAction(MENU_ACTION_DEXNAV);
 
-    if (FlagGet(FLAG_SYS_POKEMON_GET) == TRUE)
+    if (FlagGet(FLAG_SYS_POKEMON_GET) == TRUE || gPlayerPartyCount > 0)
         AddStartMenuAction(MENU_ACTION_POKEMON);
 
     AddStartMenuAction(MENU_ACTION_BAG);
@@ -372,6 +391,10 @@ static void BuildNormalStartMenu(void)
     AddStartMenuAction(MENU_ACTION_PLAYER);
     AddStartMenuAction(MENU_ACTION_ONLINE);
     AddStartMenuAction(MENU_ACTION_CHARACTER);
+#if ROM_WORLD == 2
+    if (FlagGet(Cormoria_FLAG_SYS_QUEST_MENU_GET) == TRUE)
+        AddStartMenuAction(MENU_ACTION_QUESTS);
+#endif
     AddStartMenuAction(MENU_ACTION_SAVE);
     AddStartMenuAction(MENU_ACTION_OPTION);
     AddStartMenuAction(MENU_ACTION_EXIT);
@@ -382,7 +405,7 @@ static void BuildDebugStartMenu(void)
     AddStartMenuAction(MENU_ACTION_DEBUG);
     if (FlagGet(FLAG_SYS_POKEDEX_GET) == TRUE)
         AddStartMenuAction(MENU_ACTION_POKEDEX);
-    if (FlagGet(FLAG_SYS_POKEMON_GET) == TRUE)
+    if (FlagGet(FLAG_SYS_POKEMON_GET) == TRUE || gPlayerPartyCount > 0)
         AddStartMenuAction(MENU_ACTION_POKEMON);
     AddStartMenuAction(MENU_ACTION_BAG);
     if (FlagGet(FLAG_SYS_POKENAV_GET) == TRUE)
@@ -933,6 +956,22 @@ static bool8 StartMenuCharacterCallback(void)
     return TRUE;
 }
 
+#if ROM_WORLD == 2
+static bool8 StartMenuQuestCallback(void)
+{
+    if (!gPaletteFade.active)
+    {
+        PlayRainStoppingSoundEffect();
+        RemoveExtraStartMenuWindows();
+        CleanupOverworldWindowsAndTilemaps();
+        CormoriaQuestMenu_Init(CB2_ReturnToFieldWithOpenMenu);
+        return TRUE;
+    }
+
+    return FALSE;
+}
+#endif
+
 static bool8 StartMenuLinkModePlayerNameCallback(void)
 {
     if (!gPaletteFade.active)
@@ -1081,6 +1120,17 @@ void SaveGame(void)
      * needs the same cloud checkpoint gate as a Start-menu save. */
     sSaveCheckpointRequired = CoopGroupTravel_IsFirstBrineyReceiptPending();
     InitSave();
+    CreateTask(SaveGameTask, 0x50);
+}
+
+void CoopPortalSaveGame(void)
+{
+    /* The harbor script already queued its portal intent. Wait for that
+     * request's grant instead of requesting a second checkpoint. */
+    sSaveCheckpointRequired = TRUE;
+    InitSave();
+    ShowSaveInfoWindow();
+    sSaveDialogCallback = SaveCheckpointWaitCallback;
     CreateTask(SaveGameTask, 0x50);
 }
 
@@ -1291,6 +1341,7 @@ static u8 SaveDoSaveCallback(void)
         sSaveDialogCallback = SaveCheckpointAbortCallback;
         return SAVE_IN_PROGRESS;
     }
+    sSaveCheckpointRequestAttempts = 0;
     switch (CoopNetBridge_RequestCheckpoint())
     {
     case COOP_CHECKPOINT_REQUEST_STARTED:
@@ -1299,9 +1350,15 @@ static u8 SaveDoSaveCallback(void)
         sSaveDialogCallback = SaveCheckpointWaitCallback;
         return SAVE_IN_PROGRESS;
     case COOP_CHECKPOINT_REQUEST_REJECTED:
-        /* Never spin in this callback: return through the normal cancellation
-         * path so the player can interact with the menu again. */
-        sSaveDialogCallback = SaveCheckpointAbortCallback;
+        /* The single-frame gate refuses while any bridge frame is in flight,
+         * and Lua hands the ROM inbound traffic at VBlank, before this
+         * callback and before CoopNetBridge_Poll consumes it. Ask again on
+         * the following frames (bounded) rather than refusing a ready
+         * session; never spin within one frame. */
+        if (CoopNetBridge_ShouldRetryCheckpointRequest(&sSaveCheckpointRequestAttempts))
+            sSaveDialogCallback = SaveCheckpointRetryCallback;
+        else
+            sSaveDialogCallback = SaveCheckpointAbortCallback;
         return SAVE_IN_PROGRESS;
     case COOP_CHECKPOINT_REQUEST_OFFLINE:
         if (CoopGroupTravel_IsFirstBrineyReceiptPending())
@@ -1313,6 +1370,38 @@ static u8 SaveDoSaveCallback(void)
     }
 
     return SaveDoSaveAuthorizedCallback();
+}
+
+/* One more checkpoint request per frame after a refusal. Ends in the grant
+ * wait once a request is queued, or in the normal cancellation path when the
+ * bounded window expires or cloud mode is lost (fail closed: an OFFLINE answer
+ * here never falls back to a local save). Nothing is queued after giving up. */
+static u8 SaveCheckpointRetryCallback(void)
+{
+    if (JohtoBugContest_IsSerializationBlocked())
+    {
+        CoopNetBridge_NotifySaveResult(FALSE);
+        sSaveDialogCallback = SaveCheckpointAbortCallback;
+        return SAVE_IN_PROGRESS;
+    }
+    switch (CoopNetBridge_RequestCheckpoint())
+    {
+    case COOP_CHECKPOINT_REQUEST_STARTED:
+        sSaveCheckpointRequestAttempts = 0;
+        sSaveDialogCallback = SaveCheckpointWaitCallback;
+        return SAVE_IN_PROGRESS;
+    case COOP_CHECKPOINT_REQUEST_REJECTED:
+        if (CoopNetBridge_ShouldRetryCheckpointRequest(&sSaveCheckpointRequestAttempts))
+            return SAVE_IN_PROGRESS;
+        break;
+    case COOP_CHECKPOINT_REQUEST_OFFLINE:
+    default:
+        break;
+    }
+
+    sSaveCheckpointRequestAttempts = 0;
+    sSaveDialogCallback = SaveCheckpointAbortCallback;
+    return SAVE_IN_PROGRESS;
 }
 
 static u8 SaveCheckpointWaitCallback(void)
@@ -1428,6 +1517,21 @@ u8 CoopStartMenu_TestRunSaveDoSaveCallback(void)
 u8 CoopStartMenu_TestRunCheckpointWaitCallback(void)
 {
     return SaveCheckpointWaitCallback();
+}
+
+u8 CoopStartMenu_TestRunCurrentSaveCallback(void)
+{
+    return sSaveDialogCallback();
+}
+
+bool8 CoopStartMenu_TestIsSaveCheckpointRetrying(void)
+{
+    return sSaveDialogCallback == SaveCheckpointRetryCallback;
+}
+
+bool8 CoopStartMenu_TestIsSaveAborting(void)
+{
+    return sSaveDialogCallback == SaveCheckpointAbortCallback;
 }
 
 u8 CoopStartMenu_TestRunCheckpointAbortCallback(void)
@@ -1628,11 +1732,15 @@ static void Task_SaveAfterLinkBattle(u8 taskId)
         case 1:
             SetContinueGameWarpStatusToDynamicWarp();
             WriteSaveBlock2();
+            if (Save_HandleBlockedLinkSave())
+                break;
             *state = 2;
             break;
         case 2:
             if (WriteSaveBlock1Sector())
             {
+                if (Save_HandleBlockedLinkSave())
+                    break;
                 ClearContinueGameWarpStatus2();
                 *state = 3;
                 gSoftResetDisabled = FALSE;

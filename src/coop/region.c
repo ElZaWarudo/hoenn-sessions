@@ -30,6 +30,8 @@ static enum Region EngineRegion_FromMapHeaderValue(u8 value)
         return REGION_KANTO;
     case COOP_MAP_ENGINE_REGION_JOHTO:
         return REGION_JOHTO;
+    case COOP_MAP_ENGINE_REGION_CORMORIA:
+        return REGION_CORMORIA;
     default:
         /* Also accept an already-expanded C enum value for callers that
          * construct a MapHeader in tests or tooling. Generated assembly uses
@@ -52,6 +54,8 @@ enum CoopRegion CoopRegion_FromEngineRegion(enum Region region)
         return COOP_REGION_KANTO;
     case REGION_JOHTO:
         return COOP_REGION_JOHTO;
+    case REGION_CORMORIA:
+        return COOP_REGION_CORMORIA;
     default:
         return COOP_REGION_UNSPECIFIED;
     }
@@ -66,6 +70,12 @@ enum CoopRegion CoopRegion_FromSectionId(u32 section_id)
      * geographic Kanto side of the regional boundary. */
     if (IsGeographicKantoJohtoSection(section_id))
         return COOP_REGION_KANTO;
+
+#if ROM_WORLD == 2
+    if (section_id >= MAPSEC_CORMORIA_CARABRUE_TOWN
+     && section_id <= MAPSEC_CORMORIA_CHAMPIONSHIP_CORRIDOR)
+        return COOP_REGION_CORMORIA;
+#endif
 
     if (GetRegionForSectionId(section_id) == REGION_KANTO)
     {
@@ -109,6 +119,12 @@ bool8 CoopRegion_Normalize(enum CoopRegion *out, enum Region engine_region, u32 
                 return FALSE;
             section_region = COOP_REGION_KANTO;
         }
+        *out = section_region;
+        return TRUE;
+    case REGION_CORMORIA:
+        section_region = CoopRegion_FromSectionId(section_id);
+        if (section_region != COOP_REGION_CORMORIA)
+            return FALSE;
         *out = section_region;
         return TRUE;
     default:

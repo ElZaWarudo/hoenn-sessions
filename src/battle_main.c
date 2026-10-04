@@ -450,6 +450,27 @@ const struct TrainerClass gTrainerClasses[TRAINER_CLASS_COUNT] =
     [TRAINER_CLASS_POLICEMAN] = { _("OFFICER"), 5, BALL_POKE },
     [TRAINER_CLASS_ROCKET_ADMIN] = { _("ROCKET ADMIN"), 5, BALL_POKE },
     [TRAINER_CLASS_SAGE] = { _("SAGE"), 5, BALL_POKE },
+/* BEGIN PINNED CORMORIA TRAINER PRESENTATION CLASS_DATA */
+    [TRAINER_CLASS_ACE_ROOKIE] = { _("Ace Rookie") },
+    [TRAINER_CLASS_ARTIST] = {_("Artist") },
+    [TRAINER_CLASS_BACKPACKER] = {_("Backpacker") },
+    [TRAINER_CLASS_BUG_CATCHER_F] = {_("Bug Catcher") },
+    [TRAINER_CLASS_BUILDER] = {_("Builder") },
+    [TRAINER_CLASS_BURGLAR] = {_("Burglar") },
+    [TRAINER_CLASS_CADET] = {_("DA Cadet") },
+    [TRAINER_CLASS_CONTENDER] = {_("Contender")},
+    [TRAINER_CLASS_COOL_GIRL] = {_("Cool Girl") },
+    [TRAINER_CLASS_ELECTRICIAN] = {_("Electrician") },
+    [TRAINER_CLASS_EMPLOYEE] = {_("Employee") },
+    [TRAINER_CLASS_FIREFIGHTER] = {_("Firefighter") },
+    [TRAINER_CLASS_KOHLA_FINAL] = {_("Ace Rookie")},
+    [TRAINER_CLASS_MODEL] = {_("Model") },
+    [TRAINER_CLASS_RUE] = {_("Asst. Prof.") },
+    [TRAINER_CLASS_SKIIER] = {_("Skiier") },
+    [TRAINER_CLASS_SOMBER_ADMIN] = {_("Somber Admin") },
+    [TRAINER_CLASS_TEAM_SOMBER] = {_("Team Somber") },
+    [TRAINER_CLASS_WAITRESS] = {_("Waitress") },
+/* END PINNED CORMORIA TRAINER PRESENTATION CLASS_DATA */
 
 };
 
@@ -2110,7 +2131,11 @@ u8 CreateNPCTrainerPartyFromTrainer(struct Pokemon *party, const struct Trainer 
 /* Co-op opponent records are hashed byte for byte by the per-turn digest,
  * so nothing may come from the local save or map: CreateBoxMon stamps the
  * local player's name and gender as OT and the local map section as met
- * location. Replace those with trainer data both ROMs share. */
+ * location. Replace those with trainer data both ROMs share. Met location is
+ * V2 (low byte plus marker bits), so "none" must go through the V2 codec: the
+ * legacy u8 field would truncate MAPSEC_NONE onto a real map section. */
+STATIC_ASSERT(MAPSEC_NONE == MET_LOCATION_V2_NONE, CoopOpponentMetLocationNoneIsV2None);
+
 static void CanonicalizeCoopOpponentMon(struct Pokemon *mon, const struct Trainer *trainer)
 {
     u8 otName[PLAYER_NAME_LENGTH + 1];
@@ -2124,8 +2149,9 @@ static void CanonicalizeCoopOpponentMon(struct Pokemon *mon, const struct Traine
     SetMonData(mon, MON_DATA_OT_NAME, otName);
     value = trainer->gender;
     SetMonData(mon, MON_DATA_OT_GENDER, &value);
-    value = MAPSEC_NONE;
-    SetMonData(mon, MON_DATA_MET_LOCATION, &value);
+    /* CreateBoxMon leaves the V2 marker bits clear, which always decodes, so
+     * this cannot fail for a freshly created mon with a valid checksum. */
+    SetBoxMonMetLocationV2(&mon->box, MET_LOCATION_V2_NONE);
     /* CreateBoxMon copies the species name through an uninitialized stack
      * buffer, so the nickname bytes after its terminator are whatever that
      * ROM's stack held. Pad them with EOS (a custom nickname is kept). */

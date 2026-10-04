@@ -33,6 +33,7 @@ pub const GAME_CURRENT_FILE: &str = "game/current";
 pub const GAME_ARTIFACTS: &[(&str, &str)] = &[
     ("rom", "game.gba"),
     ("compatibility-manifest", "bridge_manifest.json"),
+    ("region-catalog", "release_catalog.json"),
 ];
 pub const ANDROID_DIRECTORY: &str = "android";
 pub const ANDROID_CURRENT_FILE: &str = "android/current";
@@ -197,10 +198,7 @@ fn game_artifact_inner(
 ) -> Result<Response, Phase2Error> {
     super::actor(headers, app)?;
     validate_release_id(release_id)?;
-    let destination = GAME_ARTIFACTS
-        .iter()
-        .find_map(|(id, path)| (*id == artifact_id).then_some(*path))
-        .ok_or(Phase2Error::NotFound)?;
+    let destination = game_destination(artifact_id).ok_or(Phase2Error::NotFound)?;
     let root = configured_root(app)?;
     let relative = PathBuf::from(GAME_DIRECTORY)
         .join(release_id)
@@ -412,10 +410,48 @@ fn validate_release_id(value: &str) -> Result<(), Phase2Error> {
     Ok(())
 }
 
-fn fixed_destination(artifact_id: &str) -> Option<&'static str> {
-    FIXED_ARTIFACTS
+fn fixed_destination(artifact_id: &str) -> Option<PathBuf> {
+    if let Some(destination) = FIXED_ARTIFACTS
         .iter()
         .find_map(|(id, destination)| (*id == artifact_id).then_some(*destination))
+    {
+        return Some(PathBuf::from(destination));
+    }
+    if artifact_id == "region-catalog" {
+        return Some(PathBuf::from("release_catalog.json"));
+    }
+    world_artifact_destination(artifact_id)
+}
+
+/// Returns only artifacts that belong to a signed game release. The Windows
+/// release has additional fixed files, so the game channel keeps its own
+/// allow-list while sharing the canonical world identity grammar.
+fn game_destination(artifact_id: &str) -> Option<PathBuf> {
+    if let Some(destination) = GAME_ARTIFACTS
+        .iter()
+        .find_map(|(id, destination)| (*id == artifact_id).then_some(*destination))
+    {
+        return Some(PathBuf::from(destination));
+    }
+    world_artifact_destination(artifact_id)
+}
+
+fn world_artifact_destination(artifact_id: &str) -> Option<PathBuf> {
+    let (world_text, kind) = artifact_id.strip_prefix("world-")?.split_once('-')?;
+    let world_id = world_text.parse::<u16>().ok()?;
+    let _ = coop_protocol::RomWorldId::new(world_id).ok()?;
+    // Canonical decimal IDs keep URL identities one-to-one with the signed
+    // launcher descriptor and prevent aliases such as world-007-rom.
+    if world_text != world_id.to_string() {
+        return None;
+    }
+    let filename = match kind {
+        "rom" => "game.gba",
+        "compatibility" => "bridge_manifest.json",
+        "player-transfer" => "player_transfer.json",
+        _ => return None,
+    };
+    Some(PathBuf::from("worlds").join(world_text).join(filename))
 }
 
 fn resolve_under(root: &Path, relative: &Path) -> Result<PathBuf, Phase2Error> {

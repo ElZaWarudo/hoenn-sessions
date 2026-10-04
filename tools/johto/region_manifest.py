@@ -214,10 +214,79 @@ EXPECTED_SECTION_TAIL_IDS = (
     "MAPSEC_JOHTO_SS_AQUA",
 )
 
+# Reviewed Cormoria section allocation (6be11d394e).  It is accepted only
+# directly after the complete Johto tail above, at values 250.., in exactly
+# this order.
+EXPECTED_CORMORIA_SECTION_TAIL_IDS = (
+    "MAPSEC_CORMORIA_CARABRUE_TOWN",
+    "MAPSEC_CORMORIA_ROUTE1",
+    "MAPSEC_CORMORIA_FENNILAHL_TOWN",
+    "MAPSEC_CORMORIA_ROUTE2",
+    "MAPSEC_CORMORIA_VINE_CAVERNS",
+    "MAPSEC_CORMORIA_FENNILAHL_TUNNEL",
+    "MAPSEC_CORMORIA_ROUTE3",
+    "MAPSEC_CORMORIA_ROUTE3_UNDERPASS",
+    "MAPSEC_CORMORIA_GASTREE_CITY",
+    "MAPSEC_CORMORIA_ABANDONED_SHIP",
+    "MAPSEC_CORMORIA_ROUTE3_CAVES",
+    "MAPSEC_CORMORIA_THE_OTHER_HOUSE",
+    "MAPSEC_CORMORIA_ROUTE4",
+    "MAPSEC_CORMORIA_CERAM_BASE_CAMP",
+    "MAPSEC_CORMORIA_MT_CERAM",
+    "MAPSEC_CORMORIA_CERAM_INTERIOR",
+    "MAPSEC_CORMORIA_ANCIENT_CERAM",
+    "MAPSEC_CORMORIA_GALECREST_CITY",
+    "MAPSEC_CORMORIA_ROUTE5",
+    "MAPSEC_CORMORIA_VILETHORN_WOODS",
+    "MAPSEC_CORMORIA_SILVERSUN_CITY",
+    "MAPSEC_CORMORIA_HOYA_RIVER_NORTH",
+    "MAPSEC_CORMORIA_ROUTE6",
+    "MAPSEC_CORMORIA_RANGER_INSTITUTE",
+    "MAPSEC_CORMORIA_HOYA_RIVER_SOUTH",
+    "MAPSEC_CORMORIA_PELLUCA_CITY",
+    "MAPSEC_CORMORIA_ROUTE7",
+    "MAPSEC_CORMORIA_PELLUCA_CABLE_CAR",
+    "MAPSEC_CORMORIA_MIRROH_BASE_CAMP",
+    "MAPSEC_CORMORIA_MT_MIRROH_EXTERIOR",
+    "MAPSEC_CORMORIA_MT_MIRROH_INTERIOR",
+    "MAPSEC_CORMORIA_MT_MIRROH_INTERIOR_B1F",
+    "MAPSEC_CORMORIA_MIRROH_PEAK",
+    "MAPSEC_CORMORIA_STATIC_CAVE",
+    "MAPSEC_CORMORIA_MT_MIRROH_INTERIOR_B2F",
+    "MAPSEC_CORMORIA_ROUTE8",
+    "MAPSEC_CORMORIA_WINTERLILY_HOLLOW",
+    "MAPSEC_CORMORIA_LILY_POND",
+    "MAPSEC_CORMORIA_IVY_RIVER",
+    "MAPSEC_CORMORIA_RANGER_INSTITUTE_IVY",
+    "MAPSEC_CORMORIA_IVY_RIVER_MAIN",
+    "MAPSEC_CORMORIA_IVY_RIVER_UNDERPASS",
+    "MAPSEC_CORMORIA_RIVETSHORE_CITY",
+    "MAPSEC_CORMORIA_LILY_GROTTO",
+    "MAPSEC_CORMORIA_IVY_FOREST",
+    "MAPSEC_CORMORIA_SSELEGANT",
+    "MAPSEC_CORMORIA_RANGER_INSTITUTE_RIVETSHORE",
+    "MAPSEC_CORMORIA_UNCHARTED_ISLAND",
+    "MAPSEC_CORMORIA_VICTORY_CAPE",
+    "MAPSEC_CORMORIA_VICTORY_ROAD_CORMORIA",
+    "MAPSEC_CORMORIA_CHAMPIONSHIP_CORRIDOR",
+)
+
 EXPECTED_APPEND_ONLY_GROUPS = (
     "gMapGroup_Johto_2",
     "gMapGroup_KantoLater",
     "gMapGroup_KantoLater_2",
+)
+# Reviewed Cormoria world groups (6be11d394e), appended strictly after the
+# Johto/Kanto append-only tail above.  They are owned by the Cormoria import
+# ledger, not by this manifest, so only their exact names and order are pinned
+# here; any other addition or reordering is still rejected.
+EXPECTED_CORMORIA_APPEND_ONLY_GROUPS = (
+    "gMapGroup_Cormoria_Phase1",
+    "gMapGroup_Cormoria_Phase2",
+    "gMapGroup_Cormoria_Phase3",
+    "gMapGroup_Cormoria_Phase4",
+    "gMapGroup_Cormoria_Phase5",
+    "gMapGroup_Cormoria_Phase6",
 )
 EXPECTED_EXPANDED_GROUP_COUNTS = (128, 111, 128, 40)
 EXPECTED_HOST_ADAPTERS = {
@@ -377,7 +446,9 @@ def _assert_host_identity(baseline: dict[str, Any]) -> None:
     live_order = live_groups.get("group_order")
     if not isinstance(live_order, list) or live_order[:len(expected_order)] != expected_order:
         raise ManifestError("host map group order does not preserve immutable baseline prefix")
-    if tuple(live_order[len(expected_order):]) != EXPECTED_APPEND_ONLY_GROUPS:
+    if tuple(live_order[len(expected_order):]) != (
+        *EXPECTED_APPEND_ONLY_GROUPS, *EXPECTED_CORMORIA_APPEND_ONLY_GROUPS,
+    ):
         raise ManifestError("host map group order has an unexpected append-only tail")
     expected_groups = baseline["groups"]
     host_adapters = _host_adapter_identities()
@@ -462,6 +533,10 @@ def _assert_host_identity(baseline: dict[str, Any]) -> None:
         [],
         [{"id": section_id, "value": 210 + offset}
          for offset, section_id in enumerate(EXPECTED_SECTION_TAIL_IDS)],
+        [{"id": section_id, "value": 210 + offset}
+         for offset, section_id in enumerate(
+             (*EXPECTED_SECTION_TAIL_IDS, *EXPECTED_CORMORIA_SECTION_TAIL_IDS)
+         )],
     ):
         raise ManifestError("host region section tail is not the exact Johto append-only allocation")
 

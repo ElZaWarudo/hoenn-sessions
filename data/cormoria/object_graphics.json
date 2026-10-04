@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "provenance": {
+    "repository": "https://github.com/dsmyst/dreamstone-mysteries",
+    "revision": "f7997186345885bfa23a170e5f573851fc034b9b",
+    "source_manifest": "data/cormoria/source_manifest.json"
+  },
+  "palette_tags": {
+    "OBJ_EVENT_PAL_TAG_CORMORIA_GUBUKING": "graphics/object_events/pics/custom/gubuking/walking.png",
+    "OBJ_EVENT_PAL_TAG_CORMORIA_SHUBUBU": "graphics/object_events/pics/custom/shububu/walking.png"
+  },
+  "additional_assets": [
+    {"asset": "gubuking/running.png", "donor_asset": "graphics/object_events/pics/custom/gubuking/running.png", "sha256": "8f673316b719e618ff932643f2f5d2d842fedab6e5f3e40107a84f8f475766e2", "size": 942, "dimensions": "144x32"},
+    {"asset": "shububu/running.png", "donor_asset": "graphics/object_events/pics/custom/shububu/running.png", "sha256": "593d4c6192786aea6be433fc6eb8420407b9b99a2b7967d656e273870a1b6ba8", "size": 845, "dimensions": "144x32"}
+  ],
+  "objects": [
+    {"token": "OBJ_EVENT_GFX_BUG_CATCHER_F", "info": "gObjectEventGraphicsInfo_CormoriaBugCatcherF", "pic_table": "sCormoriaPicTable_BugCatcherF", "asset": "bug_catcher_f.png", "donor_asset": "graphics/object_events/pics/custom/bug_catcher_f.png", "sha256": "927ee3d4dfd4cbd95a6ef6d34926412a2c212c9cfd35fb0d51572b2de551eaf3", "size": 617, "dimensions": "144x32", "palette_tag": "OBJ_EVENT_PAL_TAG_NPC_1"},
+    {"token": "OBJ_EVENT_GFX_GUBUKING_NORMAL", "info": "gObjectEventGraphicsInfo_CormoriaGubukingNormal", "pic_table": "sCormoriaPicTable_GubukingNormal", "asset": "gubuking/walking.png", "donor_asset": "graphics/object_events/pics/custom/gubuking/walking.png", "sha256": "7908083ddc7443049de49d47a5c1d59ad2850bdd90d0161919c9503c44c2aa46", "size": 804, "dimensions": "144x32", "palette_tag": "OBJ_EVENT_PAL_TAG_CORMORIA_GUBUKING"},
+    {"token": "OBJ_EVENT_GFX_LEADER_ARIANA", "info": "gObjectEventGraphicsInfo_CormoriaLeaderAriana", "pic_table": "sCormoriaPicTable_LeaderAriana", "asset": "leader_ariana.png", "donor_asset": "graphics/object_events/pics/custom/leader_ariana.png", "sha256": "bb7d742de29745261afefff34c45ab393ca606466acddb72db42c72ad13f7dc9", "size": 665, "dimensions": "144x32", "palette_tag": "OBJ_EVENT_PAL_TAG_NPC_1"},
+    {"token": "OBJ_EVENT_GFX_LEADER_CARONA", "info": "gObjectEventGraphicsInfo_CormoriaLeaderCarona", "pic_table": "sCormoriaPicTable_LeaderCarona", "asset": "leader_carona.png", "donor_asset": "graphics/object_events/pics/custom/leader_carona.png", "sha256": "8be3cce14bf0b8b04e424a0ef56edce02254c818d5c2d974c5d87f47aa906a23", "size": 724, "dimensions": "144x32", "palette_tag": "OBJ_EVENT_PAL_TAG_NPC_1"},
+    {"token": "OBJ_EVENT_GFX_LEADER_GLORIA", "info": "gObjectEventGraphicsInfo_CormoriaLeaderGloria", "pic_table": "sCormoriaPicTable_LeaderGloria", "asset": "leader_gloria.png", "donor_asset": "graphics/object_events/pics/custom/leader_gloria.png", "sha256": "e10f349f87f3433dd7d47968a461c90c8fd814aaa4a902de387ecae93203b7f9", "size": 792, "dimensions": "144x32", "palette_tag": "OBJ_EVENT_PAL_TAG_NPC_4"},
+    {"token": "OBJ_EVENT_GFX_LEADER_INGER", "info": "gObjectEventGraphicsInfo_CormoriaLeaderInger", "pic_table": "sCormoriaPicTable_LeaderInger", "asset": "leader_inger.png", "donor_asset": "graphics/object_events/pics/custom/leader_inger.png", "sha256": "59decbdfb7907c6ae0d5f1be9b1f31cd6dd56d39c3ca36b7045ffe3b37faf6d5", "size": 798, "dimensions": "144x32", "palette_tag": "OBJ_EVENT_PAL_TAG_NPC_1"},
+    {"token": "OBJ_EVENT_GFX_LEADER_JANIA", "info": "gObjectEventGraphicsInfo_CormoriaLeaderJania", "pic_table": "sCormoriaPicTable_LeaderJania", "asset": "leader_jania.png", "donor_asset": "graphics/object_events/pics/custom/leader_jania.png", "sha256": "7a3be7b9e800cde6db2f14ce745fcf6aef3a099bc376e13f8f14c1b273b709dc", "size": 771, "dimensions": "144x32", "palette_tag": "OBJ_EVENT_PAL_TAG_NPC_1"},
+    {"token": "OBJ_EVENT_GFX_LEADER_RAAZI", "info": "gObjectEventGraphicsInfo_CormoriaLeaderRaazi", "pic_table": "sCormoriaPicTable_LeaderRaazi", "asset": "leader_raazi.png", "donor_asset": "graphics/object_events/pics/custom/leader_raazi.png", "sha256": "d15f7438a0e36a1afb657af90f523910295a8da4e8e49a4c22c203925d3e6e27", "size": 722, "dimensions": "144x32", "palette_tag": "OBJ_EVENT_PAL_TAG_NPC_1"},
+    {"token": "OBJ_EVENT_GFX_LEADER_VINIEL", "info": "gObjectEventGraphicsInfo_CormoriaLeaderViniel", "pic_table": "sCormoriaPicTable_LeaderViniel", "asset": "leader_viniel.png", "donor_asset": "graphics/object_events/pics/custom/leader_viniel.png", "sha256": "e7024099abcff410330b4827510a227f984ca0934d88045ec4624cb23beff040", "size": 713, "dimensions": "144x32", "palette_tag": "OBJ_EVENT_PAL_TAG_NPC_1"},
+    {"token": "OBJ_EVENT_GFX_PROF_TENEBRIS", "info": "gObjectEventGraphicsInfo_CormoriaProfTenebris", "pic_table": "sCormoriaPicTable_ProfTenebris", "asset": "prof_tenebris.png", "donor_asset": "graphics/object_events/pics/custom/prof_tenebris.png", "sha256": "24faf63988fdde96d37f29558edc7ad0a8b4e1a837a88b8fbca4b26881c62a7a", "size": 740, "dimensions": "144x32", "palette_tag": "OBJ_EVENT_PAL_TAG_NPC_1"},
+    {"token": "OBJ_EVENT_GFX_SHUBUBU_NORMAL", "info": "gObjectEventGraphicsInfo_CormoriaShububuNormal", "pic_table": "sCormoriaPicTable_ShububuNormal", "asset": "shububu/walking.png", "donor_asset": "graphics/object_events/pics/custom/shububu/walking.png", "sha256": "8f9a0003c44e8b5446c401ec5dfd9c68abbeb2ae91cf0a750c465efdb07a33af", "size": 822, "dimensions": "144x32", "palette_tag": "OBJ_EVENT_PAL_TAG_CORMORIA_SHUBUBU"},
+    {"token": "OBJ_EVENT_GFX_SKIIER_F", "info": "gObjectEventGraphicsInfo_CormoriaSkiierF", "pic_table": "sCormoriaPicTable_SkiierF", "asset": "skiier_f.png", "donor_asset": "graphics/object_events/pics/custom/skiier_f.png", "sha256": "c959a0c31817f0b10b952c4be0db9a09dfafe654cd52c905bbcbd2ce999765d5", "size": 626, "dimensions": "144x32", "palette_tag": "OBJ_EVENT_PAL_TAG_NPC_1"},
+    {"token": "OBJ_EVENT_GFX_TMHM_BALL", "info": "gObjectEventGraphicsInfo_CormoriaTMHMBall", "pic_table": "sCormoriaPicTable_TMHMBall", "asset": "ball_tmhm.png", "donor_asset": "graphics/object_events/pics/misc/ball_tmhm.png", "sha256": "8d45aabe3830aeb9b7b55b4ad1498fa330a572c98827ae67a432920494412715", "size": 740, "dimensions": "80x32", "palette_tag": "OBJ_EVENT_PAL_TAG_NPC_3"}
+  ]
+}

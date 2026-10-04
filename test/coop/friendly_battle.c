@@ -603,7 +603,14 @@ static void StageBattleView(u8 slot, struct Pokemon *member0, struct Pokemon *me
 TEST("Cloud Coop friendly ROMs stage each other's records and hash one canonical battle")
 {
     struct CoopBattleFriendlyRules rules = {COOP_BATTLE_FRIENDLY_SINGLES, COOP_BATTLE_FRIENDLY_LEVELS_AS_IS, 2};
-    struct Pokemon partyA[PARTY_SIZE], partyB[PARTY_SIZE], teamA[2], teamB[2], copy[PARTY_SIZE];
+    /* 22 Pokemon on the IWRAM stack left too little of the ~3 KiB test stack
+     * for EndFixture's bridge reset, which then overwrote gTasks below the
+     * stack. Keep the parties on the heap. */
+    struct FriendlyCanonicalParties
+    {
+        struct Pokemon partyA[PARTY_SIZE], partyB[PARTY_SIZE], teamA[2], teamB[2], copy[PARTY_SIZE];
+    } *parties;
+    struct Pokemon *partyA, *partyB, *teamA, *teamB, *copy;
     struct CoopBattleStartupPlan *plan;
     struct BattleStruct *savedBattleStruct = gBattleStruct;
     u8 digestA[COOP_BATTLE_DIGEST_SIZE], digestB[COOP_BATTLE_DIGEST_SIZE];
@@ -612,6 +619,13 @@ TEST("Cloud Coop friendly ROMs stage each other's records and hash one canonical
     u32 savedHitMarker = gHitMarker;
 
     BeginFixture();
+    parties = AllocZeroed(sizeof(*parties));
+    EXPECT(parties != NULL);
+    partyA = parties->partyA;
+    partyB = parties->partyB;
+    teamA = parties->teamA;
+    teamB = parties->teamB;
+    copy = parties->copy;
     plan = AllocZeroed(sizeof(*plan));
     gBattleStruct = AllocZeroed(sizeof(*gBattleStruct));
     for (count = 0; count < PARTY_SIZE; count++)
@@ -638,10 +652,10 @@ TEST("Cloud Coop friendly ROMs stage each other's records and hash one canonical
     EXPECT_EQ(plan->member_party_trainers[1], B_TRAINER_1);
     EXPECT_EQ(plan->member_battler_positions[0], B_POSITION_PLAYER_LEFT);
     EXPECT_EQ(plan->staged_local_count, 2);
-    EXPECT_EQ(memcmp(plan->original_local, partyA, sizeof(partyA)), 0);
+    EXPECT_EQ(memcmp(plan->original_local, partyA, sizeof(parties->partyA)), 0);
     EXPECT(CoopBattleRuntime_CopyPeerTeam(copy, PARTY_SIZE, &count));
     EXPECT_EQ(count, 2);
-    EXPECT_EQ(memcmp(copy, teamB, sizeof(teamB)), 0);
+    EXPECT_EQ(memcmp(copy, teamB, sizeof(parties->teamB)), 0);
     /* The picked order is the snapshot: another order is not the manifest's. */
     {
         struct Pokemon swapped[2] = {teamA[1], teamA[0]};
@@ -669,7 +683,7 @@ TEST("Cloud Coop friendly ROMs stage each other's records and hash one canonical
     EXPECT_EQ(plan->member_party_trainers[1], B_TRAINER_0);
     EXPECT_EQ(plan->member_battler_positions[1], B_POSITION_PLAYER_LEFT);
     EXPECT(CoopBattleRuntime_CopyPeerTeam(copy, PARTY_SIZE, &count));
-    EXPECT_EQ(memcmp(copy, teamA, sizeof(teamA)), 0);
+    EXPECT_EQ(memcmp(copy, teamA, sizeof(parties->teamA)), 0);
     EXPECT(CoopBattleRuntime_ArmEngine(id));
     EXPECT_EQ(CoopBattleRuntime_EngineLocalMemberSlot(), 1);
     EXPECT_EQ(CoopBattleRuntime_CanonicalBattler(0), 0);
@@ -697,6 +711,7 @@ TEST("Cloud Coop friendly ROMs stage each other's records and hash one canonical
     gBattleStruct = savedBattleStruct;
     gHitMarker = savedHitMarker;
     Free(plan);
+    Free(parties);
     CoopBattleRuntime_Init();
     EndFixture();
 }

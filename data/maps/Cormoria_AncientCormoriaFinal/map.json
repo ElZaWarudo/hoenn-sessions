@@ -1,0 +1,28 @@
+{
+  "id": "MAP_CORMORIA_ANCIENT_CORMORIA_FINAL",
+  "name": "Cormoria_AncientCormoriaFinal",
+  "layout": "LAYOUT_CORMORIA_ANCIENT_CORMORIA_FINAL",
+  "music": "MUS_DUMMY",
+  "region_map_section": "MAPSEC_CORMORIA_ANCIENT_CERAM",
+  "requires_flash": false,
+  "weather": "WEATHER_NONE",
+  "map_type": "MAP_TYPE_UNDERWATER",
+  "allow_cycling": false,
+  "allow_escaping": false,
+  "allow_running": false,
+  "show_map_name": true,
+  "battle_scene": "MAP_BATTLE_SCENE_NORMAL",
+  "connections": [
+    {
+      "map": "MAP_CORMORIA_ANCIENT_CORMORIA_FINAL_ISLAND",
+      "offset": 0,
+      "direction": "emerge"
+    }
+  ],
+  "object_events": [],
+  "warp_events": [],
+  "coord_events": [],
+  "bg_events": [],
+  "rom_world": "cormoria",
+  "region": "REGION_CORMORIA"
+}

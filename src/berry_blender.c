@@ -2767,6 +2767,8 @@ static bool8 LinkPlayAgainHandleSaving(void)
         break;
     case 2:
         WriteSaveBlock2();
+        if (Save_HandleBlockedLinkSave())
+            break;
         sBerryBlender->linkPlayAgainState++;
         sBerryBlender->framesToWait = 0;
         break;
@@ -2782,6 +2784,8 @@ static bool8 LinkPlayAgainHandleSaving(void)
         {
             if (WriteSaveBlock1Sector())
             {
+                if (Save_HandleBlockedLinkSave())
+                    break;
                 sBerryBlender->linkPlayAgainState = 5;
             }
             else

@@ -1,4 +1,5 @@
 #include "global.h"
+#include "coop/arrival_proof.h"
 #include "main.h"
 #include "palette.h"
 #include "scanline_effect.h"
@@ -1026,7 +1027,7 @@ void MainCB2_Intro(void)
     UpdatePaletteFade();
     if (JOY_NEW(SELECT_BUTTON))
         SetMainCallback2(CB2_GoToCopyrightScreenForce_Frlg);
-    else if (gMain.newKeys != 0 && !gPaletteFade.active)
+    else if ((gMain.newKeys != 0 || CoopArrivalProof_IsAwaitingContinue()) && !gPaletteFade.active)
         SetMainCallback2(MainCB2_EndIntro);
     else if (gIntroFrameCounter != -1)
         gIntroFrameCounter++;

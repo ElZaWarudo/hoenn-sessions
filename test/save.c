@@ -2,14 +2,13 @@
 #include "pokemon_storage_system.h"
 #include "test/test.h"
 
-// If you would like to ensure save compatibility, update the values below with those for your hack. You can find these through the debug menu.
-// Please note that this simple check is not 100% foolproof, but should be able to catch most unintended shifts.
-#define T_SAVEBLOCK1_SIZE 16136
+// Shared save layout for every region ROM. Legacy saves are not migrated.
+#define T_SAVEBLOCK1_SIZE 16928
 #define T_SAVEBLOCK2_SIZE 3892
 #define T_SAVEBLOCK3_SIZE 676
 #define T_POKEMONSTORAGE_SIZE 34144
 
-TEST("SaveBlock1 is backwards compatible")
+TEST("SaveBlock1 matches the shared region layout")
 {
     EXPECT_EQ(sizeof(struct SaveBlock1), T_SAVEBLOCK1_SIZE);
 }

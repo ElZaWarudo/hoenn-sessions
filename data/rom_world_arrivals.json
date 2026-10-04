@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "worlds": {
+    "main": [
+      {"map_group": 13, "map_number": 10, "map_layout_id": 88}
+    ],
+    "cormoria": [
+      {"map_group": 82, "map_number": 21, "map_layout_id": 1314}
+    ]
+  }
+}

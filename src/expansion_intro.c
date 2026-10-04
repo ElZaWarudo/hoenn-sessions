@@ -1,4 +1,5 @@
 #include "global.h"
+#include "coop/arrival_proof.h"
 #include "bg.h"
 #include "decompress.h"
 #include "palette.h"
@@ -256,7 +257,7 @@ void Task_HandleExpansionIntro(u8 taskId)
             tState++;
             BeginNormalPaletteFade(PALETTES_ALL, 0, 0, 16, RGB_BLACK);
         }
-        else if (gMain.newKeys != 0)
+        else if (gMain.newKeys != 0 || CoopArrivalProof_IsAwaitingContinue())
         {
             CpuFill16(0, gPlttBufferFaded, sizeof(gPlttBufferFaded));
             if (IsCryPlaying())

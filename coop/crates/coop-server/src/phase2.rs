@@ -19,9 +19,12 @@ use axum::{
     routing::{get, post, put},
 };
 use coop_cloud::{
-    AcquireLeaseRequest, CharacterId, HeartbeatLeaseRequest, ReconnectLeaseRequest,
-    ReleaseLeaseRequest, SnapshotFinalizeRequest, SnapshotListRequest, SnapshotPrepareRequest,
-    SnapshotRestoreRequest,
+    AcquireLeaseRequest, AcquireWorldLeaseResponse, CharacterId, GroupRomHandoffAbortRequest,
+    GroupRomHandoffArrivalRequest, GroupRomHandoffJoinRequest, GroupRomHandoffStatus,
+    GroupRomHandoffStatusRequest, HeartbeatLeaseRequest, ReconnectLeaseRequest,
+    ReleaseLeaseRequest, RomHandoffCommitRequest, RomHandoffPrepareRequest,
+    RomHandoffPrepareResponse, RomHandoffRecoveryRequest, RomHandoffRecoveryStatus,
+    SnapshotFinalizeRequest, SnapshotListRequest, SnapshotPrepareRequest, SnapshotRestoreRequest,
 };
 use http_body_util::{BodyExt, Limited};
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
@@ -83,6 +86,8 @@ use thiserror::Error;
 pub mod auth;
 mod battles;
 mod firebase;
+pub mod fresh_start;
+mod group_handoff;
 pub(crate) mod group_travel;
 pub(crate) mod ledger;
 mod online;
@@ -139,6 +144,8 @@ pub enum Phase2Error {
     Forbidden,
     #[error("request expired")]
     Expired,
+    #[error("world acquisition key refers to a closed lease")]
+    AcquireClosed,
     #[error("request body is too large")]
     PayloadTooLarge,
     #[error("service is busy")]
@@ -168,6 +175,7 @@ impl IntoResponse for Phase2Error {
             Self::PayloadTooLarge => StatusCode::PAYLOAD_TOO_LARGE,
             Self::Busy => StatusCode::SERVICE_UNAVAILABLE,
             Self::Authentication | Self::Expired => StatusCode::UNAUTHORIZED,
+            Self::AcquireClosed => StatusCode::GONE,
             Self::NotFound => StatusCode::NOT_FOUND,
             Self::Conflict | Self::TradePokemonHoldsMail => StatusCode::CONFLICT,
             Self::Forbidden => StatusCode::FORBIDDEN,
@@ -192,6 +200,7 @@ impl Phase2Error {
             Self::Conflict => "conflict",
             Self::Forbidden => "forbidden",
             Self::Expired => "expired",
+            Self::AcquireClosed => "acquire_closed",
             Self::PayloadTooLarge => "payload_too_large",
             Self::Busy => "service_busy",
             Self::TradePokemonHoldsMail => "trade_pokemon_holds_mail",
@@ -284,6 +293,7 @@ impl Phase2App {
             "local-test-key",
         )
         .expect("test config")
+        .with_legacy_test_runtime()
         .with_test_adapters(
             Arc::new(FixedClock::new(1_700_000_000_000)),
             Arc::new(FixedEntropy::new((0_u8..=255).collect())),
@@ -310,6 +320,7 @@ impl Phase2App {
                     .route("/v1/auth/logout", post(logout))
                     .route("/v1/auth/invitations", post(portal::create_invitation))
                     .route("/v1/sessions/acquire", post(acquire))
+                    .route("/v1/sessions/acquire-world", post(acquire_world))
                     .route("/v1/sessions/heartbeat", post(heartbeat))
                     .route("/v1/sessions/reconnect", post(reconnect))
                     .route("/v1/sessions/release", post(release))
@@ -333,7 +344,24 @@ impl Phase2App {
                         "/v1/characters/{character_id}/restore/{revision}",
                         post(restore_at),
                     )
-                    .layer(axum::extract::DefaultBodyLimit::max(64 * 1024)),
+                    .route(
+                        "/v1/characters/{character_id}/rom-handoff/prepare",
+                        post(prepare_rom_handoff),
+                    )
+                    .route(
+                        "/v1/characters/{character_id}/rom-handoff/reconcile",
+                        post(reconcile_rom_handoff),
+                    )
+                    .route(
+                        "/v1/characters/{character_id}/rom-handoff/commit",
+                        post(commit_rom_handoff),
+                    )
+                    .route(
+                        "/v1/characters/{character_id}/rom-handoff/{stage_id}",
+                        axum::routing::delete(abort_rom_handoff),
+                    )
+                    .layer(axum::extract::DefaultBodyLimit::max(64 * 1024))
+                    .layer(axum::middleware::from_fn(group_no_store)),
             )
             .merge(
                 Router::new()
@@ -437,6 +465,22 @@ impl Phase2App {
                         post(accept_group_invitation),
                     )
                     .route("/v1/groups/{group_id}", get(inspect_group))
+                    .route(
+                        "/v1/groups/{group_id}/rom-handoff/join",
+                        post(join_group_rom_handoff),
+                    )
+                    .route(
+                        "/v1/groups/{group_id}/rom-handoff/status",
+                        post(status_group_rom_handoff),
+                    )
+                    .route(
+                        "/v1/groups/{group_id}/rom-handoff/arrive",
+                        post(arrive_group_rom_handoff),
+                    )
+                    .route(
+                        "/v1/groups/{group_id}/rom-handoff/abort",
+                        post(abort_group_rom_handoff),
+                    )
                     .route(
                         "/v1/groups/{group_id}/travel-proposals",
                         post(create_group_travel_proposal),
@@ -575,9 +619,51 @@ impl Phase2App {
     ) -> Result<coop_cloud::LeaseContract, Phase2Error> {
         let _gate = self.store.lock_runtime_transition_gate();
         let result = sessions::acquire(&self.store, actor, &request);
+        #[cfg(test)]
+        if let Ok(contract) = &result {
+            if self.store.config.fixture_auto_bind {
+                let build = saves::current_runtime_build_identity()?;
+                self.store.write_transaction(|state| {
+                    let lease = state
+                        .leases
+                        .get_mut(&actor.character_id)
+                        .ok_or(Phase2Error::Internal)?;
+                    if lease.contract != *contract {
+                        return Err(Phase2Error::Internal);
+                    }
+                    lease.runtime_binding = Some(storage::RuntimeWorldBinding {
+                        world_id: coop_protocol::RomWorldId::new(1).unwrap(),
+                        build,
+                        session: contract.stable_runtime_session(),
+                    });
+                    Ok(())
+                })?;
+            }
+        }
         if let Ok(contract) = &result {
             self.presence
                 .reconcile_lease_success(actor.character_id, contract);
+        }
+        result
+    }
+
+    /// Acquires and runtime-binds a lease to the server-authoritative active
+    /// ROM world and snapshot in one repository transaction.
+    ///
+    /// # Errors
+    ///
+    /// Returns an ownership, catalog, head-consistency, conflict, or
+    /// infrastructure error.
+    pub fn acquire_world(
+        &self,
+        actor: AuthenticatedActor,
+        request: AcquireLeaseRequest,
+    ) -> Result<AcquireWorldLeaseResponse, Phase2Error> {
+        let _gate = self.store.lock_runtime_transition_gate();
+        let result = sessions::acquire_world(&self.store, actor, &request);
+        if let Ok(response) = &result {
+            self.presence
+                .reconcile_lease_success(actor.character_id, &response.lease);
         }
         result
     }
@@ -668,6 +754,81 @@ impl Phase2App {
         let result = saves::finalize(&self.store, actor, &request);
         drop(request);
         result
+    }
+    /// Stages an immutable destination save while the source world remains active.
+    ///
+    /// # Errors
+    /// Returns a stale-fence, route, save-integrity, or storage error.
+    pub fn prepare_rom_handoff(
+        &self,
+        actor: AuthenticatedActor,
+        request: &RomHandoffPrepareRequest,
+    ) -> Result<RomHandoffPrepareResponse, Phase2Error> {
+        let _gate = self
+            .store
+            .runtime_transition_gate
+            .lock()
+            .map_err(|_| Phase2Error::Internal)?;
+        saves::handoff::cleanup_abandoned(&self.store, actor, request)?;
+        saves::handoff::prepare(&self.store, actor, request)
+    }
+    /// Reconcile a persisted prepare key under the current source lease.
+    /// An expired stage is durably aborted before an `Aborted` response.
+    pub fn reconcile_rom_handoff(
+        &self,
+        actor: AuthenticatedActor,
+        fence: coop_cloud::LeaseFence,
+        request: &RomHandoffRecoveryRequest,
+    ) -> Result<RomHandoffRecoveryStatus, Phase2Error> {
+        if request.api_version != coop_cloud::ApiVersion::V1
+            || request.character_id != actor.character_id
+            || request.character_id != fence.character_id
+        {
+            return Err(Phase2Error::InvalidRequest);
+        }
+        let _gate = self
+            .store
+            .runtime_transition_gate
+            .lock()
+            .map_err(|_| Phase2Error::Internal)?;
+        saves::handoff::recovery_status(&self.store, actor, fence, request)
+    }
+    /// Promotes an acknowledged destination save and releases the source lease.
+    ///
+    /// # Errors
+    /// Returns a stale-fence, digest, stage, or storage error.
+    pub fn commit_rom_handoff(
+        &self,
+        actor: AuthenticatedActor,
+        request: &RomHandoffCommitRequest,
+    ) -> Result<coop_cloud::SnapshotRecord, Phase2Error> {
+        let _gate = self
+            .store
+            .runtime_transition_gate
+            .lock()
+            .map_err(|_| Phase2Error::Internal)?;
+        let (record, did_transition) = saves::handoff::commit(&self.store, actor, request)?;
+        if did_transition {
+            self.presence.reconcile_lease_release(actor.character_id);
+        }
+        Ok(record)
+    }
+    /// Abandons a staged destination without changing the source world.
+    ///
+    /// # Errors
+    /// Returns an ownership, stage, or storage error.
+    pub fn abort_rom_handoff(
+        &self,
+        actor: AuthenticatedActor,
+        fence: coop_cloud::LeaseFence,
+        stage_id: coop_cloud::SnapshotId,
+    ) -> Result<(), Phase2Error> {
+        let _gate = self
+            .store
+            .runtime_transition_gate
+            .lock()
+            .map_err(|_| Phase2Error::Internal)?;
+        saves::handoff::abort_fenced(&self.store, actor, fence, stage_id)
     }
     /// Lists bounded finalized snapshots under the active lease fence.
     ///
@@ -1229,13 +1390,22 @@ fn phase2_app_from_values(
     key_id: &str,
     bootstrap: &str,
     upload_base_url: String,
+    release_catalog: Option<(&[u8], coop_cloud::Sha256Digest)>,
+    release_root: Option<&std::path::Path>,
 ) -> Result<Phase2App, Phase2Error> {
     let signing =
         coop_cloud::SigningPrivateKey::parse_hex(signing).map_err(|_| Phase2Error::Internal)?;
     let invitation =
         coop_cloud::InvitationCode::new(bootstrap).map_err(|_| Phase2Error::Internal)?;
-    let config = Phase2Config::local(pepper.as_bytes().to_vec(), signing, key_id)?
+    let mut config = Phase2Config::local(pepper.as_bytes().to_vec(), signing, key_id)?
         .with_upload_base_url(upload_base_url);
+    if let Some((bytes, digest)) = release_catalog {
+        config = if let Some(root) = release_root {
+            config.with_release_catalog_and_arrival_saves(bytes, digest, root)?
+        } else {
+            config.with_release_catalog_bytes(bytes, digest)?
+        };
+    }
     let app = Phase2App::new(config)?;
     app.add_invitation(invitation.expose_secret())?;
     Ok(app)
@@ -1275,7 +1445,10 @@ fn validate_restore_target(
     })
 }
 
-fn phase2_app_from_env(upload_base_url: String) -> Result<Phase2App, Phase2Error> {
+fn phase2_app_from_env(
+    upload_base_url: String,
+    release_fixture_root: Option<&std::path::Path>,
+) -> Result<Phase2App, Phase2Error> {
     if let Ok(mode) = std::env::var("COOP_PHASE2_STORAGE_MODE")
         && !mode.eq_ignore_ascii_case("phase2-local")
     {
@@ -1293,13 +1466,25 @@ fn phase2_app_from_env(upload_base_url: String) -> Result<Phase2App, Phase2Error
     let bootstrap = zeroize::Zeroizing::new(
         std::env::var("COOP_PHASE2_BOOTSTRAP_INVITATION").map_err(|_| Phase2Error::Internal)?,
     );
-    phase2_app_from_values(
+    // Same loader and validation as `postgres-firebase` production startup.
+    let catalog = production::release_catalog_from_env().map_err(|error| {
+        eprintln!("co-op phase2-local startup refused: {error}");
+        Phase2Error::Internal
+    })?;
+    let app = phase2_app_from_values(
         pepper.as_str(),
         signing.as_str(),
         key_id.as_str(),
         bootstrap.as_str(),
         upload_base_url,
-    )
+        Some((&catalog.bytes, catalog.digest)),
+        Some(&catalog.root),
+    )?;
+    if let Some(root) = release_fixture_root {
+        app.with_release_root(root)
+    } else {
+        Ok(app)
+    }
 }
 
 fn loopback_upload_base(address: SocketAddr) -> String {
@@ -1351,6 +1536,21 @@ pub(crate) fn spawn_group_expiry_watchdog(app: Phase2App) {
 /// Returns a stable error when the address is not loopback, binding fails, or
 /// required local secret configuration is missing or invalid.
 pub async fn serve_phase2_local(address: SocketAddr) -> Result<(), Phase2Error> {
+    serve_phase2_local_with_release_fixture_root(address, None).await
+}
+
+/// Runs the local Phase 2 service with an explicitly selected read-only
+/// release tree for signed multiworld testing. The fixture is available only
+/// through the local listener and the existing authenticated release routes.
+///
+/// # Errors
+///
+/// Returns an error for non-loopback addresses, bind failures, or invalid
+/// local configuration.
+pub async fn serve_phase2_local_with_release_fixture_root(
+    address: SocketAddr,
+    release_fixture_root: Option<PathBuf>,
+) -> Result<(), Phase2Error> {
     if !address.ip().is_loopback() {
         return Err(Phase2Error::InvalidRequest);
     }
@@ -1358,7 +1558,7 @@ pub async fn serve_phase2_local(address: SocketAddr) -> Result<(), Phase2Error> 
         .await
         .map_err(|_| Phase2Error::Internal)?;
     let bound = listener.local_addr().map_err(|_| Phase2Error::Internal)?;
-    let app = phase2_app_from_env(loopback_upload_base(bound))?;
+    let app = phase2_app_from_env(loopback_upload_base(bound), release_fixture_root.as_deref())?;
     spawn_group_expiry_watchdog(app.clone());
     let shutdown = app.shutdown.clone();
     axum::serve(listener, app.router())
@@ -1490,6 +1690,13 @@ async fn acquire(
 ) -> Result<Json<coop_cloud::LeaseContract>, Phase2Error> {
     Ok(Json(app.acquire(actor(&headers, &app)?, request)?))
 }
+async fn acquire_world(
+    State(app): State<Phase2App>,
+    headers: axum::http::HeaderMap,
+    Phase2Json(request): Phase2Json<AcquireLeaseRequest>,
+) -> Result<Json<coop_cloud::AcquireWorldLeaseResponse>, Phase2Error> {
+    Ok(Json(app.acquire_world(actor(&headers, &app)?, request)?))
+}
 async fn heartbeat(
     State(app): State<Phase2App>,
     headers: axum::http::HeaderMap,
@@ -1532,6 +1739,63 @@ async fn finalize(
         return Err(Phase2Error::NotFound);
     }
     Ok(Json(app.finalize(actor(&headers, &app)?, request)?))
+}
+async fn prepare_rom_handoff(
+    State(app): State<Phase2App>,
+    headers: axum::http::HeaderMap,
+    Path(path): Path<CharacterPath>,
+    Phase2Json(request): Phase2Json<RomHandoffPrepareRequest>,
+) -> Result<Json<RomHandoffPrepareResponse>, Phase2Error> {
+    if request.character_id != path.character_id {
+        return Err(Phase2Error::NotFound);
+    }
+    Ok(Json(
+        app.prepare_rom_handoff(actor(&headers, &app)?, &request)?,
+    ))
+}
+async fn reconcile_rom_handoff(
+    State(app): State<Phase2App>,
+    headers: axum::http::HeaderMap,
+    Path(path): Path<CharacterPath>,
+    Phase2Json(request): Phase2Json<RomHandoffRecoveryRequest>,
+) -> Result<Json<RomHandoffRecoveryStatus>, Phase2Error> {
+    if request.character_id != path.character_id {
+        return Err(Phase2Error::NotFound);
+    }
+    let actor = actor(&headers, &app)?;
+    let fence = auth::fence_from_headers(&headers, path.character_id, &app)?;
+    Ok(Json(app.reconcile_rom_handoff(actor, fence, &request)?))
+}
+async fn commit_rom_handoff(
+    State(app): State<Phase2App>,
+    headers: axum::http::HeaderMap,
+    Path(path): Path<CharacterPath>,
+    Phase2Json(request): Phase2Json<RomHandoffCommitRequest>,
+) -> Result<Json<coop_cloud::SnapshotRecord>, Phase2Error> {
+    if request.character_id != path.character_id {
+        return Err(Phase2Error::NotFound);
+    }
+    Ok(Json(
+        app.commit_rom_handoff(actor(&headers, &app)?, &request)?,
+    ))
+}
+#[derive(Deserialize)]
+struct RomHandoffPath {
+    character_id: CharacterId,
+    stage_id: coop_cloud::SnapshotId,
+}
+async fn abort_rom_handoff(
+    State(app): State<Phase2App>,
+    headers: axum::http::HeaderMap,
+    Path(path): Path<RomHandoffPath>,
+) -> Result<StatusCode, Phase2Error> {
+    let actor = actor(&headers, &app)?;
+    if actor.character_id != path.character_id {
+        return Err(Phase2Error::NotFound);
+    }
+    let fence = auth::fence_from_headers(&headers, path.character_id, &app)?;
+    app.abort_rom_handoff(actor, fence, path.stage_id)?;
+    Ok(StatusCode::NO_CONTENT)
 }
 async fn list(
     State(app): State<Phase2App>,
@@ -1597,6 +1861,86 @@ async fn upload(
 #[derive(Deserialize)]
 struct GroupPath {
     group_id: coop_cloud::GroupId,
+}
+
+fn reconcile_paired_presence(
+    app: &Phase2App,
+    status: &GroupRomHandoffStatus,
+) -> Result<(), Phase2Error> {
+    if let GroupRomHandoffStatus::Committed { group_id, .. } = status {
+        let members = app.store.read_transaction(|state| {
+            Ok::<_, Phase2Error>(
+                state
+                    .groups
+                    .get(group_id)
+                    .ok_or(Phase2Error::NotFound)?
+                    .group
+                    .members(),
+            )
+        })?;
+        for member in members {
+            app.presence.reconcile_lease_release(member);
+        }
+    }
+    Ok(())
+}
+
+async fn join_group_rom_handoff(
+    State(app): State<Phase2App>,
+    headers: axum::http::HeaderMap,
+    Path(path): Path<GroupPath>,
+    Phase2Json(request): Phase2Json<GroupRomHandoffJoinRequest>,
+) -> Result<Json<GroupRomHandoffStatus>, Phase2Error> {
+    if request.group_id != path.group_id {
+        return Err(Phase2Error::NotFound);
+    }
+    Ok(Json(group_handoff::join(
+        &app.store,
+        actor(&headers, &app)?,
+        &request,
+    )?))
+}
+
+async fn status_group_rom_handoff(
+    State(app): State<Phase2App>,
+    headers: axum::http::HeaderMap,
+    Path(path): Path<GroupPath>,
+    Phase2Json(request): Phase2Json<GroupRomHandoffStatusRequest>,
+) -> Result<Json<GroupRomHandoffStatus>, Phase2Error> {
+    if request.group_id != path.group_id {
+        return Err(Phase2Error::NotFound);
+    }
+    let response = group_handoff::status(&app.store, actor(&headers, &app)?, &request)?;
+    reconcile_paired_presence(&app, &response)?;
+    Ok(Json(response))
+}
+
+async fn arrive_group_rom_handoff(
+    State(app): State<Phase2App>,
+    headers: axum::http::HeaderMap,
+    Path(path): Path<GroupPath>,
+    Phase2Json(request): Phase2Json<GroupRomHandoffArrivalRequest>,
+) -> Result<Json<GroupRomHandoffStatus>, Phase2Error> {
+    if request.group_id != path.group_id {
+        return Err(Phase2Error::NotFound);
+    }
+    let response = group_handoff::arrive(&app.store, actor(&headers, &app)?, &request)?;
+    reconcile_paired_presence(&app, &response)?;
+    Ok(Json(response))
+}
+
+async fn abort_group_rom_handoff(
+    State(app): State<Phase2App>,
+    headers: axum::http::HeaderMap,
+    Path(path): Path<GroupPath>,
+    Phase2Json(request): Phase2Json<GroupRomHandoffAbortRequest>,
+) -> Result<Json<GroupRomHandoffStatus>, Phase2Error> {
+    if request.group_id != path.group_id {
+        return Err(Phase2Error::NotFound);
+    }
+    let response = group_handoff::abort(&app.store, actor(&headers, &app)?, &request)?;
+    reconcile_paired_presence(&app, &response)?;
+    Ok(Json(response))
 }
 
 #[derive(Deserialize)]
@@ -2163,6 +2507,9 @@ mod tests {
     use super::*;
     include!("phase2/persistence_tests.rs");
     include!("phase2/recovery_tests.rs");
+    include!("phase2/handoff_tests.rs");
+    include!("phase2/group_handoff_tests.rs");
+    include!("phase2/fresh_start_tests.rs");
     use coop_cloud::{
         ArtifactIdentity, ClientInstanceId, IdempotencyKey, InvitationCode, LeaseFence,
         LoginRequest, LogoutRequest, LogoutResponse, Password, ReconnectLeaseRequest,
@@ -2219,18 +2566,37 @@ mod tests {
         generation: u32,
         status_flags: u32,
     ) -> Vec<u8> {
-        let mut payload = [0_u8; coop_save::COOP_SAVE_V1_SIZE];
+        character_sav_with_generation_and_schema(
+            with_rtc,
+            generation,
+            status_flags,
+            coop_save::v2::COOP_SAVE_V2_SCHEMA_VERSION,
+        )
+    }
+
+    fn character_sav_with_generation_and_schema(
+        with_rtc: bool,
+        generation: u32,
+        status_flags: u32,
+        schema_version: u16,
+    ) -> Vec<u8> {
+        let mut payload = [0_u8; coop_save::v2::COOP_SAVE_V2_SIZE];
         write_u32(&mut payload, 0, coop_save::COOP_SAVE_V1_MAGIC);
-        write_u16(&mut payload, 4, coop_save::COOP_SAVE_V1_SCHEMA_VERSION);
+        write_u16(&mut payload, 4, schema_version);
         write_u16(
             &mut payload,
             6,
-            u16::try_from(coop_save::COOP_SAVE_V1_SIZE).expect("CSP1 size fits u16"),
+            u16::try_from(coop_save::v2::COOP_SAVE_V2_SIZE).expect("CSP2 size fits u16"),
         );
         write_u32(&mut payload, 8, coop_protocol::IDENTITY_REGISTRY_VERSION);
         payload[12..28].copy_from_slice(&coop_protocol::IDENTITY_REGISTRY_DIGEST);
         write_u32(&mut payload, 28, generation);
-        write_u32(&mut payload, 32, status_flags);
+        let normalized = if schema_version == coop_save::v2::COOP_SAVE_V2_SCHEMA_VERSION {
+            coop_save::v2::COOP_SAVE_STATUS_MET_LOCATION_NORMALIZED
+        } else {
+            0
+        };
+        write_u32(&mut payload, 32, status_flags | normalized);
         for (index, region) in [1_u8, 2, 3, 4].into_iter().enumerate() {
             let offset = 36 + index * 8;
             payload[offset] = region;
@@ -2246,12 +2612,15 @@ mod tests {
                 100 + u32::try_from(index).expect("regional fixture index fits u32"),
             );
         }
+        if schema_version == coop_save::v2::COOP_SAVE_V2_SCHEMA_VERSION {
+            payload[coop_save::v2::COOP_SAVE_V2_CORMORIA_PROGRESS_OFFSET] = 5;
+        }
         let crc = crc32fast::hash(&payload[..668]);
         write_u32(&mut payload, 668, crc);
 
         let mut save_block3 = [0xff; coop_save::SAVE_BLOCK3_CAPACITY];
         save_block3[coop_save::COOP_SAVE_OFFSET
-            ..coop_save::COOP_SAVE_OFFSET + coop_save::COOP_SAVE_V1_SIZE]
+            ..coop_save::COOP_SAVE_OFFSET + coop_save::v2::COOP_SAVE_V2_SIZE]
             .copy_from_slice(&payload);
         let mut bytes = vec![0xff; coop_save::FLASH_IMAGE_SIZE];
         for (slot, counter, rotation) in [(0_usize, 20_u32, 4_usize), (1, 21, 11)] {
@@ -2380,6 +2749,7 @@ mod tests {
             SnapshotFile::from_bytes(ArtifactIdentity::PendingCommits, b"{}").expect("pending");
         let request = SnapshotPrepareRequest::new(
             id(SnapshotId::new),
+            coop_protocol::RomWorldId::new(1).unwrap(),
             SnapshotPrepareFence::new(
                 lease.session_id,
                 actor.character_id,
@@ -2404,6 +2774,7 @@ mod tests {
             "local-test-key",
         )
         .expect("test config")
+        .with_legacy_test_runtime()
         .with_test_adapters(clock.clone(), entropy)
         .with_password_engine(Arc::new(
             ArgonPasswordEngine::new(8_192, 1, 1).expect("test Argon2 policy"),
@@ -2419,6 +2790,7 @@ mod tests {
             "local-test-key",
         )
         .expect("test config")
+        .with_legacy_test_runtime()
         .with_test_adapters(
             Arc::new(FixedClock::new(1_700_000_000_000)),
             Arc::new(FixedEntropy::new((0_u8..=255).collect())),
@@ -2568,6 +2940,7 @@ mod tests {
             "local-test-key",
         )
         .expect("test config")
+        .with_legacy_test_runtime()
         .with_test_adapters(
             Arc::new(FixedClock::new(1_700_000_000_000)),
             Arc::new(FixedEntropy::new((0_u8..=255).collect())),
@@ -2595,6 +2968,7 @@ mod tests {
             "local-test-key",
         )
         .expect("test config")
+        .with_legacy_test_runtime()
         .with_test_adapters(
             Arc::new(FixedClock::new(1_700_000_000_000)),
             Arc::new(FixedEntropy::new((0_u8..=255).collect())),
@@ -2738,6 +3112,26 @@ mod tests {
             .await
     }
 
+    fn test_release_catalog() -> saves::build_catalog::TrustedBuildCatalog {
+        let build = coop_cloud::RuntimeBuildIdentity::new(
+            coop_cloud::GameBuildId::new("test-main-v2").unwrap(),
+            coop_cloud::Sha256Digest::of_bytes(b"test-main-v2-rom"),
+            coop_cloud::MgbaVersion::new("0.10.5").unwrap(),
+            coop_cloud::BridgeAbiVersion::new(1).unwrap(),
+            coop_cloud::ProtocolVersion::new(1).unwrap(),
+        );
+        let bytes = serde_json::to_vec(&serde_json::json!({
+            "schema_version": 1,
+            "worlds": [{"world_id": 1, "build": build}]
+        }))
+        .unwrap();
+        saves::build_catalog::TrustedBuildCatalog::from_release_bytes(
+            &bytes,
+            coop_cloud::Sha256Digest::of_bytes(&bytes),
+        )
+        .unwrap()
+    }
+
     fn assert_detached_signature_binds_metadata(envelope: &SignedManifestEnvelope) {
         let trusted = TrustedManifestKey::new(
             "local-test-key",
@@ -2806,6 +3200,7 @@ mod tests {
         let snapshot_id = id(SnapshotId::new);
         let prepare = SnapshotPrepareRequest::new(
             snapshot_id,
+            coop_protocol::RomWorldId::new(1).unwrap(),
             SnapshotPrepareFence::new(
                 acquire.session_id,
                 registered.character_id,
@@ -2857,14 +3252,476 @@ mod tests {
             acquire.session_epoch,
             client,
         );
-        let envelope =
-            saves::resume_package(&app.store, actor, fence, None).expect("resume package");
+        let live = saves::resume_package(&app.store, actor, fence, None)
+            .expect("fixture-bound live resume package");
+        let catalog = test_release_catalog();
+        assert_eq!(
+            saves::resume_package_with_catalog(
+                &app.store,
+                actor,
+                fence,
+                None,
+                Some((&catalog, coop_protocol::RomWorldId::new(2).unwrap())),
+            ),
+            Err(Phase2Error::Internal),
+            "session world must match the snapshot before signing"
+        );
+        let envelope = saves::resume_package_with_catalog(
+            &app.store,
+            actor,
+            fence,
+            None,
+            Some((&catalog, coop_protocol::RomWorldId::new(1).unwrap())),
+        )
+        .expect("catalog-bound resume package");
+        assert_eq!(
+            live.manifest.rom_sha256,
+            saves::current_runtime_build_identity()
+                .expect("test build")
+                .rom_sha256
+        );
         assert_eq!(envelope.manifest.revision, Revision::new(1));
         assert_detached_signature_binds_metadata(&envelope);
         assert_eq!(
             saves::resume_artifact(&app.store, actor, fence, "character.sav", None)
                 .expect("sav artifact"),
             valid_character_sav(false)
+        );
+    }
+
+    /// Production contract without the test-only `fixture_auto_bind`: a legacy
+    /// `/v1/sessions/acquire` lease is never runtime-bound, so resume packages
+    /// are refused, while `/v1/sessions/acquire-world` binds the lease to the
+    /// trusted catalog world and is accepted by the resume path.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    #[allow(clippy::too_many_lines)]
+    async fn production_contract_rejects_legacy_acquire_resume_and_binds_acquire_world() {
+        let build = saves::current_runtime_build_identity().expect("test build");
+        let catalog = serde_json::to_vec(&serde_json::json!({
+            "schema_version": 1,
+            "worlds": [{"world_id": 1, "build": build}]
+        }))
+        .expect("catalog bytes");
+        let config = Phase2Config::local(
+            vec![0x55; 32],
+            SigningPrivateKey::from_bytes([7; 32]),
+            "local-test-key",
+        )
+        .expect("test config")
+        .with_release_catalog_bytes(&catalog, coop_cloud::Sha256Digest::of_bytes(&catalog))
+        .expect("trusted catalog")
+        .with_test_adapters(
+            Arc::new(FixedClock::new(1_700_000_000_000)),
+            Arc::new(FixedEntropy::new((0_u8..=255).collect())),
+        )
+        .with_password_engine(Arc::new(
+            ArgonPasswordEngine::new(8_192, 1, 1).expect("test Argon2 policy"),
+        ));
+        assert!(!config.fixture_auto_bind);
+        let app = Phase2App::new(config).expect("production-shaped app");
+        app.add_invitation("contract-invite").expect("invite");
+        let registered = app
+            .register(
+                RegisterRequest::new(
+                    "ContractUser",
+                    password(),
+                    InvitationCode::new("contract-invite").expect("invite"),
+                )
+                .expect("registration request"),
+            )
+            .expect("registration");
+        let login = app
+            .login(LoginRequest::new("contractuser", password()).expect("login request"))
+            .expect("login");
+        let actor = AuthenticatedActor {
+            user_id: login.user_id,
+            character_id: registered.character_id,
+        };
+        let bearer = format!("Bearer {}", login.access_token.expose_secret());
+        let text = |value: serde_json::Value| value.as_str().expect("string id").to_owned();
+        let character = text(serde_json::to_value(registered.character_id).unwrap());
+        let client = id(ClientInstanceId::new);
+
+        let post_json = |uri: &'static str, body: Vec<u8>| {
+            axum::http::Request::builder()
+                .method(axum::http::Method::POST)
+                .uri(uri)
+                .header("content-type", "application/json")
+                .header(axum::http::header::AUTHORIZATION, &bearer)
+                .body(axum::body::Body::from(body))
+                .expect("request")
+        };
+        let resume = |lease: &coop_cloud::LeaseContract| {
+            axum::http::Request::builder()
+                .method(axum::http::Method::GET)
+                .uri(format!("/v1/characters/{character}/resume-package"))
+                .header(axum::http::header::AUTHORIZATION, &bearer)
+                .header(
+                    "x-coop-session-id",
+                    text(serde_json::to_value(lease.session_id).unwrap()),
+                )
+                .header(
+                    "x-coop-session-epoch",
+                    lease.session_epoch.value().to_string(),
+                )
+                .header(
+                    "x-coop-client-instance-id",
+                    text(serde_json::to_value(lease.client_instance_id).unwrap()),
+                )
+                .body(axum::body::Body::empty())
+                .expect("resume request")
+        };
+        async fn body_json(response: axum::response::Response) -> serde_json::Value {
+            let bytes = response
+                .into_body()
+                .collect()
+                .await
+                .expect("body")
+                .to_bytes();
+            serde_json::from_slice(&bytes).expect("JSON body")
+        }
+
+        let legacy = app
+            .router()
+            .oneshot(post_json(
+                "/v1/sessions/acquire",
+                serde_json::to_vec(&AcquireLeaseRequest::new(
+                    registered.character_id,
+                    client,
+                    id(IdempotencyKey::new),
+                ))
+                .expect("acquire JSON"),
+            ))
+            .await
+            .expect("legacy acquire response");
+        assert_eq!(
+            legacy.status(),
+            StatusCode::OK,
+            "legacy acquire still leases"
+        );
+        let legacy: coop_cloud::LeaseContract =
+            serde_json::from_value(body_json(legacy).await).expect("lease contract");
+        let refused = app
+            .router()
+            .oneshot(resume(&legacy))
+            .await
+            .expect("legacy resume response");
+        assert_eq!(
+            refused.status(),
+            StatusCode::UNAUTHORIZED,
+            "an unbound legacy lease must never receive a resume package"
+        );
+        app.release(
+            actor,
+            coop_cloud::ReleaseLeaseRequest::new(legacy.fence(), id(IdempotencyKey::new)),
+        )
+        .expect("release legacy lease");
+
+        let world = app
+            .router()
+            .oneshot(post_json(
+                "/v1/sessions/acquire-world",
+                serde_json::to_vec(&AcquireLeaseRequest::new(
+                    registered.character_id,
+                    client,
+                    id(IdempotencyKey::new),
+                ))
+                .expect("acquire-world JSON"),
+            ))
+            .await
+            .expect("acquire-world response");
+        assert_eq!(
+            world.status(),
+            StatusCode::OK,
+            "acquire-world binds the lease"
+        );
+        let world = body_json(world).await;
+        assert_eq!(world["active_world_id"], 1);
+        let bound: coop_cloud::LeaseContract =
+            serde_json::from_value(world["lease"].clone()).expect("bound lease");
+        let bound_binding = app
+            .store
+            .read_transaction(|state| {
+                Ok::<_, Phase2Error>(
+                    state
+                        .leases
+                        .get(&registered.character_id)
+                        .and_then(|lease| lease.runtime_binding.as_ref())
+                        .map(|binding| binding.world_id),
+                )
+            })
+            .expect("lease state");
+        assert_eq!(bound_binding, coop_protocol::RomWorldId::new(1).ok());
+        let resumed = app
+            .router()
+            .oneshot(resume(&bound))
+            .await
+            .expect("bound resume response");
+        // The world-bound lease passes runtime-binding authentication and the
+        // catalog check; a fresh character simply has no snapshot to resume.
+        assert_eq!(
+            resumed.status(),
+            StatusCode::NOT_FOUND,
+            "a world-bound lease must reach snapshot lookup, not 401/500"
+        );
+    }
+
+    #[test]
+    fn world_aware_acquire_follows_active_heads_across_three_worlds() {
+        let fresh_app = Phase2App::test();
+        let (fresh_actor, legacy_lease, fresh_client) = account_and_lease(&fresh_app);
+        fresh_app
+            .release(
+                fresh_actor,
+                coop_cloud::ReleaseLeaseRequest::new(legacy_lease.fence(), id(IdempotencyKey::new)),
+            )
+            .expect("release legacy fixture lease");
+        let fresh_request = AcquireLeaseRequest::new(
+            fresh_actor.character_id,
+            fresh_client,
+            id(IdempotencyKey::new),
+        );
+        let fresh = fresh_app
+            .acquire_world(fresh_actor, fresh_request)
+            .expect("fresh Main lease");
+        assert_eq!(
+            fresh.active_world_id,
+            coop_protocol::RomWorldId::new(1).unwrap()
+        );
+        assert_eq!(fresh.active_snapshot_id, None);
+        assert_eq!(fresh.lease.current_revision, Revision::initial());
+
+        let (app, actor, _initial_lease, initial_client, main_head) = handoff_fixture();
+        let initial_lease = app
+            .store
+            .read_transaction(|state| {
+                Ok::<_, Phase2Error>(
+                    state
+                        .leases
+                        .get(&actor.character_id)
+                        .expect("active initial lease")
+                        .contract,
+                )
+            })
+            .expect("read active initial lease");
+        let cormoria = coop_protocol::RomWorldId::new(2).unwrap();
+        let third = coop_protocol::RomWorldId::new(3).unwrap();
+        let cormoria_head = travel_once(
+            &app,
+            actor,
+            &initial_lease,
+            initial_client,
+            main_head,
+            "to_next",
+        );
+        let cormoria_request = AcquireLeaseRequest::new(
+            actor.character_id,
+            id(ClientInstanceId::new),
+            id(IdempotencyKey::new),
+        );
+        let cormoria_lease = app
+            .acquire_world(actor, cormoria_request)
+            .expect("active Cormoria lease");
+        assert_eq!(cormoria_lease.active_world_id, cormoria);
+        assert_eq!(
+            cormoria_lease.active_snapshot_id,
+            Some(cormoria_head.snapshot_id)
+        );
+        assert_eq!(
+            app.acquire_world(actor, cormoria_request)
+                .expect("idempotent world-aware replay"),
+            cormoria_lease
+        );
+        saves::resume_package(&app.store, actor, cormoria_lease.lease.fence(), None)
+            .expect("resume package is available before realtime ticket mint");
+
+        let third_head = travel_once(
+            &app,
+            actor,
+            &cormoria_lease.lease,
+            cormoria_lease.lease.client_instance_id,
+            cormoria_head.snapshot_id,
+            "to_next",
+        );
+        let third_request = AcquireLeaseRequest::new(
+            actor.character_id,
+            id(ClientInstanceId::new),
+            id(IdempotencyKey::new),
+        );
+        let third_lease = app
+            .acquire_world(actor, third_request)
+            .expect("active synthetic third-world lease");
+        assert_eq!(third_lease.active_world_id, third);
+        assert_eq!(third_lease.active_snapshot_id, Some(third_head.snapshot_id));
+        assert_eq!(
+            app.store
+                .inspect_state(|state| {
+                    state.leases[&actor.character_id]
+                        .runtime_binding
+                        .as_ref()
+                        .map(|binding| binding.world_id)
+                })
+                .expect("runtime binding"),
+            Some(third)
+        );
+    }
+
+    #[test]
+    fn world_aware_acquire_rejects_missing_head_and_catalog() {
+        let app = Phase2App::test();
+        let (actor, lease, client) = account_and_lease(&app);
+        let malformed = app.store.write_transaction(|state| {
+            let character = state
+                .characters
+                .get_mut(&actor.character_id)
+                .expect("character");
+            character.revision = Revision::new(1);
+            character.active_snapshot = Some(id(SnapshotId::new));
+            Ok::<_, Phase2Error>(())
+        });
+        assert!(malformed.is_ok());
+        assert_eq!(
+            app.acquire_world(
+                actor,
+                AcquireLeaseRequest::new(actor.character_id, client, id(IdempotencyKey::new)),
+            ),
+            Err(Phase2Error::Conflict)
+        );
+        let _ = lease;
+
+        let config = Phase2Config::local(
+            vec![0x55; 32],
+            SigningPrivateKey::from_bytes([7; 32]),
+            "local-test-key",
+        )
+        .expect("test config")
+        .with_test_adapters(
+            Arc::new(FixedClock::new(1_700_000_000_000)),
+            Arc::new(FixedEntropy::new((0_u8..=255).collect())),
+        )
+        .with_password_engine(Arc::new(
+            ArgonPasswordEngine::new(8_192, 1, 1).expect("test Argon2 policy"),
+        ));
+        let no_catalog = Phase2App::new(config).expect("no-catalog app");
+        let (fresh_actor, _, fresh_client) = account_and_lease(&no_catalog);
+        assert_eq!(
+            no_catalog.acquire_world(
+                fresh_actor,
+                AcquireLeaseRequest::new(
+                    fresh_actor.character_id,
+                    fresh_client,
+                    id(IdempotencyKey::new),
+                ),
+            ),
+            Err(Phase2Error::Internal)
+        );
+    }
+
+    #[test]
+    fn world_aware_replay_returns_renewed_live_contract_and_rejects_inactive() {
+        let (app, clock) = deterministic_app();
+        let (actor, legacy_lease, client) = account_and_lease(&app);
+        app.release(
+            actor,
+            coop_cloud::ReleaseLeaseRequest::new(legacy_lease.fence(), id(IdempotencyKey::new)),
+        )
+        .expect("release legacy fixture lease");
+        let request = AcquireLeaseRequest::new(actor.character_id, client, id(IdempotencyKey::new));
+        let acquired = app
+            .acquire_world(actor, request)
+            .expect("world-aware lease");
+        clock.advance(1_000);
+        let renewed = app
+            .heartbeat(actor, HeartbeatLeaseRequest::new(acquired.lease.fence()))
+            .expect("heartbeat");
+        assert_ne!(renewed.expires_at, acquired.lease.expires_at);
+        assert_eq!(app.acquire_world(actor, request).unwrap().lease, renewed);
+        app.release(
+            actor,
+            coop_cloud::ReleaseLeaseRequest::new(renewed.fence(), id(IdempotencyKey::new)),
+        )
+        .expect("release renewed lease");
+        assert_eq!(
+            app.acquire_world(actor, request),
+            Err(Phase2Error::AcquireClosed),
+            "a replay must not resurrect a released lease"
+        );
+        let foreign_client_key = AcquireLeaseRequest::new(
+            actor.character_id,
+            id(ClientInstanceId::new),
+            request.idempotency_key,
+        );
+        assert_eq!(
+            app.acquire_world(actor, foreign_client_key),
+            Err(Phase2Error::Conflict),
+            "a foreign client must not learn that this key was closed"
+        );
+        let replacement =
+            AcquireLeaseRequest::new(actor.character_id, client, id(IdempotencyKey::new));
+        assert!(app.acquire_world(actor, replacement).is_ok());
+    }
+
+    #[test]
+    fn world_aware_replay_rejects_expired_contract() {
+        let (app, clock) = deterministic_app();
+        let (actor, legacy_lease, client) = account_and_lease(&app);
+        app.release(
+            actor,
+            coop_cloud::ReleaseLeaseRequest::new(legacy_lease.fence(), id(IdempotencyKey::new)),
+        )
+        .expect("release legacy fixture lease");
+        let request = AcquireLeaseRequest::new(actor.character_id, client, id(IdempotencyKey::new));
+        let acquired = app
+            .acquire_world(actor, request)
+            .expect("world-aware lease");
+        clock.advance(storage::LEASE_TTL_MS + 1);
+        assert_eq!(
+            app.acquire_world(actor, request),
+            Err(Phase2Error::AcquireClosed)
+        );
+        assert_eq!(acquired.lease.current_revision, Revision::initial());
+    }
+
+    #[test]
+    fn reconnect_rotates_a_world_aware_runtime_binding() {
+        let (app, clock) = deterministic_app();
+        let (actor, legacy_lease, client) = account_and_lease(&app);
+        app.release(
+            actor,
+            coop_cloud::ReleaseLeaseRequest::new(legacy_lease.fence(), id(IdempotencyKey::new)),
+        )
+        .expect("release legacy fixture lease");
+        let request = AcquireLeaseRequest::new(actor.character_id, client, id(IdempotencyKey::new));
+        let acquired = app
+            .acquire_world(actor, request)
+            .expect("world-aware lease");
+        clock.advance(storage::LEASE_TTL_MS + 1);
+        let reconnected = app
+            .reconnect(
+                actor,
+                ReconnectLeaseRequest::new(acquired.lease.fence(), id(IdempotencyKey::new)),
+            )
+            .expect("reconnect during grace");
+        let binding = app
+            .store
+            .inspect_state(|state| state.leases[&actor.character_id].runtime_binding.clone())
+            .expect("runtime binding");
+        let binding = binding.expect("world-aware lease remains runtime-bound");
+        assert_eq!(binding.world_id, acquired.active_world_id);
+        assert_eq!(binding.session, reconnected.stable_runtime_session());
+        assert_eq!(
+            binding.build,
+            app.store
+                .config
+                .release_catalog
+                .as_ref()
+                .expect("catalog")
+                .for_snapshot(
+                    Some(acquired.active_world_id),
+                    Some(acquired.active_world_id)
+                )
+                .expect("main build")
+                .clone()
         );
     }
 
@@ -3372,6 +4229,32 @@ mod tests {
     }
 
     #[test]
+    fn character_sav_requires_current_v2_schema() {
+        let legacy = character_sav_with_generation_and_schema(
+            false,
+            1,
+            0,
+            coop_save::COOP_SAVE_V1_SCHEMA_VERSION,
+        );
+        let registry = coop_save::RegistryContract::new(
+            coop_protocol::IDENTITY_REGISTRY_VERSION,
+            coop_protocol::IDENTITY_REGISTRY_DIGEST,
+        );
+        assert!(coop_save::parse(&legacy, registry).is_ok());
+        let (app, _) = deterministic_app();
+        let (actor, lease, client) = account_and_lease(&app);
+        let (request, _, _) = snapshot_request_for_sav(lease, actor, client, &legacy);
+        let prepared = app.prepare(actor, request).expect("legacy length prepares");
+        assert_eq!(
+            app.upload(
+                &upload_ticket(&prepared, ArtifactIdentity::CharacterSav),
+                legacy,
+            ),
+            Err(Phase2Error::InvalidRequest)
+        );
+    }
+
+    #[test]
     fn character_sav_accepts_both_exact_lengths_and_preserves_rtc_bytes() {
         for with_rtc in [false, true] {
             let (app, _) = deterministic_app();
@@ -3389,7 +4272,7 @@ mod tests {
                 &upload_ticket(&prepared, ArtifactIdentity::CharacterSav),
                 bytes.clone(),
             )
-            .expect("valid CSP1 uploads");
+            .expect("valid CSP2 uploads");
             app.upload(
                 &upload_ticket(&prepared, ArtifactIdentity::PendingCommits),
                 b"{}".to_vec(),
@@ -3410,7 +4293,7 @@ mod tests {
                 None,
             )
             .expect("finalize request");
-            let record = app.finalize(actor, finalize).expect("valid CSP1 finalizes");
+            let record = app.finalize(actor, finalize).expect("valid CSP2 finalizes");
             let active_fence = LeaseFence::new(
                 lease.session_id,
                 actor.character_id,
@@ -3754,6 +4637,24 @@ mod tests {
         .expect("finalize request");
         let record = app.finalize(actor, finalize.clone()).expect("finalize");
         assert_eq!(app.finalize(actor, finalize.clone()), Ok(record.clone()));
+        assert_eq!(
+            app.store
+                .inspect_state(|state| state.characters[&actor.character_id]
+                    .world_heads
+                    .get(&record.rom_world_id)
+                    .copied())
+                .expect("world head"),
+            Some(record.snapshot_id)
+        );
+        let character = app
+            .store
+            .inspect_state(|state| state.characters[&actor.character_id].clone())
+            .expect("character");
+        let mut encoded = Vec::new();
+        ciborium::into_writer(&character, &mut encoded).expect("serialize world heads");
+        let decoded: storage::CharacterRecord =
+            ciborium::from_reader(encoded.as_slice()).expect("deserialize world heads");
+        assert_eq!(decoded.world_heads, character.world_heads);
         let before_finalize_conflict = app
             .store
             .inspect_state(|state| {
@@ -3793,6 +4694,15 @@ mod tests {
         let restored = app.restore(actor, &restore).expect("restore");
         assert_eq!(restored.snapshot.revision, Revision::new(2));
         assert_eq!(app.restore(actor, &restore), Ok(restored.clone()));
+        assert_eq!(
+            app.store
+                .inspect_state(|state| state.characters[&actor.character_id]
+                    .world_heads
+                    .get(&record.rom_world_id)
+                    .copied())
+                .expect("restored world head"),
+            Some(restored.snapshot.snapshot_id)
+        );
         let before_restore_conflict = app
             .store
             .inspect_state(|state| {
@@ -3831,6 +4741,25 @@ mod tests {
             saves::resume_artifact(&app.store, actor, restored_fence, "character.sav", None,)
                 .expect("restored artifact"),
             valid_character_sav(false)
+        );
+        let mut other_world = record.clone();
+        other_world.snapshot_id = id(SnapshotId::new);
+        other_world.rom_world_id = coop_protocol::RomWorldId::new(2).unwrap();
+        other_world.parent_revision = Revision::new(2);
+        other_world.revision = Revision::new(3);
+        app.store
+            .write_transaction(|state| {
+                state.snapshot_by_revision.insert(
+                    (actor.character_id, other_world.revision),
+                    other_world.snapshot_id,
+                );
+                state.snapshots.insert(other_world.snapshot_id, other_world);
+                Ok::<_, Phase2Error>(())
+            })
+            .expect("historical other-world snapshot");
+        assert_eq!(
+            saves::resume_artifact(&app.store, actor, restored_fence, "character.sav", Some(3),),
+            Err(Phase2Error::Authentication)
         );
     }
 
@@ -4210,6 +5139,7 @@ mod tests {
         let snapshot_id = id(SnapshotId::new);
         let request = SnapshotPrepareRequest::new(
             snapshot_id,
+            coop_protocol::RomWorldId::new(1).unwrap(),
             SnapshotPrepareFence::new(
                 lease.session_id,
                 actor.character_id,
@@ -4278,6 +5208,7 @@ mod tests {
         app.finalize(actor, finalize).expect("finalized");
         let duplicate = SnapshotPrepareRequest::new(
             prepared.snapshot_id,
+            coop_protocol::RomWorldId::new(1).unwrap(),
             SnapshotPrepareFence::new(
                 lease.session_id,
                 actor.character_id,
@@ -4562,6 +5493,7 @@ mod tests {
         let key = id(IdempotencyKey::new);
         let first = SnapshotPrepareRequest::new(
             snapshot_id,
+            coop_protocol::RomWorldId::new(1).unwrap(),
             SnapshotPrepareFence::new(
                 lease.session_id,
                 actor.character_id,
@@ -4611,6 +5543,7 @@ mod tests {
         });
         let mut blocked = SnapshotPrepareRequest::new(
             id(SnapshotId::new),
+            coop_protocol::RomWorldId::new(1).unwrap(),
             SnapshotPrepareFence::new(
                 lease.session_id,
                 actor.character_id,
@@ -4727,6 +5660,8 @@ mod tests {
             "local-test-key",
             "bootstrap-one-use",
             "http://127.0.0.1:43127".to_owned(),
+            None,
+            None,
         )
         .expect("configured local app");
         let request = RegisterRequest::new(
@@ -4741,6 +5676,112 @@ mod tests {
             loopback_upload_base("127.0.0.1:43127".parse().expect("address")),
             "http://127.0.0.1:43127"
         );
+        let build = saves::current_runtime_build_identity().expect("test build");
+        let catalog = serde_json::to_vec(&serde_json::json!({
+            "schema_version": 1,
+            "worlds": [{"world_id": 1, "build": build}]
+        }))
+        .expect("catalog bytes");
+        let configured = phase2_app_from_values(
+            "pepper-pepper-pepper-pepper",
+            &signing_hex,
+            "local-test-key",
+            "bootstrap-catalog",
+            "http://127.0.0.1:43127".to_owned(),
+            Some((&catalog, coop_cloud::Sha256Digest::of_bytes(&catalog))),
+            None,
+        )
+        .expect("pinned catalog starts");
+        assert!(configured.store.config.release_catalog.is_some());
+        assert!(matches!(
+            phase2_app_from_values(
+                "pepper-pepper-pepper-pepper",
+                &signing_hex,
+                "local-test-key",
+                "bootstrap-catalog",
+                "http://127.0.0.1:43127".to_owned(),
+                Some((&catalog, coop_cloud::Sha256Digest::of_bytes(b"other"))),
+                None,
+            ),
+            Err(Phase2Error::Internal)
+        ));
+    }
+
+    #[test]
+    fn pinned_arrival_images_are_parsed_and_cached_at_startup() {
+        let mut bytes = valid_character_sav(false);
+        for slot in 0..2 {
+            for physical in 0..coop_save::SECTORS_PER_SLOT {
+                let start =
+                    (slot * coop_save::SECTORS_PER_SLOT + physical) * coop_save::SECTOR_SIZE;
+                if read_u16(&bytes, start + TEST_SECTOR_ID_OFFSET) != 1 {
+                    continue;
+                }
+                bytes[start + 4..start + 7].copy_from_slice(&[79, 1, 255]);
+                write_u16(&mut bytes, start + 0x32, 1194);
+                let checksum = coop_save::sector_checksum(
+                    &bytes[start..start + coop_save::LOGICAL_SECTOR_DATA_SIZES[1]],
+                );
+                write_u16(&mut bytes, start + TEST_SECTOR_CHECKSUM_OFFSET, checksum);
+            }
+        }
+        let root = std::env::temp_dir().join(format!(
+            "coop-arrival-template-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir(&root).unwrap();
+        let path = root.join("template.sav");
+        std::fs::write(&path, &bytes).unwrap();
+        let mut value: serde_json::Value = serde_json::from_slice(include_bytes!(
+            "phase2/saves/fixtures/travel-catalog-v3.json"
+        ))
+        .unwrap();
+        for world in value["worlds"].as_array_mut().unwrap() {
+            for arrival in world["arrivals"].as_array_mut().unwrap() {
+                arrival["template_sav_path"] = serde_json::json!("template.sav");
+                arrival["template_sav_sha256"] =
+                    serde_json::json!(coop_cloud::Sha256Digest::of_bytes(&bytes).as_hex());
+                arrival["map_group"] = serde_json::json!(79);
+                arrival["map_number"] = serde_json::json!(1);
+                arrival["warp_id"] = serde_json::json!(255);
+            }
+        }
+        let catalog = serde_json::to_vec(&value).unwrap();
+        let digest = coop_cloud::Sha256Digest::of_bytes(&catalog);
+        let config = Phase2Config::local(
+            b"pepper-pepper-pepper-pepper".to_vec(),
+            coop_cloud::SigningPrivateKey::parse_hex(&"07".repeat(32)).unwrap(),
+            "local-test-key",
+        )
+        .unwrap()
+        .with_release_catalog_and_arrival_saves(&catalog, digest, &root)
+        .unwrap();
+        let pinned = config.release_catalog.unwrap();
+        assert_eq!(
+            pinned.arrival_save(coop_protocol::RomWorldId::new(2).unwrap(), "from_previous"),
+            Some(bytes.as_slice())
+        );
+        std::fs::write(&path, b"changed after startup").unwrap();
+        assert_eq!(
+            pinned.arrival_save(coop_protocol::RomWorldId::new(2).unwrap(), "from_previous"),
+            Some(bytes.as_slice())
+        );
+        assert!(
+            Phase2Config::local(
+                b"pepper-pepper-pepper-pepper".to_vec(),
+                coop_cloud::SigningPrivateKey::parse_hex(&"07".repeat(32)).unwrap(),
+                "local-test-key",
+            )
+            .unwrap()
+            .with_release_catalog_and_arrival_saves(&catalog, digest, &root)
+            .is_err()
+        );
+        std::fs::remove_file(path).unwrap();
+        std::fs::remove_dir(root).unwrap();
     }
 
     #[test]
@@ -4786,6 +5827,7 @@ mod tests {
             "local-test-key",
         )
         .expect("config")
+        .with_legacy_test_runtime()
         .with_adapters(
             Arc::new(InMemoryRepository::new()),
             Arc::new(InMemoryObjectStore::new()),
@@ -4838,6 +5880,7 @@ mod tests {
         let key = id(IdempotencyKey::new);
         let first = SnapshotPrepareRequest::new(
             id(SnapshotId::new),
+            coop_protocol::RomWorldId::new(1).unwrap(),
             SnapshotPrepareFence::new(
                 lease.session_id,
                 actor.character_id,
@@ -4914,7 +5957,8 @@ mod tests {
         )
         .expect("finalize");
         let record = app.finalize(actor, finalize).expect("finalize");
-        let historical = saves::resume_package(
+        let catalog = test_release_catalog();
+        let historical = saves::resume_package_with_catalog(
             &app.store,
             actor,
             LeaseFence::new(
@@ -4925,6 +5969,7 @@ mod tests {
                 client,
             ),
             Some(1),
+            Some((&catalog, coop_protocol::RomWorldId::new(1).unwrap())),
         )
         .expect("historical resume package");
         assert_eq!(historical.manifest.revision, Revision::new(1));
@@ -5335,6 +6380,37 @@ mod tests {
             client,
             id(IdempotencyKey::new),
         );
+        app.store
+            .write_transaction(|state| {
+                state
+                    .snapshots
+                    .get_mut(&first.snapshot_id)
+                    .unwrap()
+                    .rom_world_id = coop_protocol::RomWorldId::new(2).unwrap();
+                Ok::<_, Phase2Error>(())
+            })
+            .expect("inject foreign-world snapshot");
+        assert_eq!(
+            app.restore(actor, &restore),
+            Err(Phase2Error::Authentication)
+        );
+        assert_eq!(
+            app.store
+                .inspect_state(|state| state.characters[&actor.character_id].revision)
+                .unwrap(),
+            first.revision,
+            "foreign-world restore must not advance the head"
+        );
+        app.store
+            .write_transaction(|state| {
+                state
+                    .snapshots
+                    .get_mut(&first.snapshot_id)
+                    .unwrap()
+                    .rom_world_id = coop_protocol::RomWorldId::new(1).unwrap();
+                Ok::<_, Phase2Error>(())
+            })
+            .expect("restore fixture world");
         let restored = app.restore(actor, &restore).expect("restore");
         assert_eq!(restored.snapshot.revision, Revision::new(2));
         let restored_fence = LeaseFence::new(

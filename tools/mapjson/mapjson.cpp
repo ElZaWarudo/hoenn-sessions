@@ -15,6 +15,9 @@ using std::sort; using std::find;
 #include <map>
 using std::map;
 
+#include <set>
+using std::set;
+
 #include <fstream>
 using std::ofstream; using std::ifstream;
 
@@ -41,11 +44,13 @@ enum
     MAP_ENGINE_REGION_HOENN_VALUE = 0,
     MAP_ENGINE_REGION_KANTO_VALUE = 1,
     MAP_ENGINE_REGION_JOHTO_VALUE = 2,
+    MAP_ENGINE_REGION_CORMORIA_VALUE = 3,
 };
 
 static_assert(MAP_ENGINE_REGION_HOENN_VALUE == 0, "Hoenn map header byte");
 static_assert(MAP_ENGINE_REGION_KANTO_VALUE == 1, "Kanto map header byte");
 static_assert(MAP_ENGINE_REGION_JOHTO_VALUE == 2, "Johto map header byte");
+static_assert(MAP_ENGINE_REGION_CORMORIA_VALUE == 3, "Cormoria map header byte");
 
 // expansion headers
 #include "../../include/config/frlg.h"
@@ -121,6 +126,27 @@ int get_map_engine_region_value(const Json &map_data) {
     string section = json_to_string(map_data, "region_map_section");
     bool has_region = map_data.object_items().find("region") != map_data.object_items().end();
     string region = has_region ? json_to_string(map_data, "region") : "REGION_HOENN";
+    string world = json_to_string(map_data, "rom_world", true);
+
+    /* Imported ROM worlds declare their own engine region explicitly. Extend
+     * this binding for each new world instead of inferring a ROM from its
+     * display section number, which can be aliased across worlds. */
+    struct WorldRegionBinding { const char *world; const char *region; const char *section_prefix; int engine_value; };
+    static const WorldRegionBinding world_regions[] = {
+        {"cormoria", "REGION_CORMORIA", "MAPSEC_CORMORIA_", MAP_ENGINE_REGION_CORMORIA_VALUE},
+    };
+    for (const auto &binding : world_regions) {
+        bool is_world = world == binding.world;
+        bool is_section = section.rfind(binding.section_prefix, 0) == 0;
+        bool is_region = region == binding.region;
+        if ((is_world || is_section || is_region) && (!is_world || !is_section || !has_region || !is_region))
+            FATAL_ERROR("Map world, engine region, and section disagree: '%s', '%s', '%s'.\n",
+                        world.c_str(), region.c_str(), section.c_str());
+        if (is_world)
+            return binding.engine_value;
+    }
+    if (!world.empty() && world != "hoenn")
+        FATAL_ERROR("Unregistered map ROM world '%s'.\n", world.c_str());
 
     /* A missing region must not silently assign a Johto section to Hoenn. */
     bool johto_section = section == "MAPSEC_NEW_BARK_TOWN"
@@ -145,6 +171,29 @@ int get_map_engine_region_value(const Json &map_data) {
     if (region == "REGION_JOHTO")
         return MAP_ENGINE_REGION_JOHTO_VALUE;
     FATAL_ERROR("Unknown or unsupported map engine region '%s'.\n", region.c_str());
+}
+
+void validate_map_section_width(const string &section) {
+    static const std::map<string, size_t> section_ids = [] {
+        string error;
+        Json data = Json::parse(read_text_file("src/data/region_map/region_map_sections.json"), error);
+        if (data == Json())
+            FATAL_ERROR("Cannot parse map sections: %s\n", error.c_str());
+        std::map<string, size_t> ids;
+        const auto sections = data["map_sections"].array_items();
+        for (size_t index = 0; index < sections.size(); ++index) {
+            string id = json_to_string(sections[index], "id");
+            if (!ids.emplace(id, index).second)
+                FATAL_ERROR("Duplicate map section '%s'.\n", id.c_str());
+        }
+        ids.emplace("MAPSEC_NONE", sections.size());
+        return ids;
+    }();
+    auto found = section_ids.find(section);
+    if (found == section_ids.end())
+        FATAL_ERROR("Unknown map section '%s'.\n", section.c_str());
+    if (found->second > 65535)
+        FATAL_ERROR("Map section '%s' has ID %zu, but map headers hold two bytes.\n", section.c_str(), found->second);
 }
 
 string get_generated_warning(const string &filename, bool isAsm) {
@@ -189,6 +238,7 @@ string generate_map_header_text(Json map_data, Json layouts_data) {
 
     string mapName = json_to_string(map_data, "name");
     int engine_region = get_map_engine_region_value(map_data);
+    validate_map_section_width(json_to_string(map_data, "region_map_section"));
     text << get_generated_warning("data/maps/" + mapName + "/map.json", true);
 
     text << mapName << ":\n"
@@ -212,7 +262,7 @@ string generate_map_header_text(Json map_data, Json layouts_data) {
 
     text << "\t.2byte " << json_to_string(map_data, "music") << "\n"
          << "\t.2byte " << json_to_string(layout, "id") << "\n"
-         << "\t.byte "  << json_to_string(map_data, "region_map_section") << "\n"
+         << "\t.2byte " << json_to_string(map_data, "region_map_section") << "\n"
          << "\t.byte "  << json_to_string(map_data, "requires_flash") << "\n"
          << "\t.byte "  << json_to_string(map_data, "weather") << "\n"
          << "\t.byte "  << json_to_string(map_data, "map_type") << "\n";
@@ -234,7 +284,8 @@ string generate_map_header_text(Json map_data, Json layouts_data) {
              << "allow_running=" << json_to_string(map_data, "allow_running") << ", "
              << "show_map_name=" << json_to_string(map_data, "show_map_name") << "\n";
 
-     text << "\t.byte " << json_to_string(map_data, "battle_scene") << "\n\n";
+     text << "\t.byte " << json_to_string(map_data, "battle_scene") << "\n"
+          << "\t.balign 4, 0\n\n";
 
     return text.str();
 }
@@ -509,7 +560,115 @@ void process_event_constants(const vector<string> &map_filepaths, string output_
     write_text_file(output_ids_file, ids_file_text.str());
 }
 
-string generate_groups_text(Json groups_data, vector<string> &invalid_maps) {
+// Stable map/layout IDs are common to every ROM. Membership affects linked content only.
+struct RomWorldRegistry {
+    map<string, int> bits;
+    int all_bits;
+    int default_bit;
+};
+
+int registry_integer(const Json &value, const string &field, int maximum) {
+    if (!value.is_number() || value.number_value() < 1 || value.number_value() > maximum
+     || value.number_value() != static_cast<int>(value.number_value()))
+        FATAL_ERROR("ROM world registry: %s must be an integer from 1 through %d\n", field.c_str(), maximum);
+    return value.int_value();
+}
+
+RomWorldRegistry load_rom_world_registry() {
+    const string path = "data/rom_worlds.json";
+    string error;
+    const Json data = Json::parse(read_text_file(path), error);
+    RomWorldRegistry registry = {{}, 0, 0};
+    set<int> ids;
+    set<int> bits;
+    set<string> build_names;
+    set<string> game_codes;
+
+    if (!error.empty() || !data.is_object() || data["schema_version"] != 1
+     || !data["worlds"].is_array() || data["worlds"].array_items().empty()
+     || !data["default_world"].is_string())
+        FATAL_ERROR("%s: invalid ROM world registry\n", path.c_str());
+
+    for (const Json &world : data["worlds"].array_items()) {
+        if (!world.is_object() || !world["name"].is_string())
+            FATAL_ERROR("%s: invalid ROM world entry\n", path.c_str());
+        const string name = world["name"].string_value();
+        if (!std::regex_match(name, std::regex("[a-z][a-z0-9_]*")) || name == "shared")
+            FATAL_ERROR("%s: invalid ROM world name %s\n", path.c_str(), name.c_str());
+        const int id = registry_integer(world["world_id"], name + " world_id", 65535);
+        const int bit = registry_integer(world["build_bit"], name + " build_bit", 1 << 30);
+        if ((bit & (bit - 1)) != 0 || !ids.insert(id).second || !bits.insert(bit).second
+         || !registry.bits.emplace(name, bit).second)
+            FATAL_ERROR("%s: duplicate or invalid ROM world identity %s\n", path.c_str(), name.c_str());
+        const bool is_default = name == data["default_world"].string_value();
+        const Json game_version = world["game_version"];
+        const Json map_version = world["map_version"];
+        const Json build_name = world["build_name"];
+        const Json title = world["title"];
+        const Json game_code = world["game_code"];
+        if ((!game_version.is_null() && (!game_version.is_string()
+             || (game_version.string_value() != "EMERALD" && game_version.string_value() != "FIRERED"
+              && game_version.string_value() != "LEAFGREEN")))
+         || (!map_version.is_null() && (!map_version.is_string()
+             || (map_version.string_value() != "emerald" && map_version.string_value() != "firered")))
+         || (!build_name.is_null() && (!build_name.is_string()
+             || !std::regex_match(build_name.string_value(), std::regex("[a-z0-9][a-z0-9-]*"))))
+         || (!title.is_null() && (!title.is_string()
+             || !std::regex_match(title.string_value(), std::regex("[A-Z0-9 ]{1,12}"))))
+         || (!game_code.is_null() && (!game_code.is_string()
+             || !std::regex_match(game_code.string_value(), std::regex("[A-Z0-9]{4}"))))
+         || (!is_default && (game_version.is_null() || map_version.is_null()
+             || build_name.is_null() || title.is_null() || game_code.is_null()))
+         || (is_default && (!game_version.is_null() || !map_version.is_null()
+             || !build_name.is_null() || !title.is_null() || !game_code.is_null())))
+            FATAL_ERROR("%s: invalid build metadata for ROM world %s\n", path.c_str(), name.c_str());
+        if ((!build_name.is_null()
+             && (!build_names.insert(build_name.string_value()).second
+              || (!is_default && (build_name.string_value() == "emerald"
+                  || build_name.string_value() == "firered" || build_name.string_value() == "leafgreen"))))
+         || (!game_code.is_null()
+             && (!game_codes.insert(game_code.string_value()).second
+              || (!is_default && (game_code.string_value() == "BPEE"
+                  || game_code.string_value() == "BPRE" || game_code.string_value() == "BPGE")))))
+            FATAL_ERROR("%s: duplicate ROM artifact identity for world %s\n", path.c_str(), name.c_str());
+        registry.all_bits |= bit;
+    }
+
+    const auto found = registry.bits.find(data["default_world"].string_value());
+    if (found == registry.bits.end() || found->second != 1)
+        FATAL_ERROR("%s: default_world must have build_bit 1\n", path.c_str());
+    registry.default_bit = found->second;
+    return registry;
+}
+
+int rom_world_mask(const Json &data, const string &owner) {
+    static const RomWorldRegistry registry = load_rom_world_registry();
+    auto field = data.object_items().find("rom_world");
+    if (field == data.object_items().end())
+        return registry.default_bit; // Existing maps/layouts remain in the default world.
+    if (field->second.is_string()) {
+        const string world = field->second.string_value();
+        if (world == "shared") return registry.all_bits;
+        const auto found = registry.bits.find(world);
+        if (found != registry.bits.end()) return found->second;
+    } else if (field->second.is_array() && !field->second.array_items().empty()) {
+        int mask = 0;
+        for (const Json &member : field->second.array_items()) {
+            if (!member.is_string() || registry.bits.count(member.string_value()) == 0
+             || (mask & registry.bits.at(member.string_value())) != 0)
+                FATAL_ERROR("%s: rom_world array has an invalid or duplicate world\n", owner.c_str());
+            mask |= registry.bits.at(member.string_value());
+        }
+        return mask;
+    }
+    FATAL_ERROR("%s: rom_world must name registered worlds or shared\n", owner.c_str());
+}
+
+void begin_rom_world(ostringstream &text, int mask) {
+    text << "\t.if (ROM_WORLD & " << mask << ")\n";
+}
+
+string generate_groups_text(Json groups_data, vector<string> &invalid_maps, const map<string, int> &worlds) {
     ostringstream text;
 
     text << get_generated_warning("data/maps/map_groups.json", true);
@@ -517,20 +676,19 @@ string generate_groups_text(Json groups_data, vector<string> &invalid_maps) {
     vector<string> valid_groups;
     for (auto &key : groups_data["group_order"].array_items()) {
         string group = json_to_string(key);
-        vector<string> valid_maps;
         auto maps = groups_data[group].array_items();
-        for (Json &map_name : maps) {
-            string map_name_str = json_to_string(map_name);
-            auto it = find(invalid_maps.begin(), invalid_maps.end(), map_name_str);
-            if (it == invalid_maps.end()) {
-                valid_maps.push_back(map_name_str);
-            }
-        }
-
-        if (valid_maps.size() > 0) {
+        if (!maps.empty()) {
             text << group << "::\n";
-            for (string map : valid_maps)
-                text << "\t.4byte " << map << "\n";
+            for (const Json &map_name : maps) {
+                const string name = json_to_string(map_name);
+                if (find(invalid_maps.begin(), invalid_maps.end(), name) != invalid_maps.end()) {
+                    text << "\t.4byte NULL\n";
+                    continue;
+                }
+                begin_rom_world(text, worlds.at(name));
+                text << "\t.4byte " << name << "\n"
+                     << "\t.else\n\t.4byte NULL\n\t.endif\n";
+            }
             text << "\n";
             valid_groups.push_back(group);
         }
@@ -549,7 +707,7 @@ string generate_groups_text(Json groups_data, vector<string> &invalid_maps) {
     return text.str();
 }
 
-string generate_connections_text(Json groups_data, vector<string> &invalid_maps, string include_path) {
+string generate_connections_text(Json groups_data, vector<string> &invalid_maps, string include_path, const map<string, int> &worlds) {
     vector<Json> map_names;
 
     for (auto &group : groups_data["group_order"].array_items()) {
@@ -578,13 +736,16 @@ string generate_connections_text(Json groups_data, vector<string> &invalid_maps,
 
     text << get_generated_warning("data/maps/map_groups.json", true);
 
-    for (Json map_name : map_names)
+    for (Json map_name : map_names) {
+        begin_rom_world(text, worlds.at(json_to_string(map_name)));
         text << "\t.include \"" << include_path << "/" <<  json_to_string(map_name) << "/connections.inc\"\n";
+        text << "\t.endif\n";
+    }
 
     return text.str();
 }
 
-string generate_headers_text(Json groups_data, vector<string> &invalid_maps, string include_path) {
+string generate_headers_text(Json groups_data, vector<string> &invalid_maps, string include_path, const map<string, int> &worlds) {
     vector<string> map_names;
 
     for (auto &group : groups_data["group_order"].array_items()) {
@@ -600,13 +761,16 @@ string generate_headers_text(Json groups_data, vector<string> &invalid_maps, str
 
     text << get_generated_warning("data/maps/map_groups.json", true);
 
-    for (string map_name : map_names)
+    for (string map_name : map_names) {
+        begin_rom_world(text, worlds.at(map_name));
         text << "\t.include \"" << include_path << "/" << map_name << "/header.inc\"\n";
+        text << "\t.endif\n";
+    }
 
     return text.str();
 }
 
-string generate_events_text(Json groups_data, vector<string> &invalid_maps, string include_path) {
+string generate_events_text(Json groups_data, vector<string> &invalid_maps, string include_path, const map<string, int> &worlds) {
     vector<string> map_names;
 
     for (auto &group : groups_data["group_order"].array_items()) {
@@ -623,8 +787,11 @@ string generate_events_text(Json groups_data, vector<string> &invalid_maps, stri
 
     text << get_generated_warning(include_path + "/map_groups.json", true);
 
-    for (string map_name : map_names)
+    for (string map_name : map_names) {
+        begin_rom_world(text, worlds.at(map_name));
         text << "\t.include \"" << include_path << "/" << map_name << "/events.inc\"\n";
+        text << "\t.endif\n";
+    }
 
     return text.str();
 }
@@ -774,10 +941,22 @@ void process_groups(string groups_filepath, vector<string> &map_filepaths, strin
     if (groups_data == Json())
         FATAL_ERROR("%s\n", err.c_str());
 
-    string groups_text = generate_groups_text(groups_data, invalid_maps);
-    string connections_text = generate_connections_text(groups_data, invalid_maps, output_asm);
-    string headers_text = generate_headers_text(groups_data, invalid_maps, output_asm);
-    string events_text = generate_events_text(groups_data, invalid_maps, output_asm);
+    map<string, int> worlds;
+    const string maps_dir = file_parent(groups_filepath) + sep;
+    for (const auto &group : groups_data["group_order"].array_items()) {
+        for (const auto &map_name : groups_data[json_to_string(group)].array_items()) {
+            const string name = json_to_string(map_name);
+            const string path = maps_dir + name + sep + "map.json";
+            const Json data = Json::parse(read_text_file(path), err);
+            if (data == Json())
+                FATAL_ERROR("%s: %s\n", path.c_str(), err.c_str());
+            worlds[name] = rom_world_mask(data, path);
+        }
+    }
+    string groups_text = generate_groups_text(groups_data, invalid_maps, worlds);
+    string connections_text = generate_connections_text(groups_data, invalid_maps, output_asm, worlds);
+    string headers_text = generate_headers_text(groups_data, invalid_maps, output_asm, worlds);
+    string events_text = generate_events_text(groups_data, invalid_maps, output_asm, worlds);
     string map_header_text = generate_map_constants_text(groups_filepath, groups_data, valid_map_ids);
 
     clean_heal_locations(valid_map_ids);
@@ -803,6 +982,7 @@ string generate_layout_headers_text(Json layouts_data) {
             layout_version = "emerald";
         }
         string layoutName = json_to_string(layout, "name");
+        begin_rom_world(text, rom_world_mask(layout, layoutName));
         string border_label = layoutName + "_Border";
         string blockdata_label = layoutName + "_Blockdata";
         text << border_label << "::\n"
@@ -833,7 +1013,7 @@ string generate_layout_headers_text(Json layouts_data) {
             text << "\t.2byte 0\n"
                  << "\t.byte 0\n";
         }
-        text << "\n";
+        text << "\t.endif\n\n";
     }
 
     return text.str();
@@ -856,7 +1036,9 @@ string generate_layouts_table_text(Json layouts_data) {
         }
         string layout_name = json_to_string(layout, "name", true);
         if (layout_name.empty()) layout_name = "NULL";
+        begin_rom_world(text, rom_world_mask(layout, layout_name));
         text << "\t.4byte " << layout_name << "\n";
+        text << "\t.else\n\t.4byte NULL\n\t.endif\n";
     }
 
     return text.str();

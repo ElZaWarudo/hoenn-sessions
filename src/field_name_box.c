@@ -102,7 +102,10 @@ void ResetNameboxData(void)
 void DestroyNamebox(void)
 {
     if (sNameboxWindowId == WINDOW_NONE)
+    {
+        gSpeakerName = NULL;
         return;
+    }
 
     ClearNamebox(sNameboxWindowId, TRUE);
     ClearWindowTilemap(sNameboxWindowId);

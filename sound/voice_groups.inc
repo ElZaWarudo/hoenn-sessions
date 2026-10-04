@@ -164,6 +164,12 @@
 .include "sound/voicegroups/rg_route11.inc"
 .include "sound/voicegroups/rg_victory_road.inc"
 .include "sound/voicegroups/rg_vs_gym_leader.inc"
+
+	.if ROM_WORLD == 2
+	.include "sound/voicegroups/cormoria_hgss_casino_drumset.inc"
+	.include "sound/voicegroups/cormoria_hgss_casino.inc"
+	.include "sound/voicegroups/cormoria_casino_plus_1.inc"
+	.endif
 .include "sound/voicegroups/rg_vs_trainer.inc"
 .include "sound/voicegroups/rg_vs_wild.inc"
 .include "sound/voicegroups/rg_vs_champion.inc"

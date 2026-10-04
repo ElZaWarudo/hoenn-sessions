@@ -1,6 +1,7 @@
 //! Local build and emulator compatibility validation.
 
 use std::{
+    collections::BTreeMap,
     fs::{self, File},
     io::{self, Read},
     path::{Path, PathBuf},
@@ -19,6 +20,7 @@ use coop_cloud::{
     BridgeAbiVersion, CompatibilityTarget, GameBuildId, MgbaVersion, ProtocolVersion, Revision,
     Sha256Digest,
 };
+use coop_protocol::RomWorldId;
 use coop_protocol::{IDENTITY_REGISTRY_DIGEST, IDENTITY_REGISTRY_VERSION};
 use coop_save::RegistryContract;
 use serde::Deserialize;
@@ -41,6 +43,7 @@ pub const EXPECTED_MGBA_EXECUTABLE_SHA256: &str =
 pub const EXPECTED_MGBA_ARCHIVE_SHA256: &str =
     "ea7cc0e8632cd80d28bdb55e37aacc58b2b018f564209f790e8cc3caed8c002b";
 pub const MAX_MANIFEST_BYTES: u64 = 64 * 1024;
+pub const MAX_RELEASE_CATALOG_BYTES: u64 = 256 * 1024;
 /// Keep this in sync with the CLI's source-ROM admission limit.  The public
 /// compatibility API is also callable without the CLI, so it must enforce
 /// the same bound before hashing an untrusted path.
@@ -101,6 +104,236 @@ pub enum CompatibilityError {
     MgbaScript,
     #[error("unsupported bridge ABI or protocol")]
     Protocol,
+    #[error("release catalog is invalid or does not match its trusted digest")]
+    ReleaseCatalog,
+    #[error("selected ROM world is not registered in the release catalog")]
+    UnknownWorld,
+}
+
+/// A locally pinned release selection. Paths come only from the catalog and
+/// remain bound to artifact digests before the launcher stages a ROM.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SelectedRomWorld {
+    pub world_id: RomWorldId,
+    pub rom_path: PathBuf,
+    pub bridge_path: PathBuf,
+    rom_sha256: Sha256Digest,
+    bridge_manifest: BridgeManifest,
+}
+
+/// One complete, digest-pinned set of ROM worlds available for travel.
+#[derive(Clone, Debug)]
+pub struct TrustedRomCatalog {
+    digest: Sha256Digest,
+    worlds: BTreeMap<RomWorldId, SelectedRomWorld>,
+}
+
+impl TrustedRomCatalog {
+    /// Validate every artifact in the release set before selecting any world.
+    ///
+    /// # Errors
+    /// Rejects an unpinned, malformed, incomplete, or substituted catalog.
+    pub fn load(catalog_path: &Path, trusted_sha256: &str) -> Result<Self, CompatibilityError> {
+        let expected =
+            Sha256Digest::parse(trusted_sha256).map_err(|_| CompatibilityError::ReleaseCatalog)?;
+        let mut bytes = Vec::new();
+        open_bounded_regular_file(catalog_path, MAX_RELEASE_CATALOG_BYTES)
+            .map_err(|_| CompatibilityError::ReleaseCatalog)?
+            .take(MAX_RELEASE_CATALOG_BYTES + 1)
+            .read_to_end(&mut bytes)
+            .map_err(|_| CompatibilityError::ReleaseCatalog)?;
+        if bytes.len() as u64 > MAX_RELEASE_CATALOG_BYTES
+            || Sha256Digest::of_bytes(&bytes) != expected
+        {
+            return Err(CompatibilityError::ReleaseCatalog);
+        }
+        let catalog: ReleaseCatalog =
+            serde_json::from_slice(&bytes).map_err(|_| CompatibilityError::ReleaseCatalog)?;
+        if catalog.schema_version != 1 || catalog.worlds.is_empty() {
+            return Err(CompatibilityError::ReleaseCatalog);
+        }
+        let root = fs::canonicalize(catalog_path)
+            .map_err(|_| CompatibilityError::ReleaseCatalog)?
+            .parent()
+            .ok_or(CompatibilityError::ReleaseCatalog)?
+            .to_owned();
+        let mut worlds = BTreeMap::new();
+        let mut artifacts = std::collections::HashSet::new();
+        let mut builds = std::collections::HashSet::new();
+        for world in catalog.worlds {
+            let id =
+                RomWorldId::new(world.world_id).map_err(|_| CompatibilityError::ReleaseCatalog)?;
+            if worlds.contains_key(&id) {
+                return Err(CompatibilityError::ReleaseCatalog);
+            }
+            // Validate every world before exposing a selection.
+            let rom_path = release_artifact(&root, &world.rom_path, &world.rom_sha256)?;
+            let rom_sha256 = Sha256Digest::parse(&world.rom_sha256)
+                .map_err(|_| CompatibilityError::ReleaseCatalog)?;
+            let (bridge_path, bridge_bytes) = release_artifact_bytes(
+                &root,
+                &world.bridge_path,
+                &world.bridge_sha256,
+                MAX_MANIFEST_BYTES,
+            )?;
+            let transfer_path = release_artifact(
+                &root,
+                &world.player_transfer_path,
+                &world.player_transfer_sha256,
+            )?;
+            let manifest: BridgeManifest = serde_json::from_slice(&bridge_bytes)
+                .map_err(|_| CompatibilityError::ReleaseCatalog)?;
+            if manifest.game_build.rom_sha256 != world.rom_sha256 {
+                return Err(CompatibilityError::ReleaseCatalog);
+            }
+            if !artifacts.insert(rom_path.clone())
+                || !artifacts.insert(bridge_path.clone())
+                || !artifacts.insert(transfer_path)
+                || !builds.insert(manifest.game_build.id.clone())
+            {
+                return Err(CompatibilityError::ReleaseCatalog);
+            }
+            worlds.insert(
+                id,
+                SelectedRomWorld {
+                    world_id: id,
+                    rom_path,
+                    bridge_path,
+                    rom_sha256,
+                    bridge_manifest: manifest,
+                },
+            );
+        }
+        Ok(Self {
+            digest: expected,
+            worlds,
+        })
+    }
+
+    #[must_use]
+    pub const fn digest(&self) -> Sha256Digest {
+        self.digest
+    }
+
+    /// Stable IDs come only from the validated release set.
+    pub fn world_ids(&self) -> impl Iterator<Item = RomWorldId> + '_ {
+        self.worlds.keys().copied()
+    }
+
+    /// Resolve a destination chosen by the server to a pinned local artifact.
+    ///
+    /// # Errors
+    /// Rejects a world absent from the release set.
+    pub fn world(&self, id: RomWorldId) -> Result<&SelectedRomWorld, CompatibilityError> {
+        self.worlds.get(&id).ok_or(CompatibilityError::UnknownWorld)
+    }
+}
+
+#[derive(Deserialize)]
+struct ReleaseCatalog {
+    schema_version: u16,
+    worlds: Vec<ReleaseWorld>,
+}
+
+#[derive(Deserialize)]
+struct ReleaseWorld {
+    world_id: u16,
+    rom_path: String,
+    rom_sha256: String,
+    bridge_path: String,
+    bridge_sha256: String,
+    player_transfer_path: String,
+    player_transfer_sha256: String,
+}
+
+impl SelectedRomWorld {
+    /// Digest pinned by the validated release catalog for this ROM world.
+    #[must_use]
+    pub const fn rom_sha256(&self) -> Sha256Digest {
+        self.rom_sha256
+    }
+
+    /// Select a world from a catalog whose digest was pinned independently by
+    /// release packaging. The same world/build/ROM binding is checked again
+    /// against the validated bridge manifest before the session is created.
+    pub fn from_catalog(
+        catalog_path: &Path,
+        trusted_sha256: &str,
+        requested_world_id: RomWorldId,
+    ) -> Result<Self, CompatibilityError> {
+        TrustedRomCatalog::load(catalog_path, trusted_sha256)?
+            .world(requested_world_id)
+            .cloned()
+    }
+
+    pub fn check_compatibility(
+        &self,
+        compatibility: &BuildCompatibility,
+    ) -> Result<(), CompatibilityError> {
+        if compatibility.manifest != self.bridge_manifest
+            || compatibility.manifest.game_build.rom_sha256
+                != hash_file(&self.rom_path)
+                    .map_err(CompatibilityError::Rom)?
+                    .as_hex()
+            || compatibility.manifest.game_build.rom_sha256
+                != compatibility.target.rom_sha256.as_hex()
+        {
+            return Err(CompatibilityError::RomHash);
+        }
+        Ok(())
+    }
+}
+
+fn release_artifact(
+    root: &Path,
+    relative: &str,
+    sha256: &str,
+) -> Result<PathBuf, CompatibilityError> {
+    let artifact = release_artifact_path(root, relative)?;
+    let expected = Sha256Digest::parse(sha256).map_err(|_| CompatibilityError::ReleaseCatalog)?;
+    if hash_file(&artifact).map_err(|_| CompatibilityError::ReleaseCatalog)? != expected {
+        return Err(CompatibilityError::ReleaseCatalog);
+    }
+    Ok(artifact)
+}
+
+fn release_artifact_bytes(
+    root: &Path,
+    relative: &str,
+    sha256: &str,
+    max_bytes: u64,
+) -> Result<(PathBuf, Vec<u8>), CompatibilityError> {
+    let artifact = release_artifact_path(root, relative)?;
+    let expected = Sha256Digest::parse(sha256).map_err(|_| CompatibilityError::ReleaseCatalog)?;
+    let mut bytes = Vec::new();
+    open_bounded_regular_file(&artifact, max_bytes)
+        .map_err(|_| CompatibilityError::ReleaseCatalog)?
+        .take(max_bytes + 1)
+        .read_to_end(&mut bytes)
+        .map_err(|_| CompatibilityError::ReleaseCatalog)?;
+    if bytes.len() as u64 > max_bytes || Sha256Digest::of_bytes(&bytes) != expected {
+        return Err(CompatibilityError::ReleaseCatalog);
+    }
+    Ok((artifact, bytes))
+}
+
+fn release_artifact_path(root: &Path, relative: &str) -> Result<PathBuf, CompatibilityError> {
+    let path = Path::new(relative);
+    if relative.is_empty()
+        || relative.contains('\\')
+        || path.is_absolute()
+        || path
+            .components()
+            .any(|component| !matches!(component, std::path::Component::Normal(_)))
+    {
+        return Err(CompatibilityError::ReleaseCatalog);
+    }
+    let artifact =
+        fs::canonicalize(root.join(path)).map_err(|_| CompatibilityError::ReleaseCatalog)?;
+    if !artifact.starts_with(root) || !artifact.is_file() {
+        return Err(CompatibilityError::ReleaseCatalog);
+    }
+    Ok(artifact)
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -459,9 +692,9 @@ fn validate_manifest(manifest: &BridgeManifest) -> Result<(), CompatibilityError
             .and_then(|address| address.checked_add(u64::from(save.generation_offset)))
             != Some(save.generation_address)
         || save.crc_offset != 668
-        || save.schema_version != coop_save::COOP_SAVE_V1_SCHEMA_VERSION
+        || save.schema_version != coop_save::v2::COOP_SAVE_V2_SCHEMA_VERSION
         || save.struct_size
-            != u16::try_from(coop_save::COOP_SAVE_V1_SIZE).expect("frozen save ABI fits u16")
+            != u16::try_from(coop_save::v2::COOP_SAVE_V2_SIZE).expect("frozen save ABI fits u16")
         || save.registry_contract().is_err()
     {
         return Err(CompatibilityError::Manifest);
@@ -901,6 +1134,95 @@ fn append_bounded_probe_bytes(output: &mut Vec<u8>, chunk: &[u8]) -> bool {
 mod tests {
     use std::fs;
 
+    #[test]
+    fn release_catalog_selects_third_world_and_rejects_substitution() {
+        use super::{SelectedRomWorld, TrustedRomCatalog};
+        use coop_cloud::Sha256Digest;
+        use coop_protocol::RomWorldId;
+
+        let root = tempfile::tempdir().unwrap();
+        let mut worlds = Vec::new();
+        for id in [1_u16, 2, 7] {
+            let rom = format!("world-{id}.gba");
+            let bridge = format!("world-{id}.json");
+            let transfer = format!("world-{id}-transfer.json");
+            let rom_bytes = vec![id as u8; 32];
+            fs::write(root.path().join(&rom), &rom_bytes).unwrap();
+            let rom_sha = Sha256Digest::of_bytes(&rom_bytes).as_hex();
+            let mut manifest = v2_manifest_fixture();
+            manifest["game_build"]["rom_sha256"] = serde_json::Value::from(rom_sha.as_str());
+            manifest["game_build"]["id"] = serde_json::Value::from(format!("world-{id}"));
+            let bridge_bytes = serde_json::to_vec(&manifest).unwrap();
+            fs::write(root.path().join(&bridge), &bridge_bytes).unwrap();
+            let transfer_bytes = format!("transfer-{id}").into_bytes();
+            fs::write(root.path().join(&transfer), &transfer_bytes).unwrap();
+            worlds.push(serde_json::json!({
+                "world_id": id,
+                "rom_path": rom,
+                "rom_sha256": rom_sha,
+                "bridge_path": bridge,
+                "bridge_sha256": Sha256Digest::of_bytes(&bridge_bytes).as_hex(),
+                "player_transfer_path": transfer,
+                "player_transfer_sha256": Sha256Digest::of_bytes(&transfer_bytes).as_hex(),
+            }));
+        }
+        let path = root.path().join("catalog.json");
+        let bytes = serde_json::to_vec(&serde_json::json!({
+            "schema_version": 1,
+            "worlds": worlds,
+        }))
+        .unwrap();
+        fs::write(&path, &bytes).unwrap();
+        let digest = Sha256Digest::of_bytes(&bytes).as_hex();
+        let selected =
+            SelectedRomWorld::from_catalog(&path, &digest, RomWorldId::new(7).unwrap()).unwrap();
+        assert_eq!(selected.world_id.get(), 7);
+        assert_eq!(selected.rom_path.file_name().unwrap(), "world-7.gba");
+        assert_eq!(selected.rom_sha256(), Sha256Digest::of_bytes(&[7_u8; 32]));
+        let catalog = TrustedRomCatalog::load(&path, &digest).unwrap();
+        assert_eq!(catalog.digest(), Sha256Digest::of_bytes(&bytes));
+        assert_eq!(
+            catalog.world_ids().map(RomWorldId::get).collect::<Vec<_>>(),
+            vec![1, 2, 7]
+        );
+        assert_eq!(
+            catalog.world(RomWorldId::new(7).unwrap()).unwrap(),
+            &selected
+        );
+        assert!(catalog.world(RomWorldId::new(3).unwrap()).is_err());
+        assert!(
+            SelectedRomWorld::from_catalog(&path, &"0".repeat(64), RomWorldId::new(7).unwrap(),)
+                .is_err()
+        );
+        fs::write(root.path().join("world-2.gba"), b"substituted").unwrap();
+        assert!(
+            SelectedRomWorld::from_catalog(&path, &digest, RomWorldId::new(7).unwrap(),).is_err()
+        );
+    }
+
+    fn v2_manifest_fixture() -> serde_json::Value {
+        let source = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("..")
+            .join("..")
+            .join("..")
+            .join("dist")
+            .join("bridge_manifest.json");
+        let mut value: serde_json::Value =
+            serde_json::from_slice(&fs::read(source).unwrap()).unwrap();
+        value["save"]["schema_version"] =
+            serde_json::Value::from(coop_save::v2::COOP_SAVE_V2_SCHEMA_VERSION);
+        value["save"]["struct_size"] = serde_json::Value::from(coop_save::v2::COOP_SAVE_V2_SIZE);
+        value["save"]["registry_version"] =
+            serde_json::Value::from(coop_protocol::IDENTITY_REGISTRY_VERSION);
+        value["save"]["registry_digest"] = serde_json::Value::from(
+            coop_protocol::IDENTITY_REGISTRY_DIGEST
+                .iter()
+                .map(|byte| format!("{byte:02x}"))
+                .collect::<String>(),
+        );
+        value
+    }
+
     #[cfg(not(windows))]
     use std::{
         sync::mpsc,
@@ -1042,13 +1364,7 @@ mod tests {
 
     #[test]
     fn checked_manifest_requires_the_pinned_emulator_contract() {
-        let source = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("..")
-            .join("..")
-            .join("..")
-            .join("dist")
-            .join("bridge_manifest.json");
-        let value: serde_json::Value = serde_json::from_slice(&fs::read(source).unwrap()).unwrap();
+        let value = v2_manifest_fixture();
         for mutation in ["missing", "wrong-version", "unknown-field", "wrong-digest"] {
             let mut mutated = value.clone();
             match mutation {
@@ -1079,16 +1395,9 @@ mod tests {
 
     #[test]
     fn wrong_executable_digest_is_rejected_before_probe() {
-        let source = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("..")
-            .join("..")
-            .join("..")
-            .join("dist")
-            .join("bridge_manifest.json");
         let directory = tempfile::tempdir().unwrap();
         let manifest = directory.path().join("manifest.json");
-        let mut value: serde_json::Value =
-            serde_json::from_slice(&fs::read(source).unwrap()).unwrap();
+        let mut value = v2_manifest_fixture();
         value["schema_version"] = serde_json::Value::from(BRIDGE_MANIFEST_SCHEMA);
         value["emulator"]["version"] = serde_json::Value::from(EXPECTED_MGBA_VERSION);
         value["emulator"]["build_id"] = serde_json::Value::from(EXPECTED_MGBA_BUILD_ID);
@@ -1107,13 +1416,10 @@ mod tests {
 
     #[test]
     fn android_uses_its_native_core_version_and_verifies_rom() {
-        let source = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("../../../android/app/src/main/assets/bridge_manifest.json");
         let directory = tempfile::tempdir().unwrap();
         let rom = directory.path().join("game.gba");
         fs::write(&rom, b"test ROM fixture").unwrap();
-        let mut value: serde_json::Value =
-            serde_json::from_slice(&fs::read(source).unwrap()).unwrap();
+        let mut value = v2_manifest_fixture();
         value["game_build"]["rom_sha256"] =
             serde_json::Value::from(super::hash_file(&rom).unwrap().to_string());
         let manifest = directory.path().join("manifest.json");
@@ -1127,6 +1433,20 @@ mod tests {
         assert!(matches!(
             super::BuildCompatibility::load_android(&manifest, &rom),
             Err(CompatibilityError::RomHash)
+        ));
+    }
+
+    #[test]
+    fn fresh_bridge_manifest_rejects_legacy_save_schema() {
+        let mut value = v2_manifest_fixture();
+        let current: super::BridgeManifest = serde_json::from_value(value.clone()).unwrap();
+        assert!(super::validate_manifest(&current).is_ok());
+        value["save"]["schema_version"] =
+            serde_json::Value::from(coop_save::COOP_SAVE_V1_SCHEMA_VERSION);
+        let historical: super::BridgeManifest = serde_json::from_value(value).unwrap();
+        assert!(matches!(
+            super::validate_manifest(&historical),
+            Err(CompatibilityError::Manifest)
         ));
     }
 }

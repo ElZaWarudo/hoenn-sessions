@@ -337,7 +337,7 @@ pub(crate) struct TradeSide {
 /// TradeCommit, so the entry could never be applied); `Conflict` for an
 /// empty, out-of-party or unreadable slot.
 pub(crate) fn trade_side(
-    save: &coop_save::ValidatedSave,
+    save: &coop_save::ValidatedSaveV2,
     snapshot_id: SnapshotId,
     revision: Revision,
     slot: PartyPosition,
@@ -404,7 +404,7 @@ pub(crate) fn issue_trade(
 /// before the ROM applies the commit, and the ROM then writes the record into
 /// whichever slot holds the outgoing Pokémon.
 fn party_holds_record(
-    save: &coop_save::ValidatedSave,
+    save: &coop_save::ValidatedSaveV2,
     raw: &[u8; 100],
 ) -> Result<bool, Phase2Error> {
     let count = usize::from(save.party_count().map_err(|_| Phase2Error::Conflict)?);
@@ -420,7 +420,7 @@ fn party_holds_record(
     Ok(false)
 }
 
-fn holds(save: &coop_save::ValidatedSave, key: PokemonKey) -> Result<bool, Phase2Error> {
+fn holds(save: &coop_save::ValidatedSaveV2, key: PokemonKey) -> Result<bool, Phase2Error> {
     Ok(!save
         .locate_pokemon(key.personality, key.ot_id)
         .map_err(|_| Phase2Error::Conflict)?
@@ -445,10 +445,13 @@ pub(crate) fn apply_on_finalize(
     state: &mut State,
     actor: AuthenticatedActor,
     request: &SnapshotFinalizeRequest,
-    source_save: &coop_save::ValidatedSave,
-    incoming_save: &coop_save::ValidatedSave,
+    source_save: &coop_save::ValidatedSaveV2,
+    incoming_save: &coop_save::ValidatedSaveV2,
     now: u64,
 ) -> Result<bool, Phase2Error> {
+    if state.handoff_for_member(actor.character_id) {
+        return Err(Phase2Error::Conflict);
+    }
     let declared = request.last_applied_commit;
     let trade = match declared {
         Some(commit_id) => match check_declarable(state, actor.character_id, commit_id)? {

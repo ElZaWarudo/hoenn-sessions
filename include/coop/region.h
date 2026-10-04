@@ -17,7 +17,8 @@ enum CoopRegion
     COOP_REGION_KANTO = 2,
     COOP_REGION_JOHTO = 3,
     COOP_REGION_SEVII = 4,
-    COOP_REGION_COUNT = 5,
+    COOP_REGION_CORMORIA = 5,
+    COOP_REGION_COUNT = 6,
 };
 
 /* Stable values emitted in map-header assembly. These are deliberately not
@@ -27,9 +28,10 @@ enum CoopMapEngineRegion
     COOP_MAP_ENGINE_REGION_HOENN = 0,
     COOP_MAP_ENGINE_REGION_KANTO = 1,
     COOP_MAP_ENGINE_REGION_JOHTO = 2,
+    COOP_MAP_ENGINE_REGION_CORMORIA = 3,
 };
 
-#define COOP_PROGRESS_REGION_COUNT 4
+#define COOP_PROGRESS_REGION_COUNT 5
 
 /*
  * The bridge boundary deliberately contains only fixed-width scalar fields.

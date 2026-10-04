@@ -3,6 +3,7 @@ TITLE        ?= POKEMON EMER
 GAME_CODE    ?= BPEE
 BUILD_NAME   ?= emerald
 MAP_VERSION  ?= emerald
+ROM_WORLD    ?= 1
 
 ifeq (firered, $(or $(BUILD), $(MAKECMDGOALS)))
   	GAME_VERSION 	:= FIRERED
@@ -19,6 +20,35 @@ ifeq (leafgreen, $(or $(BUILD), $(MAKECMDGOALS)))
 	MAP_VERSION 	:= firered
 endif
 endif
+
+ROM_WORLD_SELECTORS := $(shell python3 tools/rom_world_registry.py data/rom_worlds.json --selectors)
+ifeq ($(strip $(ROM_WORLD)),)
+$(error ROM_WORLD must select a registered world)
+endif
+ifneq ($(filter $(ROM_WORLD),$(ROM_WORLD_SELECTORS)),$(ROM_WORLD))
+$(error ROM_WORLD must select a registered world)
+endif
+ifneq ($(filter $(GAME_VERSION),EMERALD FIRERED LEAFGREEN),$(GAME_VERSION))
+$(error GAME_VERSION must be EMERALD, FIRERED, or LEAFGREEN)
+endif
+ROM_WORLD_SETTINGS := $(shell python3 tools/rom_world_registry.py data/rom_worlds.json $(ROM_WORLD) $(GAME_VERSION))
+ifeq ($(strip $(ROM_WORLD_SETTINGS)),)
+$(error ROM_WORLD must select a registered world compatible with GAME_VERSION)
+endif
+override ROM_WORLD := $(word 1,$(ROM_WORLD_SETTINGS))
+ifneq ($(word 2,$(ROM_WORLD_SETTINGS)),-)
+  override BUILD_NAME := $(word 2,$(ROM_WORLD_SETTINGS))
+endif
+ifneq ($(word 3,$(ROM_WORLD_SETTINGS)),-)
+  override TITLE := $(subst ~, ,$(word 3,$(ROM_WORLD_SETTINGS)))
+endif
+ifneq ($(word 4,$(ROM_WORLD_SETTINGS)),-)
+  override GAME_CODE := $(word 4,$(ROM_WORLD_SETTINGS))
+endif
+ifneq ($(word 5,$(ROM_WORLD_SETTINGS)),-)
+  override MAP_VERSION := $(word 5,$(ROM_WORLD_SETTINGS))
+endif
+override ROM_WORLD_ID := $(word 6,$(ROM_WORLD_SETTINGS))
 
 # GBA rom header
 MAKER_CODE  := 01
@@ -144,7 +174,7 @@ TEST_BUILDDIR = $(OBJ_DIR)/$(TEST_SUBDIR)
 SHELL := bash -o pipefail
 
 # Set flags for tools
-ASFLAGS := -mcpu=arm7tdmi -march=armv4t -meabi=5 --defsym MODERN=1 --defsym $(GAME_VERSION)=1
+ASFLAGS := -mcpu=arm7tdmi -march=armv4t -meabi=5 --defsym MODERN=1 --defsym $(GAME_VERSION)=1 --defsym ROM_WORLD=$(ROM_WORLD) --defsym ROM_WORLD_ID=$(ROM_WORLD_ID)
 
 INCLUDE_DIRS := include
 INCLUDE_CPP_ARGS := $(INCLUDE_DIRS:%=-iquote %)
@@ -155,7 +185,7 @@ O_LEVEL ?= g
 else
 O_LEVEL ?= 2
 endif
-CPPFLAGS := $(INCLUDE_CPP_ARGS) -Wno-trigraphs -DMODERN=1 -DTESTING=$(TEST) -D$(GAME_VERSION) -std=gnu17
+CPPFLAGS := $(INCLUDE_CPP_ARGS) -Wno-trigraphs -DMODERN=1 -DTESTING=$(TEST) -D$(GAME_VERSION) -DROM_WORLD=$(ROM_WORLD) -DROM_WORLD_ID=$(ROM_WORLD_ID) -std=gnu17
 ifeq ($(RELEASE),1)
 	override CPPFLAGS += -DRELEASE
 	ifeq ($(USE_LTO_ON_RELEASE),1)
@@ -295,32 +325,40 @@ ifeq ($(SETUP_PREREQS),1)
     $(error Errors occurred while building tools. See error messages above for more details)
   endif
   # Oh and also generate mapjson sources before we use `SCANINC`.
-  $(foreach line, $(shell $(MAKE) MAP_VERSION=$(MAP_VERSION) generated | sed "s/ /__SPACE__/g"), $(info $(subst __SPACE__, ,$(line))))
+  $(foreach line, $(shell $(MAKE) GAME_VERSION=$(GAME_VERSION) MAP_VERSION=$(MAP_VERSION) ROM_WORLD=$(ROM_WORLD) generated | sed "s/ /__SPACE__/g"), $(info $(subst __SPACE__, ,$(line))))
   ifneq ($(.SHELLSTATUS),0)
     $(error Errors occurred while generating map-related sources. See error messages above for more details)
   endif
 endif
 
 # Collect sources
-C_SRCS_IN := $(wildcard $(C_SUBDIR)/*.c $(C_SUBDIR)/*/*.c $(C_SUBDIR)/*/*/*.c)
+# Source lists become the link order. GNU make 4.3 returns $(wildcard) matches
+# in the builder's LC_COLLATE order (en_US.UTF-8 puts pokemon_animation.c
+# before pokemon.c, C.UTF-8 does not), which moved ROM/EWRAM layout between
+# machines. Sort each pattern bytewise so every locale links like CI does.
+sorted_wildcard = $(foreach pattern,$(1),$(sort $(wildcard $(pattern))))
+C_SRCS_IN := $(call sorted_wildcard,$(C_SUBDIR)/*.c $(C_SUBDIR)/*/*.c $(C_SUBDIR)/*/*/*.c)
 C_SRCS := $(foreach src,$(C_SRCS_IN),$(if $(findstring .inc.c,$(src)),,$(src)))
 C_OBJS := $(patsubst $(C_SUBDIR)/%.c,$(C_BUILDDIR)/%.o,$(C_SRCS))
 
-TEST_SRCS_IN := $(wildcard $(TEST_SUBDIR)/*.c $(TEST_SUBDIR)/*/*.c $(TEST_SUBDIR)/*/*/*.c)
+TEST_SRCS_IN := $(call sorted_wildcard,$(TEST_SUBDIR)/*.c $(TEST_SUBDIR)/*/*.c $(TEST_SUBDIR)/*/*/*.c)
 TEST_SRCS := $(foreach src,$(TEST_SRCS_IN),$(if $(findstring .inc.c,$(src)),,$(src)))
 TEST_OBJS := $(patsubst $(TEST_SUBDIR)/%.c,$(TEST_BUILDDIR)/%.o,$(TEST_SRCS))
 TEST_OBJS_REL := $(patsubst $(OBJ_DIR)/%,%,$(TEST_OBJS))
 
-C_ASM_SRCS := $(wildcard $(C_SUBDIR)/*.s $(C_SUBDIR)/*/*.s $(C_SUBDIR)/*/*/*.s)
+C_ASM_SRCS := $(call sorted_wildcard,$(C_SUBDIR)/*.s $(C_SUBDIR)/*/*.s $(C_SUBDIR)/*/*/*.s)
 C_ASM_OBJS := $(patsubst $(C_SUBDIR)/%.s,$(C_BUILDDIR)/%.o,$(C_ASM_SRCS))
 
-ASM_SRCS := $(wildcard $(ASM_SUBDIR)/*.s)
+ASM_SRCS := $(call sorted_wildcard,$(ASM_SUBDIR)/*.s)
 ASM_OBJS := $(patsubst $(ASM_SUBDIR)/%.s,$(ASM_BUILDDIR)/%.o,$(ASM_SRCS))
 
-DATA_ASM_SRCS := $(wildcard $(DATA_ASM_SUBDIR)/*.s)
+DATA_ASM_SRCS := $(call sorted_wildcard,$(DATA_ASM_SUBDIR)/*.s)
 DATA_ASM_OBJS := $(patsubst $(DATA_ASM_SUBDIR)/%.s,$(DATA_ASM_BUILDDIR)/%.o,$(DATA_ASM_SRCS))
 
-MID_SRCS := $(wildcard $(MID_SUBDIR)/*.mid)
+MID_SRCS := $(call sorted_wildcard,$(MID_SUBDIR)/*.mid)
+ifneq ($(ROM_WORLD),2)
+MID_SRCS := $(filter-out $(MID_SUBDIR)/mus_hgss_casino.mid $(MID_SUBDIR)/mus_casino_plus_1.mid,$(MID_SRCS))
+endif
 MID_OBJS := $(patsubst $(MID_SUBDIR)/%.mid,$(MID_BUILDDIR)/%.o,$(MID_SRCS))
 
 OBJS     := $(C_OBJS) $(C_ASM_OBJS) $(ASM_OBJS) $(DATA_ASM_OBJS) $(MID_OBJS)
@@ -408,6 +446,7 @@ endif
 
 # Other rules
 include graphics_file_rules.mk
+include data/tilesets/cormoria/rules.mk
 include map_data_rules.mk
 include spritesheet_rules.mk
 include json_data_rules.mk

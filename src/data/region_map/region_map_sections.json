@@ -1954,6 +1954,414 @@
       "y": 14,
       "width": 10,
       "height": 1
+    },
+    {
+      "id": "MAPSEC_CORMORIA_CARABRUE_TOWN",
+      "name": "Carabrue Town",
+      "x": 18,
+      "y": 8,
+      "width": 1,
+      "height": 1
+    },
+    {
+      "id": "MAPSEC_CORMORIA_ROUTE1",
+      "name": "Route 1",
+      "x": 19,
+      "y": 8,
+      "width": 1,
+      "height": 1
+    },
+    {
+      "id": "MAPSEC_CORMORIA_FENNILAHL_TOWN",
+      "name": "Fennilahl Town",
+      "x": 20,
+      "y": 8,
+      "width": 1,
+      "height": 1
+    },
+    {
+      "id": "MAPSEC_CORMORIA_ROUTE2",
+      "name": "Route 2",
+      "x": 20,
+      "y": 9,
+      "width": 1,
+      "height": 1
+    },
+    {
+      "id": "MAPSEC_CORMORIA_VINE_CAVERNS",
+      "name": "Vine Caverns",
+      "x": 20,
+      "y": 10,
+      "width": 1,
+      "height": 1
+    },
+    {
+      "id": "MAPSEC_CORMORIA_FENNILAHL_TUNNEL",
+      "name": "Fennilahl Tunnel",
+      "x": 21,
+      "y": 8,
+      "width": 1,
+      "height": 1
+    },
+    {
+      "id": "MAPSEC_CORMORIA_ROUTE3",
+      "name": "Route 3",
+      "x": 22,
+      "y": 8,
+      "width": 3,
+      "height": 1
+    },
+    {
+      "id": "MAPSEC_CORMORIA_ROUTE3_UNDERPASS",
+      "name": "Route 3 Underpass",
+      "x": 23,
+      "y": 7,
+      "width": 1,
+      "height": 1
+    },
+    {
+      "id": "MAPSEC_CORMORIA_GASTREE_CITY",
+      "name": "Gastree City",
+      "x": 25,
+      "y": 8,
+      "width": 1,
+      "height": 1
+    },
+    {
+      "id": "MAPSEC_CORMORIA_ABANDONED_SHIP",
+      "name": "ABANDONED SHIP",
+      "x": 6,
+      "y": 14,
+      "width": 1,
+      "height": 1
+    },
+    {
+      "id": "MAPSEC_CORMORIA_ROUTE3_CAVES",
+      "name": "Route 3 Depths",
+      "x": 23,
+      "y": 7,
+      "width": 1,
+      "height": 1
+    },
+    {
+      "id": "MAPSEC_CORMORIA_THE_OTHER_HOUSE",
+      "name": "The Other House",
+      "x": 18,
+      "y": 8,
+      "width": 1,
+      "height": 1
+    },
+    {
+      "id": "MAPSEC_CORMORIA_ROUTE4",
+      "name": "Route 4",
+      "x": 25,
+      "y": 6,
+      "width": 1,
+      "height": 2
+    },
+    {
+      "id": "MAPSEC_CORMORIA_CERAM_BASE_CAMP",
+      "name": "Ceram Base Camp",
+      "x": 25,
+      "y": 5,
+      "width": 1,
+      "height": 1
+    },
+    {
+      "id": "MAPSEC_CORMORIA_MT_CERAM",
+      "name": "Mt. Ceram",
+      "x": 25,
+      "y": 4,
+      "width": 1,
+      "height": 1
+    },
+    {
+      "id": "MAPSEC_CORMORIA_CERAM_INTERIOR",
+      "name": "Mt. Ceram Interior",
+      "x": 25,
+      "y": 4,
+      "width": 1,
+      "height": 1
+    },
+    {
+      "id": "MAPSEC_CORMORIA_ANCIENT_CERAM",
+      "name": "???",
+      "x": 0,
+      "y": 0,
+      "width": 1,
+      "height": 1
+    },
+    {
+      "id": "MAPSEC_CORMORIA_GALECREST_CITY",
+      "name": "Galecrest City",
+      "x": 19,
+      "y": 2,
+      "width": 1,
+      "height": 1
+    },
+    {
+      "id": "MAPSEC_CORMORIA_ROUTE5",
+      "name": "Route 5",
+      "x": 14,
+      "y": 2,
+      "width": 5,
+      "height": 1
+    },
+    {
+      "id": "MAPSEC_CORMORIA_VILETHORN_WOODS",
+      "name": "Vilethorn Woods",
+      "x": 16,
+      "y": 2,
+      "width": 1,
+      "height": 1
+    },
+    {
+      "id": "MAPSEC_CORMORIA_SILVERSUN_CITY",
+      "name": "Silversun City",
+      "x": 13,
+      "y": 2,
+      "width": 1,
+      "height": 1
+    },
+    {
+      "id": "MAPSEC_CORMORIA_HOYA_RIVER_NORTH",
+      "name": "Hoya River North",
+      "x": 12,
+      "y": 2,
+      "width": 1,
+      "height": 2
+    },
+    {
+      "id": "MAPSEC_CORMORIA_ROUTE6",
+      "name": "Route 6",
+      "x": 12,
+      "y": 4,
+      "width": 1,
+      "height": 5
+    },
+    {
+      "id": "MAPSEC_CORMORIA_RANGER_INSTITUTE",
+      "name": "Ranger Institute",
+      "x": 13,
+      "y": 8,
+      "width": 1,
+      "height": 1
+    },
+    {
+      "id": "MAPSEC_CORMORIA_HOYA_RIVER_SOUTH",
+      "name": "Hoya River South",
+      "x": 10,
+      "y": 8,
+      "width": 1,
+      "height": 1
+    },
+    {
+      "id": "MAPSEC_CORMORIA_PELLUCA_CITY",
+      "name": "Pelluca City",
+      "x": 8,
+      "y": 8,
+      "width": 2,
+      "height": 1
+    },
+    {
+      "id": "MAPSEC_CORMORIA_ROUTE7",
+      "name": "Route 7",
+      "x": 7,
+      "y": 8,
+      "width": 1,
+      "height": 1
+    },
+    {
+      "id": "MAPSEC_CORMORIA_PELLUCA_CABLE_CAR",
+      "name": "Cable Car Stn.",
+      "x": 6,
+      "y": 8,
+      "width": 1,
+      "height": 1
+    },
+    {
+      "id": "MAPSEC_CORMORIA_MIRROH_BASE_CAMP",
+      "name": "Mirroh Base Camp",
+      "x": 4,
+      "y": 7,
+      "width": 1,
+      "height": 1
+    },
+    {
+      "id": "MAPSEC_CORMORIA_MT_MIRROH_EXTERIOR",
+      "name": "Mirroh Exterior",
+      "x": 4,
+      "y": 4,
+      "width": 1,
+      "height": 3
+    },
+    {
+      "id": "MAPSEC_CORMORIA_MT_MIRROH_INTERIOR",
+      "name": "Mt. Mirroh",
+      "x": 4,
+      "y": 3,
+      "width": 1,
+      "height": 1
+    },
+    {
+      "id": "MAPSEC_CORMORIA_MT_MIRROH_INTERIOR_B1F",
+      "name": "Mt. Mirroh B1F",
+      "x": 4,
+      "y": 3,
+      "width": 1,
+      "height": 1
+    },
+    {
+      "id": "MAPSEC_CORMORIA_MIRROH_PEAK",
+      "name": "Mt. Mirroh Peak",
+      "x": 3,
+      "y": 0,
+      "width": 1,
+      "height": 1
+    },
+    {
+      "id": "MAPSEC_CORMORIA_STATIC_CAVE",
+      "name": "Static Cave",
+      "x": 12,
+      "y": 5,
+      "width": 1,
+      "height": 1
+    },
+    {
+      "id": "MAPSEC_CORMORIA_MT_MIRROH_INTERIOR_B2F",
+      "name": "Mt. Mirroh B2F",
+      "x": 4,
+      "y": 3,
+      "width": 1,
+      "height": 1
+    },
+    {
+      "id": "MAPSEC_CORMORIA_ROUTE8",
+      "name": "Route 8",
+      "x": 8,
+      "y": 9,
+      "width": 1,
+      "height": 3
+    },
+    {
+      "id": "MAPSEC_CORMORIA_WINTERLILY_HOLLOW",
+      "name": "Winterlily Hollow",
+      "x": 4,
+      "y": 2,
+      "width": 1,
+      "height": 1
+    },
+    {
+      "id": "MAPSEC_CORMORIA_LILY_POND",
+      "name": "Lily Pond",
+      "x": 5,
+      "y": 2,
+      "width": 1,
+      "height": 1
+    },
+    {
+      "id": "MAPSEC_CORMORIA_IVY_RIVER",
+      "name": "Ivy River",
+      "x": 6,
+      "y": 2,
+      "width": 1,
+      "height": 3
+    },
+    {
+      "id": "MAPSEC_CORMORIA_RANGER_INSTITUTE_IVY",
+      "name": "Ranger Institute",
+      "x": 6,
+      "y": 3,
+      "width": 1,
+      "height": 1
+    },
+    {
+      "id": "MAPSEC_CORMORIA_IVY_RIVER_MAIN",
+      "name": "Ivy River",
+      "x": 8,
+      "y": 4,
+      "width": 1,
+      "height": 4
+    },
+    {
+      "id": "MAPSEC_CORMORIA_IVY_RIVER_UNDERPASS",
+      "name": "Ivy Tunnel",
+      "x": 7,
+      "y": 4,
+      "width": 1,
+      "height": 1
+    },
+    {
+      "id": "MAPSEC_CORMORIA_RIVETSHORE_CITY",
+      "name": "Rivetshore City",
+      "x": 8,
+      "y": 12,
+      "width": 1,
+      "height": 1
+    },
+    {
+      "id": "MAPSEC_CORMORIA_LILY_GROTTO",
+      "name": "Lily Grotto",
+      "x": 6,
+      "y": 4,
+      "width": 1,
+      "height": 1
+    },
+    {
+      "id": "MAPSEC_CORMORIA_IVY_FOREST",
+      "name": "Ivy Forest",
+      "x": 9,
+      "y": 5,
+      "width": 1,
+      "height": 1
+    },
+    {
+      "id": "MAPSEC_CORMORIA_SSELEGANT",
+      "name": "S.S. Elegant",
+      "x": 12,
+      "y": 12,
+      "width": 1,
+      "height": 1
+    },
+    {
+      "id": "MAPSEC_CORMORIA_RANGER_INSTITUTE_RIVETSHORE",
+      "name": "Ranger Institute",
+      "x": 8,
+      "y": 13,
+      "width": 1,
+      "height": 1
+    },
+    {
+      "id": "MAPSEC_CORMORIA_UNCHARTED_ISLAND",
+      "name": "Uncharted Isle",
+      "x": 16,
+      "y": 12,
+      "width": 1,
+      "height": 1
+    },
+    {
+      "id": "MAPSEC_CORMORIA_VICTORY_CAPE",
+      "name": "Victory Cape",
+      "x": 22,
+      "y": 12,
+      "width": 1,
+      "height": 1
+    },
+    {
+      "id": "MAPSEC_CORMORIA_VICTORY_ROAD_CORMORIA",
+      "name": "Victory Road",
+      "x": 22,
+      "y": 10,
+      "width": 1,
+      "height": 2
+    },
+    {
+      "id": "MAPSEC_CORMORIA_CHAMPIONSHIP_CORRIDOR",
+      "name": "Champion Corridor",
+      "x": 0,
+      "y": 0,
+      "width": 1,
+      "height": 1
     }
   ]
 }

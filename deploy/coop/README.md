@@ -36,7 +36,7 @@ Run the following from this directory on the target host only when ready to depl
 
 ```sh
 cp .env.example .env
-# Edit the domain, bucket and release image digest in .env.
+# Edit the domain, bucket, release image digest and release catalog in .env.
 bash init-secrets.sh
 # Copy the service account JSON securely to secrets/firebase-service-account.json.
 chmod 444 secrets/firebase-service-account.json
@@ -114,6 +114,11 @@ After a server restart, reconnect clients; don't expect ephemeral WebSocket
 presence to survive. Stable signing keys preserve the identity clients trust.
 Do not run two replicas, including during upgrades. A second database owner must
 fail startup instead of accepting concurrent ephemeral sessions.
+
+A checkpoint written before multi-world travel cannot be decoded by the current
+server; startup refuses and points to `coop-server fresh-start`. That one-time,
+manually confirmed step keeps accounts and resets characters; follow
+[FRESH_START.md](FRESH_START.md).
 
 ## Backups and restore drill
 
@@ -222,9 +227,12 @@ internet session remain deployment smoke checks requiring the target project.
 ## Production releases
 
 Merges to `main` are released automatically by `.github/workflows/deploy.yml`.
-The workflow builds the ROM, sidecar, desktop client and the pinned official
-mGBA archive, regenerates `dist/bridge_manifest.json`, and signs a schema-one
-Windows x86_64 envelope containing exactly eleven fixed runtime artifacts.
+The workflow builds every registered world ROM (Main and Cormoria), the
+sidecar, desktop client and the pinned official mGBA archive, regenerates
+`dist/bridge_manifest.json` from the main world, assembles the region and
+server catalogs, and signs a schema-one Windows x86_64 envelope containing the
+eleven fixed runtime artifacts plus the region catalog and each world's ROM,
+compatibility manifest and player-transfer manifest.
 The signing seed is read only from a protected job environment; it is never
 logged, persisted, or uploaded. A separate Windows job builds and
 Authenticode-signs the stable bootstrapper/MSI. The only GitHub artifact is
@@ -248,10 +256,31 @@ promotion. The server receives `COOP_RELEASE_ROOT=/srv/hoenn` and a read-only
 `/srv/hoenn` parent mount. See [RELEASES.md](RELEASES.md) for the private-pilot
 layout, secure signing, rollback, and verification procedure.
 
+The server also requires a trusted release catalog and refuses to start
+without one, because every world acquisition, snapshot and resume package is
+checked against it. Set both variables in `.env`; `docker compose config`
+fails while either is unset:
+
+| Variable | Meaning |
+| --- | --- |
+| `COOP_PHASE2_RELEASE_CATALOG_PATH` | The schema-3 server build catalog inside the read-only `/srv/hoenn` mount: `/srv/hoenn/server-catalog/<sha256>/server-build-catalog.json`. Pinned arrival saves (`worlds/<N>/arrival.sav`) are loaded from the same directory. This is not the client region catalog `release_catalog.json`. |
+| `COOP_PHASE2_RELEASE_CATALOG_SHA256` | Lowercase hex SHA-256 of the exact catalog bytes (also the directory name), taken from release configuration rather than from the catalog itself. |
+
+A missing, unreadable, oversized (over 64 KiB) or mismatched catalog, or an
+arrival save that fails validation, stops startup with a
+`co-op production startup refused: ...` message. The catalog is read once at
+startup. The release workflow promotes it with `promote-server-catalog.sh`
+and `deploy-release.sh --catalog-path ... --catalog-sha256 ...` rewrites both
+values (and `COOP_IMAGE`) in `.env`, recreates the server and rolls back
+automatically when `/health/ready` does not answer (exit codes 0-5, run
+detached by `deploy-detached.sh`); see [RELEASES.md](RELEASES.md).
+
 Before any runtime build, the workflow streams `probe-release-status.sh` over
 the pinned SSH connection. `ABSENT` means no association or generation exists
 and permits a build. `PENDING` means the association and staging exist but the
 atomic move did not finish; `RELEASED` means the generation is already
 reusable. Both states reuse the recorded full image reference and skip rebuild,
-sign, and upload. A missing counterpart, malformed association, conflicting
-staging copy, or repository mismatch fails closed.
+sign, and upload. A staging upload without an association (`STALE`: the run
+died before promotion) is deleted by `--clean-stale-staging` and rebuilt. A
+release without an association, malformed association, conflicting staging
+copy, or repository mismatch fails closed.

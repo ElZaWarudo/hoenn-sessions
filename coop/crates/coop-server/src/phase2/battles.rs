@@ -12,7 +12,7 @@ use coop_cloud::{
 use coop_protocol::{
     FriendlyBattleRules, IdentityKind, RegionId, TrainerInstanceId, WorldZone, identity_catalog,
 };
-use coop_save::{CharacterSave, PokemonSlot, RegistryContract};
+use coop_save::PokemonSlot;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use uuid::Uuid;
@@ -426,6 +426,10 @@ fn lease_matches(
     fence: LeaseFence,
     now: u64,
 ) -> Result<(), Phase2Error> {
+    if state.handoff_for_member(character_id) {
+        return Err(Phase2Error::Conflict);
+    }
+
     let lease = state
         .leases
         .get(&character_id)
@@ -619,7 +623,7 @@ fn check_idempotency_capacity(
 /// SHA-256("coop-battle-party-v1\0" || count:u8 || each occupied party
 /// Pokémon's exact 100-byte serialized record in party order), lowercase hex.
 /// The source is the latest finalized character.sav, not live unsaved RAM.
-fn party_digest(save: &coop_save::ValidatedSave) -> Result<String, Phase2Error> {
+fn party_digest(save: &coop_save::ValidatedSaveV2) -> Result<String, Phase2Error> {
     Ok(records_digest(&party_records(save)?))
 }
 
@@ -713,7 +717,7 @@ fn expected_party_digest(record: &BattleReservationRecord, index: usize) -> Opti
     }
 }
 
-fn party_records(save: &coop_save::ValidatedSave) -> Result<Vec<[u8; 100]>, Phase2Error> {
+fn party_records(save: &coop_save::ValidatedSaveV2) -> Result<Vec<[u8; 100]>, Phase2Error> {
     let count = save.party_count().map_err(|_| Phase2Error::Conflict)?;
     if count == 0 {
         return Err(Phase2Error::Conflict);
@@ -782,16 +786,8 @@ fn party_anchor(
     let bytes = store.objects.get(&key)?.ok_or(Phase2Error::Conflict)?;
     sav.verify_bytes(&bytes)
         .map_err(|_| Phase2Error::Conflict)?;
-    let registry = RegistryContract::new(
-        coop_protocol::IDENTITY_REGISTRY_VERSION,
-        coop_protocol::IDENTITY_REGISTRY_DIGEST,
-    );
-    let CharacterSave::Version1(save) =
-        coop_save::validate_character_save(&bytes, snapshot.revision.value(), registry)
-            .map_err(|_| Phase2Error::Conflict)?
-    else {
-        return Err(Phase2Error::Conflict);
-    };
+    let save = super::saves::validate_character_sav(&bytes, snapshot.revision)
+        .map_err(|_| Phase2Error::Conflict)?;
     if !save.coop().online_eligible() {
         return Err(Phase2Error::Conflict);
     }
@@ -1147,8 +1143,8 @@ fn wally_ordinal() -> Result<usize, Phase2Error> {
 /// rewritten by the ROM for every finalized save. Every other canonical field
 /// must remain byte-for-byte equivalent, with exactly one newly set Wally bit.
 fn validate_wally_csp_delta(
-    source: &coop_save::ValidatedSave,
-    incoming: &coop_save::ValidatedSave,
+    source: &coop_save::ValidatedSaveV2,
+    incoming: &coop_save::ValidatedSaveV2,
 ) -> Result<(), Phase2Error> {
     let before = source.coop();
     let after = incoming.coop();
@@ -1179,8 +1175,8 @@ fn validate_wally_csp_delta(
 /// damage and item use may change other save areas, but unrelated persistent
 /// flags or script variables cannot ride along on this capability.
 fn validate_wally_story_delta(
-    source: &coop_save::ValidatedSave,
-    incoming: &coop_save::ValidatedSave,
+    source: &coop_save::ValidatedSaveV2,
+    incoming: &coop_save::ValidatedSaveV2,
 ) -> Result<(), Phase2Error> {
     const FLAGS_OFFSET: usize = coop_save::SAVE_BLOCK1_FLAGS_OFFSET;
     const FLAG_BYTES: usize = coop_save::SAVE_BLOCK1_FLAG_BYTES;
@@ -1227,8 +1223,8 @@ pub(crate) fn apply_commit_grant(
     state: &mut super::storage::State,
     actor: AuthenticatedActor,
     request: &SnapshotFinalizeRequest,
-    source_save: &coop_save::ValidatedSave,
-    incoming_save: &coop_save::ValidatedSave,
+    source_save: &coop_save::ValidatedSaveV2,
+    incoming_save: &coop_save::ValidatedSaveV2,
     now: u64,
 ) -> Result<bool, Phase2Error> {
     let source_wally = source_save.wally_victory_road_evidence();
@@ -2003,16 +1999,8 @@ pub(crate) fn peer_party(
     let bytes = store.objects.get(&key)?.ok_or(Phase2Error::Conflict)?;
     sav.verify_bytes(&bytes)
         .map_err(|_| Phase2Error::Conflict)?;
-    let registry = RegistryContract::new(
-        coop_protocol::IDENTITY_REGISTRY_VERSION,
-        coop_protocol::IDENTITY_REGISTRY_DIGEST,
-    );
-    let CharacterSave::Version1(save) =
-        coop_save::validate_character_save(&bytes, anchor.revision.value(), registry)
-            .map_err(|_| Phase2Error::Conflict)?
-    else {
-        return Err(Phase2Error::Conflict);
-    };
+    let save = super::saves::validate_character_sav(&bytes, anchor.revision)
+        .map_err(|_| Phase2Error::Conflict)?;
     if !save.coop().online_eligible() || party_digest(&save)? != manifest_hash {
         return Err(Phase2Error::Conflict);
     }
@@ -2657,6 +2645,7 @@ mod tests {
         let mut bytes = super::super::tests::valid_character_sav(false);
         let mut mon = [0_u8; 100];
         mon[19] = 2; // hasSpecies
+        mon[85] = 0xff; // ROM MAIL_NONE
         mon[28] = 1; // checksum of decrypted species word
         mon[32] = 1; // species 1, personality and OT ID are zero
         let selected_slot = coop_save::SECTORS_PER_SLOT;
@@ -2734,7 +2723,7 @@ mod tests {
         let mut bytes = fixture_party_sav();
         if post_battle_fields {
             for (flag, set) in [(0x7e_usize, true), (0x35a, false)] {
-                let offset = 0x1270 + flag / 8;
+                let offset = coop_save::SAVE_BLOCK1_FLAGS_OFFSET + flag / 8;
                 let logical = 1 + offset / coop_save::SAVE_BLOCK3_CHUNK_OFFSET;
                 let physical = selected_physical(&bytes, logical);
                 let position = (coop_save::SECTORS_PER_SLOT + physical) * coop_save::SECTOR_SIZE
@@ -2773,20 +2762,9 @@ mod tests {
         bytes
     }
 
-    fn validated_fixture_save(bytes: &[u8], revision: u64) -> coop_save::ValidatedSave {
-        match coop_save::validate_character_save(
-            bytes,
-            revision,
-            RegistryContract::new(
-                coop_protocol::IDENTITY_REGISTRY_VERSION,
-                coop_protocol::IDENTITY_REGISTRY_DIGEST,
-            ),
-        )
-        .expect("validated save")
-        {
-            CharacterSave::Version1(save) => *save,
-            CharacterSave::ErasedRevisionZero(_) => panic!("erased save"),
-        }
+    fn validated_fixture_save(bytes: &[u8], revision: u64) -> coop_save::ValidatedSaveV2 {
+        super::super::saves::validate_character_sav(bytes, Revision::new(revision))
+            .expect("validated V2 save")
     }
 
     fn finalize_request_for_grant(
@@ -3012,6 +2990,7 @@ mod tests {
         let snapshot_id = SnapshotId::new(Uuid::new_v4()).expect("snapshot id");
         let snapshot = SnapshotRecord::new(
             snapshot_id,
+            coop_protocol::RomWorldId::new(1).unwrap(),
             SnapshotFence::new(lease.session_id, actor.character_id, lease.session_epoch),
             Revision::new(revision - 1),
             Revision::new(revision),
@@ -3047,16 +3026,7 @@ mod tests {
                 Ok::<_, Phase2Error>(())
             })
             .expect("finalized state");
-        let registry = RegistryContract::new(
-            coop_protocol::IDENTITY_REGISTRY_VERSION,
-            coop_protocol::IDENTITY_REGISTRY_DIGEST,
-        );
-        let CharacterSave::Version1(save) =
-            coop_save::validate_character_save(&bytes, revision, registry)
-                .expect("valid party save")
-        else {
-            panic!("version one")
-        };
+        let save = validated_fixture_save(&bytes, revision);
         party_digest(&save).expect("party digest")
     }
 
@@ -3245,6 +3215,7 @@ mod tests {
 
     fn fixture_party_sav_record() -> [u8; 100] {
         let mut mon = [0_u8; 100];
+        mon[85] = 0xff; // exact ROM MAIL_NONE matches the authored fixture
         mon[19] = 2;
         mon[28] = 1;
         mon[32] = 1;
@@ -5538,7 +5509,7 @@ mod tests {
         );
 
         let mut forged_bytes = wally_story_save(true, true);
-        let offset = 0x1270 + 0x100 / 8;
+        let offset = coop_save::SAVE_BLOCK1_FLAGS_OFFSET + 0x100 / 8;
         let logical = 1 + offset / coop_save::SAVE_BLOCK3_CHUNK_OFFSET;
         let physical = selected_physical(&forged_bytes, logical);
         let position = (coop_save::SECTORS_PER_SLOT + physical) * coop_save::SECTOR_SIZE
@@ -6837,5 +6808,60 @@ mod tests {
             .inspect_battle_consensus(a, group, battle, fa)
             .expect("consensus");
         assert_eq!(view.turns.len(), 40);
+    }
+    #[test]
+    fn both_rom_stage_kinds_fence_battle_reservation_for_either_member() {
+        for paired in [false, true] {
+            for staged in 0..2 {
+                let (app, a, b, group, fa, fb) = fixture();
+                let actors = [a, b];
+                let fences = [fa, fb];
+                app.store
+                    .write_transaction(|state| {
+                        super::super::storage::test_stage_handoff(
+                            state,
+                            actors[staged].character_id,
+                            paired,
+                            app.store.now(),
+                        );
+                        Ok::<_, Phase2Error>(())
+                    })
+                    .unwrap();
+                let before = app
+                    .store
+                    .inspect_state(|state| {
+                        let mut out = Vec::new();
+                        ciborium::into_writer(state, &mut out).unwrap();
+                        out
+                    })
+                    .unwrap();
+                for caller in 0..2 {
+                    assert!(matches!(
+                        app.reserve_battle(
+                            actors[caller],
+                            group,
+                            fences[caller],
+                            BattleReservationRequest {
+                                api_version: ApiVersion::V1,
+                                kind: BattleReservationKind::Friendly,
+                                trainer_id: None,
+                                friendly_rules: None,
+                                idempotency_key: key(9900 + caller as u128),
+                            }
+                        ),
+                        Err(Phase2Error::Conflict)
+                    ));
+                }
+                let after = app
+                    .store
+                    .inspect_state(|state| {
+                        let mut out = Vec::new();
+                        ciborium::into_writer(state, &mut out).unwrap();
+                        out
+                    })
+                    .unwrap();
+                assert_eq!(before, after);
+            }
+        }
     }
 }

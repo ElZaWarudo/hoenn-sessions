@@ -1601,7 +1601,8 @@ static u32 GetBattlerMonData(enum BattlerId battler, struct Pokemon *party, u32 
         size = 1;
         break;
     case REQUEST_MET_LOCATION_BATTLE:
-        dst[0] = GetMonData(&party[monId], MON_DATA_MET_LOCATION);
+        // One-byte wire format: wide locations travel as legacy "none".
+        dst[0] = MetLocationToLegacyByte(GetMonMetLocation(&party[monId]));
         size = 1;
         break;
     case REQUEST_MET_LEVEL_BATTLE:
@@ -1876,7 +1877,7 @@ static void SetBattlerMonData(enum BattlerId battler, struct Pokemon *party, u32
         SetMonData(&party[monId], MON_DATA_POKERUS, &gBattleResources->bufferA[battler][3]);
         break;
     case REQUEST_MET_LOCATION_BATTLE:
-        SetMonData(&party[monId], MON_DATA_MET_LOCATION, &gBattleResources->bufferA[battler][3]);
+        SetMonMetLocation(&party[monId], MetLocationFromLegacyByte(gBattleResources->bufferA[battler][3]));
         break;
     case REQUEST_MET_LEVEL_BATTLE:
         SetMonData(&party[monId], MON_DATA_MET_LEVEL, &gBattleResources->bufferA[battler][3]);

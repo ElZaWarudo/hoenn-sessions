@@ -1,0 +1,60 @@
+Cormoria_GalecrestCity_Pokemart_MapScripts::
+	.byte 0
+
+
+Cormoria_GalecrestCity_Pokemart_EventScript_Clerk::
+# 4 "data//maps/GalecrestCity_Pokemart/scripts.pory"
+	lock
+# 5 "data//maps/GalecrestCity_Pokemart/scripts.pory"
+	faceplayer
+# 6 "data//maps/GalecrestCity_Pokemart/scripts.pory"
+	message Cormoria_gText_HowMayIServeYou
+# 7 "data//maps/GalecrestCity_Pokemart/scripts.pory"
+	waitmessage
+# 8 "data//maps/GalecrestCity_Pokemart/scripts.pory"
+	pokemart Cormoria_GalecrestCity_Pokemart_Inventory
+# 9 "data//maps/GalecrestCity_Pokemart/scripts.pory"
+	msgbox Cormoria_gText_PleaseComeAgain, MSGBOX_DEFAULT
+# 10 "data//maps/GalecrestCity_Pokemart/scripts.pory"
+	release
+	end
+
+
+	.align 2
+# 14 "data//maps/GalecrestCity_Pokemart/scripts.pory"
+Cormoria_GalecrestCity_Pokemart_Inventory:
+# 15 "data//maps/GalecrestCity_Pokemart/scripts.pory"
+	.2byte ITEM_POTION
+# 16 "data//maps/GalecrestCity_Pokemart/scripts.pory"
+	.2byte ITEM_SUPER_POTION
+# 17 "data//maps/GalecrestCity_Pokemart/scripts.pory"
+	.2byte ITEM_REVIVE
+# 18 "data//maps/GalecrestCity_Pokemart/scripts.pory"
+	.2byte ITEM_POKE_BALL
+# 19 "data//maps/GalecrestCity_Pokemart/scripts.pory"
+	.2byte ITEM_GREAT_BALL
+# 20 "data//maps/GalecrestCity_Pokemart/scripts.pory"
+	.2byte ITEM_QUICK_BALL
+# 21 "data//maps/GalecrestCity_Pokemart/scripts.pory"
+	.2byte ITEM_ANTIDOTE
+# 22 "data//maps/GalecrestCity_Pokemart/scripts.pory"
+	.2byte ITEM_PARALYZE_HEAL
+# 23 "data//maps/GalecrestCity_Pokemart/scripts.pory"
+	.2byte ITEM_BURN_HEAL
+# 24 "data//maps/GalecrestCity_Pokemart/scripts.pory"
+	.2byte ITEM_REPEL
+# 25 "data//maps/GalecrestCity_Pokemart/scripts.pory"
+	.2byte ITEM_SUPER_REPEL
+	.2byte ITEM_NONE
+
+Cormoria_GalecrestCity_Pokemart_NPC::
+# 29 "data//maps/GalecrestCity_Pokemart/scripts.pory"
+	msgbox Cormoria_GalecrestCity_Pokemart_NPC_Text_0, MSGBOX_NPC
+	end
+
+
+Cormoria_GalecrestCity_Pokemart_NPC_Text_0:
+# 29 "data//maps/GalecrestCity_Pokemart/scripts.pory"
+	.string "Each town's Poké Mart has unique items\n"
+	.string "on sale. Goes to show that Cormoria's\l"
+	.string "economy isn't fully integrated.$"

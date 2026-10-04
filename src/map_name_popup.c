@@ -207,7 +207,7 @@ static const u16 sMapPopUpTilesPalette_BW_Black[] = {0};
 static const u16 sMapPopUpTilesPalette_BW_White[] = {0};
 #endif
 
-static const u8 sRegionMapSectionId_To_PopUpThemeIdMapping_BW[] =
+static const u8 sRegionMapSectionId_To_PopUpThemeIdMapping_BW[MAPSEC_COUNT - KANTO_MAPSEC_COUNT - 1] =
 {
     [MAPSEC_LITTLEROOT_TOWN] = MAPPOPUP_THEME_BW_DEFAULT,
     [MAPSEC_OLDALE_TOWN] = MAPPOPUP_THEME_BW_DEFAULT,
@@ -686,6 +686,11 @@ static void LoadMapNamePopUpWindowBg(void)
         else
             regionMapSectionId = 0; // Discard kanto region sections;
     }
+
+    // MAPSEC_NONE and unknown sections have no theme entry. Newly registered
+    // worlds use the default theme until they provide their own mapping.
+    if (regionMapSectionId >= ARRAY_COUNT(sMapSectionToThemeId))
+        regionMapSectionId = 0;
 
     if (OW_POPUP_GENERATION == GEN_5)
     {

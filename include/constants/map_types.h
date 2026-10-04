@@ -13,6 +13,8 @@ enum MapType
     MAP_TYPE_UNKNOWN, // Not used by any map.
     MAP_TYPE_INDOOR,
     MAP_TYPE_SECRET_BASE,
+    MAP_TYPE_SNOW,
+    MAP_TYPE_HILL,
 };
 
 enum MapBattleScene

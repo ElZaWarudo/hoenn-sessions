@@ -6716,6 +6716,7 @@ static void PrintEvolutionTargetSpeciesAndMethod(u8 taskId, enum Species species
                     case REGION_GALAR: StringAppend(gStringVar4, COMPOUND_STRING("Galar")); break;
                     case REGION_HISUI: StringAppend(gStringVar4, COMPOUND_STRING("Hisui")); break;
                     case REGION_PALDEA: StringAppend(gStringVar4, COMPOUND_STRING("Paldea")); break;
+                    case REGION_CORMORIA: StringAppend(gStringVar4, COMPOUND_STRING("Cormoria")); break;
                     }
                     break;
                 }

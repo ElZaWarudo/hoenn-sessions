@@ -216,6 +216,20 @@ pub fn resolve_map_coordinates(
     })
 }
 
+/// Resolve a map's region from its globally unique numeric coordinates.
+/// Returns `None` if the map is absent or the generated catalog is ambiguous.
+#[must_use]
+pub fn resolve_unique_map_coordinates(
+    map_group: u16,
+    map_number: u16,
+) -> Option<&'static MapCatalogEntry> {
+    let mut matches = MAP_CATALOG.iter().filter(|entry| {
+        entry.map_group == map_group && entry.map_number == map_number
+    });
+    let first = matches.next()?;
+    matches.next().is_none().then_some(first)
+}
+
 /// Alias for reverse lookup by numeric map coordinates.
 ///
 /// # Errors
@@ -278,7 +292,7 @@ mod tests {
 
     #[test]
     fn generated_catalog_has_complete_unique_coverage() {
-        assert_eq!(MAP_CATALOG.len(), 1344);
+        assert_eq!(MAP_CATALOG.len(), 1509);
 
         let keys: HashSet<_> = MAP_CATALOG
             .iter()
@@ -320,6 +334,12 @@ mod tests {
                 .iter()
                 .any(|entry| { entry.region == RegionId::Johto && entry.map == "NEW_BARK_TOWN" })
         );
+        assert!(
+            MAP_CATALOG.iter().any(|entry| {
+                entry.region == RegionId::Cormoria
+                    && entry.map == "CORMORIA_RIVETSHORE_CITY_HARBOR"
+            })
+        );
     }
 
     #[test]
@@ -345,6 +365,13 @@ mod tests {
 
         let sevii = resolve_map(RegionId::Sevii, "ONE_ISLAND").unwrap();
         assert_eq!(sevii.coordinates(), (37, 12));
+        let cormoria = resolve_map(RegionId::Cormoria, "CORMORIA_RIVETSHORE_CITY_HARBOR")
+            .unwrap();
+        assert_eq!(cormoria.coordinates(), (82, 21));
+        assert_eq!(
+            resolve_map_coordinates(RegionId::Cormoria, 82, 21).unwrap(),
+            cormoria
+        );
         assert!(matches!(
             resolve_map(RegionId::Kanto, "LITTLEROOT_TOWN"),
             Err(ProtocolError::MapRegionMismatch { .. })

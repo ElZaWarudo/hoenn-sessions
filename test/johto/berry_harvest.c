@@ -4,6 +4,7 @@
 #include "event_object_movement.h"
 #include "item.h"
 #include "load_save.h"
+#include "malloc.h"
 #include "overworld.h"
 #include "script.h"
 #include "sprite.h"
@@ -17,11 +18,13 @@
 #include "constants/vars.h"
 #include "test/test.h"
 
-static EWRAM_DATA struct BerryTree sBefore[BERRY_TREES_COUNT];
+static struct BerryTree *sBefore;
 static const u8 sThree[] = _("3");
 
 static void ResetHarvest(void)
 {
+    sBefore = Alloc(BERRY_TREES_COUNT * sizeof(*sBefore));
+    EXPECT(sBefore != NULL);
     SetSaveBlocksPointers(0);
     SetBagItemsPointers();
     ClearBag();
@@ -33,7 +36,7 @@ static void ResetHarvest(void)
     JohtoBerryPlots_InitializeNewGame();
     PlantBerryTree(0, BERRY_ID_ORAN, BERRY_STAGE_BERRIES, FALSE);
     GetBerryTreeInfo(90)->berryYield = 3;
-    memcpy(sBefore, gSaveBlock1Ptr->berryTrees, sizeof(sBefore));
+    memcpy(sBefore, gSaveBlock1Ptr->berryTrees, BERRY_TREES_COUNT * sizeof(*sBefore));
 }
 
 static void ExpectStats(u32 picked, u32 planted)
@@ -67,6 +70,7 @@ TEST("Johto harvesting awards exact berries and regrows independently for anothe
     for (i = 0; i < BERRY_TREES_COUNT; i++)
         if (i != 90)
             EXPECT_EQ(memcmp(&sBefore[i], GetBerryTreeInfo(i), sizeof(sBefore[i])), 0);
+    Free(sBefore);
 }
 
 TEST("Full berry pocket and unavailable Johto plots leave tree bag and statistics unchanged")
@@ -78,7 +82,7 @@ TEST("Full berry pocket and unavailable Johto plots leave tree bag and statistic
     for (i = 0; i < pocket->capacity; i++)
         BagPocket_SetSlotItemIdAndCount(pocket, i, ITEM_ORAN_BERRY, MAX_BAG_ITEM_CAPACITY);
     EXPECT_EQ(JohtoBerryPlots_TryHarvest(90), JOHTO_BERRY_HARVEST_BAG_FULL);
-    EXPECT_EQ(memcmp(sBefore, gSaveBlock1Ptr->berryTrees, sizeof(sBefore)), 0);
+    EXPECT_EQ(memcmp(sBefore, gSaveBlock1Ptr->berryTrees, BERRY_TREES_COUNT * sizeof(*sBefore)), 0);
     for (i = 0; i < pocket->capacity; i++)
     {
         struct ItemSlot slot = BagPocket_GetSlotData(pocket, i);
@@ -93,6 +97,7 @@ TEST("Full berry pocket and unavailable Johto plots leave tree bag and statistic
     GetBerryTreeInfo(90)->berry = BERRY_ID_NONE;
     EXPECT_EQ(JohtoBerryPlots_TryHarvest(90), JOHTO_BERRY_HARVEST_UNAVAILABLE);
     ExpectStats(0, 0);
+    Free(sBefore);
 }
 
 TEST("Johto harvest native validates selected identity and captures original dialogue values")
@@ -129,6 +134,7 @@ TEST("Johto harvest native validates selected identity and captures original dia
     gObjectEvents[0] = objectBefore;
     gSprites[0] = spriteBefore;
     gSelectedObjectEvent = selectedBefore;
+    Free(sBefore);
 }
 
 TEST("Johto harvest native declares save effects before any transaction")
@@ -141,7 +147,8 @@ TEST("Johto harvest native declares save effects before any transaction")
         program[i + 1] = pointer >> (i * 8);
     program[5] = 0x02;
     EXPECT(RunScriptImmediatelyUntilEffect(SCREFF_V1 | SCREFF_SAVE, program, NULL));
-    EXPECT_EQ(memcmp(sBefore, gSaveBlock1Ptr->berryTrees, sizeof(sBefore)), 0);
+    EXPECT_EQ(memcmp(sBefore, gSaveBlock1Ptr->berryTrees, BERRY_TREES_COUNT * sizeof(*sBefore)), 0);
     EXPECT_EQ(CountTotalItemQuantityInBag(ITEM_CHERI_BERRY), 0);
     ExpectStats(0, 0);
+    Free(sBefore);
 }

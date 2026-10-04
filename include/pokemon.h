@@ -295,6 +295,49 @@ struct Pokemon
     u16 spDefense;
 };
 
+// V2 met-location values are carried by the existing metLocation byte and
+// the six bits reserved as PokemonSubstruct0::unused_02.  These helpers are
+// intentionally separate from MON_DATA_MET_LOCATION: callers may only use
+// them after a validated V2 save has established that the marker is V2.
+#define MET_LOCATION_V2_MAX (300)
+#define MET_LOCATION_V2_NONE (301)
+#define MET_LOCATION_V2_LEGACY_251 (0x3FFB)
+#define MET_LOCATION_V2_LEGACY_252 (0x3FFC)
+#define MET_LOCATION_V2_LEGACY_253 (0x3FFD)
+#define MET_LOCATION_V2_LEGACY_254 (0x3FFE)
+#define MET_LOCATION_V2_LEGACY_255 (0x3FFF)
+
+// Returns FALSE for a corrupt or empty Pokemon, an invalid V2 marker, or an
+// unsupported logical value. A failed operation leaves the BoxPokemon
+// unchanged. Callers must first establish the owning save is V2; raw Pokemon
+// bytes alone cannot distinguish V1 marker collisions.
+bool32 GetBoxMonMetLocationV2(const struct BoxPokemon *boxMon, u16 *location);
+bool32 SetBoxMonMetLocationV2(struct BoxPokemon *boxMon, u16 location);
+
+// Logical met-location values for the legacy special bytes 0xFD..0xFF
+// (METLOC_SPECIAL_EGG, METLOC_IN_GAME_TRADE, METLOC_FATEFUL_ENCOUNTER).
+// Cormoria map sections 253..255 share those byte values, so callers that
+// interpret a logical location compare against these instead.
+#define MET_LOCATION_V2_SPECIAL_EGG       MET_LOCATION_V2_LEGACY_253
+#define MET_LOCATION_V2_IN_GAME_TRADE     MET_LOCATION_V2_LEGACY_254
+#define MET_LOCATION_V2_FATEFUL_ENCOUNTER MET_LOCATION_V2_LEGACY_255
+
+// Gameplay met-location accessors. MON_DATA_MET_LOCATION is the raw legacy
+// byte; producers and readers that interpret the location use these instead.
+// When the active save is a met-location-normalized V2 save the V2 codec is
+// used, so map sections 250..300 round-trip exactly. Otherwise (legacy or
+// migration-ambiguous save) the legacy byte is read/written exactly as before
+// and a location with no legacy encoding is stored as "none" (byte 250)
+// instead of wrapping onto a different section. Locations below 250 always
+// produce the same bytes as the legacy setter.
+bool32 IsMetLocationV2FormatActive(void);
+u16 MetLocationFromLegacyByte(u8 legacyByte);
+u8 MetLocationToLegacyByte(u16 location);
+u16 GetBoxMonMetLocation(struct BoxPokemon *boxMon);
+u16 GetMonMetLocation(struct Pokemon *mon);
+void SetBoxMonMetLocation(struct BoxPokemon *boxMon, u16 location);
+void SetMonMetLocation(struct Pokemon *mon, u16 location);
+
 struct MonSpritesGfxManager
 {
     u32 numSprites:4;

@@ -87,7 +87,9 @@ static void HostWriteInboundUnchecked(const struct CoopBridgeMessage *message)
 }
 
 static u32 sSaveSectorProgramCalls;
+#if ROM_WORLD == 1
 static EWRAM_DATA u16 sPresenceBridgeMapData[20 * 20];
+#endif // ROM_WORLD == 1
 
 static void EstablishTestCloudSession(void);
 
@@ -116,6 +118,13 @@ TEST("Cloud Coop wire ABI matches the documented compact layout")
     EXPECT_EQ(offsetof(struct CoopNetBridge, network_to_game), 4632);
     EXPECT_EQ(sizeof(struct CoopNetBridge), 9244);
     EXPECT_EQ(sizeof(struct CoopBridgePlayerState), COOP_PRESENCE_LOCAL_STATE_SIZE);
+    EXPECT_EQ(COOP_NET_BRIDGE_GAME_PROTOCOL_VERSION, 5);
+    EXPECT_EQ(COOP_BRIDGE_MESSAGE_PAIRING_REQUEST, 18);
+    EXPECT_EQ(COOP_BRIDGE_MESSAGE_PROGRESS_OBSERVATION, 19);
+    EXPECT_EQ(COOP_BRIDGE_MESSAGE_PORTAL_TRAVEL_REQUEST, 24);
+    EXPECT_EQ(COOP_BRIDGE_MESSAGE_ARRIVAL_PROOF, 25);
+    EXPECT_EQ(COOP_BRIDGE_MESSAGE_REMOTE_INTERACTION, 0x0111);
+    EXPECT_EQ(COOP_BRIDGE_MESSAGE_ARRIVAL_CHALLENGE, 0x011C);
 }
 
 TEST("Cloud Coop CRC32 matches the canonical check vector")
@@ -1442,6 +1451,8 @@ TEST("Cloud Coop malformed remote lifecycle payload does not consume its outer s
     EXPECT_EQ(message.session_epoch, 17);
 }
 
+// Uses Hoenn map 1.3 (Littleroot), whose header only the Main ROM links.
+#if ROM_WORLD == 1
 TEST("Cloud Coop newer live same epoch SESSION_READY cuts over pending presence")
 {
     struct CoopBridgeMessage message;
@@ -1482,7 +1493,7 @@ TEST("Cloud Coop newer live same epoch SESSION_READY cuts over pending presence"
     };
     struct MapHeader saved_map_header = gMapHeader;
     struct BackupMapLayout saved_backup_map_layout = gBackupMapLayout;
-    struct CoopSaveV1 saved_coop_save;
+    struct CoopSaveV2 saved_coop_save;
     struct PlayerAvatar saved_player_avatar = gPlayerAvatar;
     struct SaveBlock1 *saved_save_block1 = gSaveBlock1Ptr;
     struct ObjectEvent saved_object_event0 = gObjectEvents[0];
@@ -1494,6 +1505,7 @@ TEST("Cloud Coop newer live same epoch SESSION_READY cuts over pending presence"
     MainCallback saved_callback1 = gMain.callback1;
     MainCallback saved_callback2 = gMain.callback2;
     bool8 saved_palette_fade_active = gPaletteFade.active;
+    bool8 saved_controls_locked = ArePlayerFieldControlsLocked();
     u32 i;
 
     if (saved_save_block1 != NULL)
@@ -1555,6 +1567,11 @@ TEST("Cloud Coop newer live same epoch SESSION_READY cuts over pending presence"
     gMain.callback1 = CB1_Overworld;
     gMain.callback2 = CB2_Overworld;
     gPaletteFade.active = FALSE;
+    /* Presence only applies frames in a controllable field. Earlier tests on
+     * the same runner (group travel replays) can leave the field locked, so
+     * set that precondition here like the rest of the overworld fixture. */
+    if (saved_controls_locked)
+        UnlockPlayerFieldControls();
 
     EXPECT(CoopPresence_EncodeSpawn(&spawn, spawn_bytes, sizeof(spawn_bytes)));
     EXPECT(CoopBridgeMessage_Seal(&message,
@@ -1612,7 +1629,10 @@ TEST("Cloud Coop newer live same epoch SESSION_READY cuts over pending presence"
     gMain.callback1 = saved_callback1;
     gMain.callback2 = saved_callback2;
     gPaletteFade.active = saved_palette_fade_active;
+    if (saved_controls_locked)
+        LockPlayerFieldControls();
 }
+#endif // ROM_WORLD == 1
 
 static void EstablishTestCloudSession(void)
 {
@@ -1631,6 +1651,24 @@ static void EstablishTestCloudSession(void)
     EXPECT_EQ(CoopNetBridge_GetCheckpointState(), COOP_CHECKPOINT_STATE_IDLE);
     EXPECT(CoopNetBridge_DequeueGameToNetwork(&message));
     EXPECT_EQ(message.type, COOP_BRIDGE_MESSAGE_ROM_READY);
+    EXPECT(CoopBridgeQueue_IsEmpty(&gCoopNetBridge.game_to_network));
+}
+
+static void DeliverTestOnlineStatus(u32 requestId, u32 sequence, u8 flags)
+{
+    struct CoopOnlineRequest request = { .request_id = requestId, .action = COOP_ONLINE_REFRESH };
+    struct CoopBridgeMessage message;
+    u8 payload[COOP_ONLINE_STATUS_SIZE] = {0};
+
+    EXPECT(CoopNetBridge_SendOnlineRequest(&request));
+    EXPECT(CoopNetBridge_DequeueGameToNetwork(&message));
+    EXPECT_EQ(message.type, COOP_BRIDGE_MESSAGE_ONLINE_REQUEST);
+    payload[0] = requestId;
+    payload[5] = flags;
+    EXPECT(CoopBridgeMessage_Seal(&message, COOP_BRIDGE_MESSAGE_ONLINE_STATUS,
+                                 sequence, 17, payload, sizeof(payload)));
+    EXPECT(CoopNetBridge_EnqueueNetworkToGame(&message));
+    CoopNetBridge_Poll();
     EXPECT(CoopBridgeQueue_IsEmpty(&gCoopNetBridge.game_to_network));
 }
 
@@ -2629,6 +2667,262 @@ TEST("Cloud Coop checkpoint request is online-only and requires drained queues")
     EXPECT(CoopNetBridge_DequeueGameToNetwork(&message));
 }
 
+TEST("Cloud Coop portal request validates stable ID and precedes checkpoint ready")
+{
+    struct CoopBridgeMessage message;
+    char max_id[97];
+    u32 i;
+
+    InitTestBridge();
+    EXPECT_EQ(CoopNetBridge_RequestPortalTravel("to_cormoria"), COOP_CHECKPOINT_REQUEST_REJECTED);
+    EstablishTestCloudSession();
+    EXPECT_EQ(CoopNetBridge_RequestPortalTravel(NULL), COOP_CHECKPOINT_REQUEST_REJECTED);
+    EXPECT_EQ(CoopNetBridge_RequestPortalTravel(""), COOP_CHECKPOINT_REQUEST_REJECTED);
+    EXPECT_EQ(CoopNetBridge_RequestPortalTravel("To_cormoria"), COOP_CHECKPOINT_REQUEST_REJECTED);
+    EXPECT_EQ(CoopNetBridge_RequestPortalTravel("to-cormoria"), COOP_CHECKPOINT_REQUEST_REJECTED);
+    EXPECT_EQ(CoopNetBridge_RequestPortalTravel("to_cormoria/evil"), COOP_CHECKPOINT_REQUEST_REJECTED);
+    EXPECT(CoopBridgeQueue_IsEmpty(&gCoopNetBridge.game_to_network));
+
+    for (i = 0; i < 96; i++)
+        max_id[i] = 'a';
+    max_id[96] = '\0';
+    EXPECT_EQ(CoopNetBridge_RequestPortalTravel(max_id), COOP_CHECKPOINT_REQUEST_STARTED);
+    EXPECT_EQ(CoopNetBridge_GetCheckpointState(), COOP_CHECKPOINT_STATE_WAITING_FOR_GRANT);
+    EXPECT(CoopNetBridge_DequeueGameToNetwork(&message));
+    EXPECT_EQ(message.type, COOP_BRIDGE_MESSAGE_PORTAL_TRAVEL_REQUEST);
+    EXPECT_EQ(message.length, 96);
+    EXPECT_EQ(message.session_epoch, 17);
+    EXPECT(memcmp(message.payload, max_id, 96) == 0);
+    EXPECT(CoopNetBridge_DequeueGameToNetwork(&message));
+    EXPECT_EQ(message.type, COOP_BRIDGE_MESSAGE_CHECKPOINT_READY);
+    EXPECT_EQ(message.length, 0);
+    EXPECT_EQ(message.session_epoch, 17);
+    EXPECT(CoopBridgeQueue_IsEmpty(&gCoopNetBridge.game_to_network));
+    EXPECT_EQ(CoopNetBridge_RequestPortalTravel("to_cormoria"), COOP_CHECKPOINT_REQUEST_REJECTED);
+}
+
+TEST("Harbor script portals queue their fixed world routes only in cloud mode")
+{
+    struct CoopBridgeMessage message;
+    struct ScriptContext ctx = {0};
+
+    InitTestBridge();
+    CoopNetBridge_ScriptPortalAvailable();
+    EXPECT_EQ(gSpecialVar_Result, FALSE);
+    CoopNetBridge_ScriptTravelToCormoria(&ctx);
+    EXPECT_EQ(gSpecialVar_Result, FALSE);
+    /* Offline is final at once: the script is never held for a retry. */
+    EXPECT_EQ(ctx.nativePtr, NULL);
+    EXPECT(!ctx.waitAfterCallNative);
+    /* Only the ROM_READY that bridge init always announces is queued. */
+    PopInitialRomReady();
+
+    EstablishTestCloudSession();
+    CoopNetBridge_ScriptPortalAvailable();
+    EXPECT_EQ(gSpecialVar_Result, TRUE);
+    CoopNetBridge_ScriptTravelToCormoria(&ctx);
+    EXPECT_EQ(gSpecialVar_Result, TRUE);
+    EXPECT(CoopNetBridge_DequeueGameToNetwork(&message));
+    EXPECT_EQ(message.type, COOP_BRIDGE_MESSAGE_PORTAL_TRAVEL_REQUEST);
+    EXPECT_EQ(message.length, 11);
+    EXPECT(memcmp(message.payload, "to_cormoria", 11) == 0);
+    EXPECT(CoopNetBridge_DequeueGameToNetwork(&message));
+    EXPECT_EQ(message.type, COOP_BRIDGE_MESSAGE_CHECKPOINT_READY);
+
+    EstablishTestCloudSession();
+    CoopNetBridge_ScriptTravelToMain(&ctx);
+    EXPECT_EQ(gSpecialVar_Result, TRUE);
+    EXPECT(CoopNetBridge_DequeueGameToNetwork(&message));
+    EXPECT_EQ(message.type, COOP_BRIDGE_MESSAGE_PORTAL_TRAVEL_REQUEST);
+    EXPECT_EQ(message.length, 7);
+    EXPECT(memcmp(message.payload, "to_main", 7) == 0);
+    EXPECT(CoopNetBridge_DequeueGameToNetwork(&message));
+    EXPECT_EQ(message.type, COOP_BRIDGE_MESSAGE_CHECKPOINT_READY);
+}
+
+
+/* Lua delivers inbound frames at VBlank and CoopNetBridge_Poll consumes them
+ * after the frame's callbacks, so the harbor YES runs while an ordinary frame
+ * is still in network_to_game. Player a's v8c ferry refusal: */
+static void HostDeliverInboundBeforeScript(u32 sequence)
+{
+    struct CoopBridgeMessage message;
+    u8 payload[COOP_ONLINE_STATUS_SIZE] = {0};
+
+    payload[0] = 99; /* nobody's request: consumed and ignored by Poll */
+    EXPECT(CoopBridgeMessage_Seal(&message, COOP_BRIDGE_MESSAGE_ONLINE_STATUS,
+                                 sequence, 17, payload, sizeof(payload)));
+    EXPECT(CoopNetBridge_EnqueueNetworkToGame(&message));
+}
+
+/* One emulated frame after the script step: Poll drains inbound. The test
+ * bridge has no overworld, so clear the world-not-ready mark the way a
+ * PlayerState from a ready field does. */
+static void RunTestBridgeFrame(void)
+{
+    CoopNetBridge_Poll();
+    gCoopNetBridge.status_flags &= ~COOP_BRIDGE_STATUS_WORLD_NOT_READY;
+}
+
+static void ExpectQueuedPortal(const char *portal_id, u16 length)
+{
+    struct CoopBridgeMessage message;
+
+    EXPECT(CoopNetBridge_DequeueGameToNetwork(&message));
+    EXPECT_EQ(message.type, COOP_BRIDGE_MESSAGE_PORTAL_TRAVEL_REQUEST);
+    EXPECT_EQ(message.length, length);
+    EXPECT(memcmp(message.payload, portal_id, length) == 0);
+    EXPECT(CoopNetBridge_DequeueGameToNetwork(&message));
+    EXPECT_EQ(message.type, COOP_BRIDGE_MESSAGE_CHECKPOINT_READY);
+    EXPECT(CoopBridgeQueue_IsEmpty(&gCoopNetBridge.game_to_network));
+    EXPECT_EQ(CoopNetBridge_GetCheckpointState(), COOP_CHECKPOINT_STATE_WAITING_FOR_GRANT);
+}
+
+TEST("Harbor YES with an in-flight inbound frame departs on the next frame")
+{
+    struct ScriptContext ctx = {0};
+
+    EstablishTestCloudSession();
+    HostDeliverInboundBeforeScript(2);
+    /* The single-frame gate itself still refuses this frame. */
+    EXPECT_EQ(CoopNetBridge_RequestPortalTravel("to_cormoria"), COOP_CHECKPOINT_REQUEST_REJECTED);
+
+    gSpecialVar_Result = 0xFFFF;
+    CoopNetBridge_ScriptTravelToCormoria(&ctx);
+    /* Held, not refused: VAR_RESULT is undecided and nothing is queued. */
+    EXPECT_EQ(gSpecialVar_Result, 0xFFFF);
+    EXPECT(ctx.nativePtr != NULL);
+    EXPECT(ctx.waitAfterCallNative);
+    EXPECT(CoopBridgeQueue_IsEmpty(&gCoopNetBridge.game_to_network));
+
+    RunTestBridgeFrame();
+    EXPECT(RunScriptCommand(&ctx));
+    EXPECT_EQ(gSpecialVar_Result, TRUE);
+    ExpectQueuedPortal("to_cormoria", 11);
+}
+
+TEST("Harbor YES with an undrained outbound frame departs once Lua drains it")
+{
+    struct ScriptContext ctx = {0};
+    struct CoopBridgeMessage message;
+
+    EstablishTestCloudSession();
+    EXPECT(CoopNetBridge_EnqueueGameToNetwork(COOP_BRIDGE_MESSAGE_PLAYER_STATE, NULL, 0));
+    gSpecialVar_Result = 0xFFFF;
+    CoopNetBridge_ScriptTravelToMain(&ctx);
+    EXPECT_EQ(gSpecialVar_Result, 0xFFFF);
+
+    /* A frame where Lua has not sent yet keeps the script waiting. */
+    EXPECT(RunScriptCommand(&ctx));
+    EXPECT_EQ(gSpecialVar_Result, 0xFFFF);
+
+    EXPECT(CoopNetBridge_DequeueGameToNetwork(&message));
+    EXPECT_EQ(message.type, COOP_BRIDGE_MESSAGE_PLAYER_STATE);
+    EXPECT(RunScriptCommand(&ctx));
+    EXPECT_EQ(gSpecialVar_Result, TRUE);
+    ExpectQueuedPortal("to_main", 7);
+}
+
+TEST("Harbor YES refuses after the bounded window and never queues late")
+{
+    struct ScriptContext ctx = {0};
+    u32 frames;
+
+    EstablishTestCloudSession();
+    HostDeliverInboundBeforeScript(2);
+    gSpecialVar_Result = 0xFFFF;
+    CoopNetBridge_ScriptTravelToCormoria(&ctx);
+    /* The inbound frame is never drained: the voyage is refused after the
+     * window with the existing "can't depart" path, never left hanging. */
+    for (frames = 1; gSpecialVar_Result == 0xFFFF && frames < 1000; frames++)
+        EXPECT(RunScriptCommand(&ctx));
+    EXPECT_EQ(frames, COOP_NET_BRIDGE_PORTAL_REQUEST_FRAMES);
+    EXPECT_EQ(gSpecialVar_Result, FALSE);
+    EXPECT(CoopBridgeQueue_IsEmpty(&gCoopNetBridge.game_to_network));
+    EXPECT_EQ(CoopNetBridge_GetCheckpointState(), COOP_CHECKPOINT_STATE_IDLE);
+
+    /* A later YES starts a fresh window and departs once traffic clears. */
+    gSpecialVar_Result = 0xFFFF;
+    CoopNetBridge_ScriptTravelToCormoria(&ctx);
+    EXPECT_EQ(gSpecialVar_Result, 0xFFFF);
+    RunTestBridgeFrame();
+    EXPECT(RunScriptCommand(&ctx));
+    EXPECT_EQ(gSpecialVar_Result, TRUE);
+    ExpectQueuedPortal("to_cormoria", 11);
+}
+
+TEST("Harbor YES stops retrying when cloud mode is lost")
+{
+    struct ScriptContext ctx = {0};
+
+    EstablishTestCloudSession();
+    HostDeliverInboundBeforeScript(2);
+    gSpecialVar_Result = 0xFFFF;
+    CoopNetBridge_ScriptTravelToCormoria(&ctx);
+    EXPECT_EQ(gSpecialVar_Result, 0xFFFF);
+    InitTestBridge();
+    EXPECT(RunScriptCommand(&ctx));
+    EXPECT_EQ(gSpecialVar_Result, FALSE);
+}
+
+/* The test bridge has no overworld. The first PlayerState publication after
+ * an empty-queue Poll therefore marks the world not ready, and that guard
+ * refuses every checkpoint. Prove the guard, then clear it the way a
+ * PlayerState published from a ready field does. */
+static void ExpectWorldNotReadyThenMarkReady(void)
+{
+    EXPECT(gCoopNetBridge.status_flags & COOP_BRIDGE_STATUS_WORLD_NOT_READY);
+    EXPECT_EQ(CoopNetBridge_RequestPortalTravel("to_cormoria"), COOP_CHECKPOINT_REQUEST_REJECTED);
+    EXPECT_EQ(CoopNetBridge_RequestCheckpoint(), COOP_CHECKPOINT_REQUEST_REJECTED);
+    EXPECT_EQ(CoopNetBridge_GetCheckpointState(), COOP_CHECKPOINT_STATE_IDLE);
+    EXPECT(CoopBridgeQueue_IsEmpty(&gCoopNetBridge.game_to_network));
+    gCoopNetBridge.status_flags &= ~COOP_BRIDGE_STATUS_WORLD_NOT_READY;
+}
+
+TEST("Grouped cloud sessions enqueue region portals and ordinary checkpoints")
+{
+    struct CoopBridgeMessage message;
+
+    EstablishTestCloudSession();
+    DeliverTestOnlineStatus(1, 2, COOP_ONLINE_GROUPED);
+    EXPECT(CoopNetBridge_IsGrouped());
+    EXPECT(CoopBridgeQueue_IsEmpty(&gCoopNetBridge.game_to_network));
+    ExpectWorldNotReadyThenMarkReady();
+
+    CoopNetBridge_ScriptPortalAvailable();
+    EXPECT_EQ(gSpecialVar_Result, TRUE);
+    EXPECT_EQ(CoopNetBridge_RequestPortalTravel("to_cormoria"), COOP_CHECKPOINT_REQUEST_STARTED);
+    EXPECT(CoopNetBridge_DequeueGameToNetwork(&message));
+    EXPECT_EQ(message.type, COOP_BRIDGE_MESSAGE_PORTAL_TRAVEL_REQUEST);
+    EXPECT_EQ(message.length, 11);
+    EXPECT(memcmp(message.payload, "to_cormoria", 11) == 0);
+    EXPECT(CoopNetBridge_DequeueGameToNetwork(&message));
+    EXPECT_EQ(message.type, COOP_BRIDGE_MESSAGE_CHECKPOINT_READY);
+    EXPECT(CoopBridgeQueue_IsEmpty(&gCoopNetBridge.game_to_network));
+
+    EstablishTestCloudSession();
+    DeliverTestOnlineStatus(1, 2, COOP_ONLINE_GROUPED);
+    ExpectWorldNotReadyThenMarkReady();
+    EXPECT_EQ(CoopNetBridge_RequestCheckpoint(), COOP_CHECKPOINT_REQUEST_STARTED);
+    EXPECT(CoopNetBridge_DequeueGameToNetwork(&message));
+    EXPECT_EQ(message.type, COOP_BRIDGE_MESSAGE_CHECKPOINT_READY);
+    EXPECT(CoopBridgeQueue_IsEmpty(&gCoopNetBridge.game_to_network));
+}
+
+TEST("Cloud Coop portal request rejects overlong ID without publishing intent")
+{
+    char overlong_id[98];
+    u32 i;
+
+    EstablishTestCloudSession();
+    for (i = 0; i < 97; i++)
+        overlong_id[i] = 'a';
+    overlong_id[97] = '\0';
+    EXPECT_EQ(CoopNetBridge_RequestPortalTravel(overlong_id), COOP_CHECKPOINT_REQUEST_REJECTED);
+    EXPECT_EQ(CoopNetBridge_GetCheckpointState(), COOP_CHECKPOINT_STATE_IDLE);
+    EXPECT(CoopBridgeQueue_IsEmpty(&gCoopNetBridge.game_to_network));
+}
+
 TEST("Cloud Coop checkpoint grant accepts only a fresh empty current epoch")
 {
     struct CoopBridgeMessage message;
@@ -3001,6 +3295,8 @@ TEST("Cloud Coop production save callback waits for grant after confirmation")
 TEST("Cloud Coop rejected production save callback returns through interactive recovery")
 {
     u32 i;
+    u32 attempts;
+    struct CoopBridgeMessage message;
 
     EstablishTestCloudSession();
     for (i = 0; i < COOP_NET_BRIDGE_QUEUE_CAPACITY; i++)
@@ -3011,7 +3307,132 @@ TEST("Cloud Coop rejected production save callback returns through interactive r
     EXPECT_EQ(CoopStartMenu_TestRunSaveSavingMessageCallback(), COOP_START_MENU_TEST_SAVE_IN_PROGRESS);
     EXPECT_EQ(CoopStartMenu_TestRunSaveDoSaveCallback(), COOP_START_MENU_TEST_SAVE_IN_PROGRESS);
     EXPECT_EQ(CoopNetBridge_GetCheckpointState(), COOP_CHECKPOINT_STATE_IDLE);
-    EXPECT_EQ(CoopStartMenu_TestRunCheckpointAbortCallback(), COOP_START_MENU_TEST_SAVE_CANCELED);
+    /* The outbound ring never drains: the bounded window expires after
+     * exactly COOP_NET_BRIDGE_CHECKPOINT_REQUEST_FRAMES requests (one per
+     * frame) and the save returns through the normal cancellation path. */
+    for (attempts = 1; CoopStartMenu_TestIsSaveCheckpointRetrying() && attempts < 1000; attempts++)
+        EXPECT_EQ(CoopStartMenu_TestRunCurrentSaveCallback(), COOP_START_MENU_TEST_SAVE_IN_PROGRESS);
+    EXPECT_EQ(attempts, COOP_NET_BRIDGE_CHECKPOINT_REQUEST_FRAMES);
+    EXPECT(CoopStartMenu_TestIsSaveAborting());
+    EXPECT_EQ(CoopNetBridge_GetCheckpointState(), COOP_CHECKPOINT_STATE_IDLE);
+    EXPECT_EQ(CoopStartMenu_TestRunCurrentSaveCallback(), COOP_START_MENU_TEST_SAVE_CANCELED);
+    /* Nothing was queued late: only the filler frames are outbound. */
+    for (i = 0; i < COOP_NET_BRIDGE_QUEUE_CAPACITY; i++)
+    {
+        EXPECT(CoopNetBridge_DequeueGameToNetwork(&message));
+        EXPECT_EQ(message.type, COOP_BRIDGE_MESSAGE_ROM_READY);
+    }
+    EXPECT(CoopBridgeQueue_IsEmpty(&gCoopNetBridge.game_to_network));
+    EXPECT_EQ(CoopNetBridge_GetCheckpointState(), COOP_CHECKPOINT_STATE_IDLE);
+    CoopStartMenu_TestSetSaveDryRun(FALSE);
+}
+
+TEST("Start-menu save with an in-flight inbound frame starts on the next frame")
+{
+    struct CoopBridgeMessage message;
+
+    EstablishTestCloudSession();
+    HostDeliverInboundBeforeScript(2);
+    /* The single-frame gate itself still refuses this frame. */
+    EXPECT_EQ(CoopNetBridge_RequestCheckpoint(), COOP_CHECKPOINT_REQUEST_REJECTED);
+
+    CoopStartMenu_TestSetSaveDryRun(TRUE);
+    CoopStartMenu_TestSetCheckpointRequired(TRUE);
+    EXPECT_EQ(CoopStartMenu_TestRunSaveSavingMessageCallback(), COOP_START_MENU_TEST_SAVE_IN_PROGRESS);
+    EXPECT_EQ(CoopStartMenu_TestRunSaveDoSaveCallback(), COOP_START_MENU_TEST_SAVE_IN_PROGRESS);
+    /* Held for a retry, not cancelled, and nothing queued yet. */
+    EXPECT(CoopStartMenu_TestIsSaveCheckpointRetrying());
+    EXPECT(!CoopStartMenu_TestIsSaveAborting());
+    EXPECT_EQ(CoopNetBridge_GetCheckpointState(), COOP_CHECKPOINT_STATE_IDLE);
+    EXPECT(CoopBridgeQueue_IsEmpty(&gCoopNetBridge.game_to_network));
+
+    RunTestBridgeFrame();
+    EXPECT_EQ(CoopStartMenu_TestRunCurrentSaveCallback(), COOP_START_MENU_TEST_SAVE_IN_PROGRESS);
+    EXPECT_EQ(CoopNetBridge_GetCheckpointState(), COOP_CHECKPOINT_STATE_WAITING_FOR_GRANT);
+    EXPECT(CoopNetBridge_DequeueGameToNetwork(&message));
+    EXPECT_EQ(message.type, COOP_BRIDGE_MESSAGE_CHECKPOINT_READY);
+    EXPECT(CoopBridgeQueue_IsEmpty(&gCoopNetBridge.game_to_network));
+
+    DeliverTestGrant(3, 17, 0);
+    EXPECT_EQ(CoopStartMenu_TestRunCurrentSaveCallback(), COOP_START_MENU_TEST_SAVE_SUCCESS);
+    EXPECT_EQ(CoopNetBridge_GetCheckpointState(), COOP_CHECKPOINT_STATE_SAVING);
+    CoopNetBridge_NotifySaveResult(FALSE);
+    CoopStartMenu_TestSetSaveDryRun(FALSE);
+}
+
+TEST("Start-menu save with an undrained outbound frame starts once Lua drains it")
+{
+    struct CoopBridgeMessage message;
+
+    EstablishTestCloudSession();
+    EXPECT(CoopNetBridge_EnqueueGameToNetwork(COOP_BRIDGE_MESSAGE_PLAYER_STATE, NULL, 0));
+    CoopStartMenu_TestSetSaveDryRun(TRUE);
+    CoopStartMenu_TestSetCheckpointRequired(TRUE);
+    EXPECT_EQ(CoopStartMenu_TestRunSaveSavingMessageCallback(), COOP_START_MENU_TEST_SAVE_IN_PROGRESS);
+    EXPECT_EQ(CoopStartMenu_TestRunSaveDoSaveCallback(), COOP_START_MENU_TEST_SAVE_IN_PROGRESS);
+    EXPECT(CoopStartMenu_TestIsSaveCheckpointRetrying());
+
+    /* A frame on which Lua has not sent yet keeps the save waiting. */
+    EXPECT_EQ(CoopStartMenu_TestRunCurrentSaveCallback(), COOP_START_MENU_TEST_SAVE_IN_PROGRESS);
+    EXPECT(CoopStartMenu_TestIsSaveCheckpointRetrying());
+
+    EXPECT(CoopNetBridge_DequeueGameToNetwork(&message));
+    EXPECT_EQ(message.type, COOP_BRIDGE_MESSAGE_PLAYER_STATE);
+    EXPECT_EQ(CoopStartMenu_TestRunCurrentSaveCallback(), COOP_START_MENU_TEST_SAVE_IN_PROGRESS);
+    EXPECT_EQ(CoopNetBridge_GetCheckpointState(), COOP_CHECKPOINT_STATE_WAITING_FOR_GRANT);
+    EXPECT(CoopNetBridge_DequeueGameToNetwork(&message));
+    EXPECT_EQ(message.type, COOP_BRIDGE_MESSAGE_CHECKPOINT_READY);
+    EXPECT(CoopBridgeQueue_IsEmpty(&gCoopNetBridge.game_to_network));
+    CoopStartMenu_TestSetSaveDryRun(FALSE);
+}
+
+TEST("Start-menu save retry fails closed when cloud mode is lost")
+{
+    EstablishTestCloudSession();
+    HostDeliverInboundBeforeScript(2);
+    CoopStartMenu_TestSetSaveDryRun(TRUE);
+    CoopStartMenu_TestSetCheckpointRequired(TRUE);
+    EXPECT_EQ(CoopStartMenu_TestRunSaveSavingMessageCallback(), COOP_START_MENU_TEST_SAVE_IN_PROGRESS);
+    EXPECT_EQ(CoopStartMenu_TestRunSaveDoSaveCallback(), COOP_START_MENU_TEST_SAVE_IN_PROGRESS);
+    EXPECT(CoopStartMenu_TestIsSaveCheckpointRetrying());
+
+    /* An OFFLINE answer after a cloud refusal never falls back to a local
+     * save: the save is cancelled and nothing is queued. */
+    InitTestBridge();
+    PopInitialRomReady();
+    EXPECT(!CoopNetBridge_IsCloudMode());
+    EXPECT_EQ(CoopStartMenu_TestRunCurrentSaveCallback(), COOP_START_MENU_TEST_SAVE_IN_PROGRESS);
+    EXPECT(CoopStartMenu_TestIsSaveAborting());
+    EXPECT_EQ(CoopStartMenu_TestRunCurrentSaveCallback(), COOP_START_MENU_TEST_SAVE_CANCELED);
+    EXPECT(CoopBridgeQueue_IsEmpty(&gCoopNetBridge.game_to_network));
+    CoopStartMenu_TestSetSaveDryRun(FALSE);
+}
+
+TEST("Start-menu save after an expired retry window starts a fresh window")
+{
+    u32 attempts;
+    struct CoopBridgeMessage message;
+
+    EstablishTestCloudSession();
+    HostDeliverInboundBeforeScript(2);
+    CoopStartMenu_TestSetSaveDryRun(TRUE);
+    CoopStartMenu_TestSetCheckpointRequired(TRUE);
+    EXPECT_EQ(CoopStartMenu_TestRunSaveDoSaveCallback(), COOP_START_MENU_TEST_SAVE_IN_PROGRESS);
+    for (attempts = 1; CoopStartMenu_TestIsSaveCheckpointRetrying() && attempts < 1000; attempts++)
+        EXPECT_EQ(CoopStartMenu_TestRunCurrentSaveCallback(), COOP_START_MENU_TEST_SAVE_IN_PROGRESS);
+    EXPECT_EQ(attempts, COOP_NET_BRIDGE_CHECKPOINT_REQUEST_FRAMES);
+    EXPECT(CoopStartMenu_TestIsSaveAborting());
+    EXPECT(CoopBridgeQueue_IsEmpty(&gCoopNetBridge.game_to_network));
+
+    /* The player saves again; the inbound frame is still pending on the
+     * first try and is consumed before the next one. */
+    EXPECT_EQ(CoopStartMenu_TestRunSaveDoSaveCallback(), COOP_START_MENU_TEST_SAVE_IN_PROGRESS);
+    EXPECT(CoopStartMenu_TestIsSaveCheckpointRetrying());
+    RunTestBridgeFrame();
+    EXPECT_EQ(CoopStartMenu_TestRunCurrentSaveCallback(), COOP_START_MENU_TEST_SAVE_IN_PROGRESS);
+    EXPECT_EQ(CoopNetBridge_GetCheckpointState(), COOP_CHECKPOINT_STATE_WAITING_FOR_GRANT);
+    EXPECT(CoopNetBridge_DequeueGameToNetwork(&message));
+    EXPECT_EQ(message.type, COOP_BRIDGE_MESSAGE_CHECKPOINT_READY);
     CoopStartMenu_TestSetSaveDryRun(FALSE);
 }
 

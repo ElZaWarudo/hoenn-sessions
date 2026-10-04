@@ -3,6 +3,7 @@
 #include "constants/event_object_movement.h"
 #include "constants/event_objects.h"
 #include "constants/flags.h"
+#include "constants/cormoria_event_ids.h"
 #include "constants/johto_content.h"
 #include "constants/johto_berry_plots.h"
 #include "constants/items.h"

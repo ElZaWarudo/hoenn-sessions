@@ -2,30 +2,50 @@
 
 use std::{
     fs::{self, OpenOptions},
+    future::Future,
     path::PathBuf,
+    pin::Pin,
     sync::{Arc, Mutex, mpsc},
     thread::JoinHandle,
     time::{SystemTime, UNIX_EPOCH},
 };
 
 use coop_cloud::{
-    AcquireLeaseRequest, ApiVersion, ClientInstanceId, GroupTravelProposalStatus, IdempotencyKey,
-    InvitationCode, ReleaseLeaseRequest, StoryTravelRecoveryAction, StoryTravelRecoveryOutcome,
-    StoryTravelRecoveryView,
+    AcquireLeaseRequest, AcquireWorldLeaseResponse, ApiVersion, ClientInstanceId,
+    GroupRomHandoffAbortRequest, GroupRomHandoffJoinRequest, GroupTravelProposalStatus,
+    HeartbeatLeaseRequest, IdempotencyKey, InvitationCode, OnlineSnapshotRequest,
+    ReleaseLeaseRequest, RuntimeBuildIdentity, StoryTravelRecoveryAction,
+    StoryTravelRecoveryOutcome, StoryTravelRecoveryView,
 };
+use coop_launcher::arrival_verifier::{
+    ArrivalVerificationInput, AuthenticatedArrivalEvidence, verify_arrival,
+};
+use coop_launcher::paired_travel::{PairedJoinIntent, PairedPhase, PairedTerminal};
 use coop_launcher::{
-    ArtifactIdentity, AuthError, AuthSession, BuildCompatibility, CloudApi, CommandSpec, Effect,
-    EpochStore, OsKeychain, RecoveryDiscovery, RecoveryMarker, RecoveryOutcome, RecoveryReconciler,
-    RecoveryResult, RefreshTokenStore, ReleaseReadiness, SessionConfig, SessionError,
-    SessionLifecycle, StartFailure, TrustedManifestKey, UpdateFailure,
+    AcceptedGeneration, ArtifactIdentity, AuthError, AuthSession, BuildCompatibility, CloudApi,
+    CommandSpec, Effect, EpochStore, OsKeychain, RecoveryDiscovery, RecoveryMarker,
+    RecoveryOutcome, RecoveryReconciler, RecoveryResult, RefreshTokenStore, ReleaseReadiness,
+    SessionConfig, SessionError, SessionLifecycle, SessionWorkspace, StartFailure,
+    TrustedManifestKey, TrustedRomCatalog, UpdateFailure, WorldAcquireIntentStore,
     live_requests::{LiveRequest, LiveRequestError, live_request_channel},
-    process::{SupervisedChildren, staged_rom_marker_contents, staged_rom_marker_path},
+    paired_coordinator::{PairedHandoffOutcome, recover_paired_handoff, run_paired_handoff},
+    paired_travel::PairedTravelJournal,
+    process::{
+        SessionSupervisor, SupervisedChildren, staged_rom_marker_contents, staged_rom_marker_path,
+    },
+    rom_travel::{LeaseFenceIdentity, RomTravelJournal, TravelPhase, TravelRecord},
+    session::{PortalTravelSource, SessionRunOutcome},
+    travel_coordinator::{
+        ArrivalVerificationConfig, StageOutcome, commit_acknowledged_handoff,
+        recover_pending_handoff, recover_pending_handoff_before_restore, stage_portal_travel,
+        verify_staged_arrival,
+    },
     update::{GenerationStore, UpdateError},
 };
 use thiserror::Error;
 use tokio::{
     runtime::Runtime,
-    sync::{mpsc as tokio_mpsc, oneshot},
+    sync::{Notify, mpsc as tokio_mpsc, oneshot},
 };
 
 use crate::{
@@ -237,6 +257,7 @@ enum BackendCommand {
     InspectStoryRecovery,
     AbandonStoryRecovery,
     RuntimeStarted(tokio_mpsc::Sender<LiveRequest>),
+    RuntimeLiveRebound(tokio_mpsc::Sender<LiveRequest>),
     RuntimeFinished(RuntimeCompletion),
     Shutdown(mpsc::Sender<()>),
 }
@@ -245,6 +266,16 @@ struct RuntimeHandle {
     stop: Option<oneshot::Sender<()>>,
     /// Requests into the running session; its token and lease stay there.
     live: Option<tokio_mpsc::Sender<LiveRequest>>,
+}
+
+type PendingWorldAcquire = (WorldAcquireIntentStore, AcquireLeaseRequest);
+type ShutdownFuture = Pin<Box<dyn Future<Output = ()> + Send>>;
+
+struct PortalRuntime {
+    catalog: TrustedRomCatalog,
+    journal: RomTravelJournal,
+    paired_journal: PairedTravelJournal,
+    stop: Arc<Notify>,
 }
 
 struct BackendActor {
@@ -261,16 +292,33 @@ struct BackendActor {
     pending_credential_cleanup: Option<String>,
 }
 
-#[derive(Debug)]
 struct RuntimeCompletion {
     auth: Option<AuthSession>,
     outcome: RuntimeOutcome,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum RuntimeOutcome {
     StartupFailed(StartFailure),
     Exited { clean_stop: bool },
+    Continue(Box<NextRuntime>),
+}
+
+struct NextRuntime {
+    api: coop_launcher::ReqwestCloudApi,
+    session: SessionLifecycle,
+    keychain: Arc<dyn RefreshTokenStore>,
+    handoff: coop_launcher::GenerationHandoff,
+    trusted_manifest_key: TrustedManifestKey,
+    epoch_file: PathBuf,
+    workspace_parent: PathBuf,
+    sidecar_path: PathBuf,
+    rom_path: PathBuf,
+    mgba_path: PathBuf,
+    bridge_path: PathBuf,
+    world_intent: Option<PendingWorldAcquire>,
+    shutdown: ShutdownFuture,
+    portal: Option<PortalRuntime>,
+    announce_start: bool,
 }
 
 impl BackendActor {
@@ -358,6 +406,13 @@ impl BackendActor {
                     {
                         runtime.live = Some(live);
                         let _ = events.send(BackendEvent::StartCompleted);
+                    }
+                }
+                BackendCommand::RuntimeLiveRebound(live) => {
+                    if let Some(runtime) = self.runtime.as_mut()
+                        && runtime.stop.is_some()
+                    {
+                        runtime.live = Some(live);
                     }
                 }
                 BackendCommand::RuntimeFinished(completion) => {
@@ -679,12 +734,28 @@ impl BackendActor {
                 return;
             }
         };
-        let Some(manifest) = generation.artifact(ArtifactIdentity::CompatibilityManifest) else {
+        if generation
+            .artifact(ArtifactIdentity::RegionCatalog)
+            .is_none()
+        {
+            // A generation without a trusted region catalog predates
+            // world-bound leases. The server rejects resume for an unbound
+            // lease, so fail closed and let the release check deliver an
+            // update instead of acquiring through the legacy route.
             self.auth = Some(auth);
             let _ = events.send(BackendEvent::StartFailed(StartFailure::NotReady));
             return;
-        };
-        let Some(rom) = generation.artifact(ArtifactIdentity::Rom) else {
+        }
+        self.start_world_runtime(auth, generation, events).await;
+    }
+
+    async fn start_world_runtime(
+        &mut self,
+        mut auth: AuthSession,
+        generation: AcceptedGeneration,
+        events: &mpsc::Sender<BackendEvent>,
+    ) {
+        let Some(catalog_artifact) = generation.artifact(ArtifactIdentity::RegionCatalog) else {
             self.auth = Some(auth);
             let _ = events.send(BackendEvent::StartFailed(StartFailure::NotReady));
             return;
@@ -699,41 +770,576 @@ impl BackendActor {
             let _ = events.send(BackendEvent::StartFailed(StartFailure::NotReady));
             return;
         };
-        let manifest_path = manifest.path().to_owned();
-        let rom_path = rom.path().to_owned();
-        let mgba_path = mgba.path().to_owned();
-        let sidecar_path = sidecar.path().to_owned();
-        let compatibility =
-            match BuildCompatibility::validate(&manifest_path, &rom_path, &mgba_path) {
-                Ok(value) => value,
+        let catalog_digest = hex_digest(catalog_artifact.digest());
+        let catalog = match TrustedRomCatalog::load(catalog_artifact.path(), &catalog_digest) {
+            Ok(catalog) => catalog,
+            Err(_) => {
+                self.auth = Some(auth);
+                let _ = events.send(BackendEvent::StartFailed(StartFailure::NotReady));
+                return;
+            }
+        };
+
+        let intent =
+            match WorldAcquireIntentStore::new(self.config.paths.state_root(), auth.character_id) {
+                Ok(intent) => intent,
                 Err(_) => {
                     self.auth = Some(auth);
-                    let _ = events.send(BackendEvent::StartFailed(StartFailure::NotReady));
+                    let _ = events.send(BackendEvent::StartFailed(StartFailure::Unavailable));
                     return;
                 }
             };
+        let request = match intent.read() {
+            Ok(Some(existing)) => existing.request,
+            Ok(None) => match new_world_acquire_request(auth.character_id) {
+                Ok(request) => request,
+                Err(()) => {
+                    self.auth = Some(auth);
+                    let _ = events.send(BackendEvent::StartFailed(StartFailure::Unavailable));
+                    return;
+                }
+            },
+            Err(_) => {
+                self.auth = Some(auth);
+                let _ = events.send(BackendEvent::StartFailed(StartFailure::Unavailable));
+                return;
+            }
+        };
+        let mut request = match intent.load_or_create(request) {
+            Ok(request) => request,
+            Err(_) => {
+                self.auth = Some(auth);
+                let _ = events.send(BackendEvent::StartFailed(StartFailure::Unavailable));
+                return;
+            }
+        };
+        let response = match SessionLifecycle::acquire_world_with_keychain(
+            &self.api,
+            &mut auth,
+            request,
+            &self.keychain,
+        )
+        .await
+        {
+            Ok(response) => response,
+            Err(coop_launcher::SessionError::AcquireClosed) => {
+                // The server has proved that the durable key can no longer
+                // acquire a lease. Clear only that exact request, then
+                // persist one replacement before retrying once.
+                if intent.clear_exact(request).is_err() {
+                    self.auth = Some(auth);
+                    let _ = events.send(BackendEvent::StartFailed(StartFailure::Unavailable));
+                    return;
+                }
+                request = match new_world_acquire_request(auth.character_id) {
+                    Ok(request) => request,
+                    Err(()) => {
+                        self.auth = Some(auth);
+                        let _ = events.send(BackendEvent::StartFailed(StartFailure::Unavailable));
+                        return;
+                    }
+                };
+                request = match intent.load_or_create(request) {
+                    Ok(request) => request,
+                    Err(_) => {
+                        self.auth = Some(auth);
+                        let _ = events.send(BackendEvent::StartFailed(StartFailure::Unavailable));
+                        return;
+                    }
+                };
+                match SessionLifecycle::acquire_world_with_keychain(
+                    &self.api,
+                    &mut auth,
+                    request,
+                    &self.keychain,
+                )
+                .await
+                {
+                    Ok(response) => response,
+                    Err(_) => {
+                        self.auth = Some(auth);
+                        let _ = events.send(BackendEvent::StartFailed(StartFailure::Unavailable));
+                        return;
+                    }
+                }
+            }
+            Err(_) => {
+                self.auth = Some(auth);
+                let _ = events.send(BackendEvent::StartFailed(StartFailure::Unavailable));
+                return;
+            }
+        };
+        let journal = match RomTravelJournal::new(
+            self.config.paths.state_root().join("travel"),
+            auth.character_id,
+            catalog.world_ids(),
+        ) {
+            Ok(journal) => journal,
+            Err(_) => {
+                let released = SessionLifecycle::release_preacquired_world_lease(
+                    &self.api,
+                    &mut auth,
+                    response,
+                    &self.keychain,
+                )
+                .await
+                .is_ok();
+                if released {
+                    let _ = intent.clear_exact(request);
+                }
+                self.auth = Some(auth);
+                let _ = events.send(BackendEvent::StartFailed(StartFailure::Unavailable));
+                return;
+            }
+        };
+        let paired_path = self.config.paths.state_root().join("paired-travel");
+        let paired_journal = PairedTravelJournal::new(&paired_path, auth.character_id);
+        if fs::create_dir_all(&paired_path).is_err() || paired_journal.read().is_err() {
+            let released = SessionLifecycle::release_preacquired_world_lease(
+                &self.api,
+                &mut auth,
+                response,
+                &self.keychain,
+            )
+            .await
+            .is_ok();
+            if released {
+                let _ = intent.clear_exact(request);
+            }
+            self.auth = Some(auth);
+            let _ = events.send(BackendEvent::StartFailed(StartFailure::Unavailable));
+            return;
+        }
+        let mut journal_record = match journal.read() {
+            Ok(record) => record,
+            Err(_) => {
+                let released = SessionLifecycle::release_preacquired_world_lease(
+                    &self.api,
+                    &mut auth,
+                    response,
+                    &self.keychain,
+                )
+                .await
+                .is_ok();
+                if released {
+                    let _ = intent.clear_exact(request);
+                }
+                self.auth = Some(auth);
+                let _ = events.send(BackendEvent::StartFailed(StartFailure::Unavailable));
+                return;
+            }
+        };
+        // A paired commit can land between the server transaction and the
+        // local journal append. Reconcile that durable state before comparing
+        // the acquired world with the solo journal. An unresolved paired
+        // attempt is deliberately fail-closed: loading either ROM would risk
+        // allowing one member to continue from the old world.
+        let mut paired_record = match paired_journal.read() {
+            Ok(record) => record,
+            Err(_) => {
+                let released = SessionLifecycle::release_preacquired_world_lease(
+                    &self.api,
+                    &mut auth,
+                    response,
+                    &self.keychain,
+                )
+                .await
+                .is_ok();
+                if released {
+                    let _ = intent.clear_exact(request);
+                }
+                self.auth = Some(auth);
+                let _ = events.send(BackendEvent::StartFailed(StartFailure::Unavailable));
+                return;
+            }
+        };
+        if let Some(record) = &paired_record {
+            if matches!(
+                record.phase,
+                PairedPhase::JoinIntent
+                    | PairedPhase::AttemptKnown
+                    | PairedPhase::Staged
+                    | PairedPhase::ArrivalVerified
+            ) {
+                let recovered = recover_paired_handoff(&self.api, &auth, &paired_journal).await;
+                if !matches!(
+                    recovered,
+                    Ok(PairedHandoffOutcome::Aborted | PairedHandoffOutcome::Committed(_))
+                ) {
+                    let released = SessionLifecycle::release_preacquired_world_lease(
+                        &self.api,
+                        &mut auth,
+                        response,
+                        &self.keychain,
+                    )
+                    .await
+                    .is_ok();
+                    if released {
+                        let _ = intent.clear_exact(request);
+                    }
+                    self.auth = Some(auth);
+                    let _ = events.send(BackendEvent::StartFailed(StartFailure::Unavailable));
+                    return;
+                }
+                paired_record = match paired_journal.read() {
+                    Ok(record) => record,
+                    Err(_) => {
+                        let released = SessionLifecycle::release_preacquired_world_lease(
+                            &self.api,
+                            &mut auth,
+                            response,
+                            &self.keychain,
+                        )
+                        .await
+                        .is_ok();
+                        if released {
+                            let _ = intent.clear_exact(request);
+                        }
+                        self.auth = Some(auth);
+                        let _ = events.send(BackendEvent::StartFailed(StartFailure::Unavailable));
+                        return;
+                    }
+                };
+            }
+        }
+        if let Some(record) = &paired_record {
+            if matches!(record.phase, PairedPhase::Committed | PairedPhase::Adopted) {
+                let Some(PairedTerminal::Committed(commit)) = record.terminal.as_ref() else {
+                    self.auth = Some(auth);
+                    let _ = events.send(BackendEvent::StartFailed(StartFailure::Unavailable));
+                    return;
+                };
+                if record.phase == PairedPhase::Committed {
+                    if response.active_world_id != commit.own_world_id {
+                        self.auth = Some(auth);
+                        let _ = events.send(BackendEvent::StartFailed(StartFailure::NotReady));
+                        return;
+                    }
+                    if journal_record.is_none()
+                        && journal.initialize(record.intent.source_world_id).is_err()
+                    {
+                        self.auth = Some(auth);
+                        let _ = events.send(BackendEvent::StartFailed(StartFailure::Unavailable));
+                        return;
+                    }
+                    if journal.adopt_paired_commit(record).is_err()
+                        || paired_journal
+                            .record_adopted(record.intent.request.client_intent_key)
+                            .is_err()
+                    {
+                        self.auth = Some(auth);
+                        let _ = events.send(BackendEvent::StartFailed(StartFailure::Unavailable));
+                        return;
+                    }
+                    journal_record = match journal.read() {
+                        Ok(record) => record,
+                        Err(_) => {
+                            self.auth = Some(auth);
+                            let _ =
+                                events.send(BackendEvent::StartFailed(StartFailure::Unavailable));
+                            return;
+                        }
+                    };
+                    let solo_adopted = journal_record.as_ref().is_some_and(|solo| {
+                        solo.phase == TravelPhase::Committed
+                            && solo.active_world == commit.own_world_id
+                            && solo.destination_world == Some(commit.own_world_id)
+                            && solo.server_stage_snapshot_id == Some(commit.own_snapshot_id)
+                    });
+                    if !solo_adopted {
+                        // The server has already committed this paired handoff.
+                        // Preserve the auth fence and lease for recovery instead
+                        // of releasing a destination that may still be in use.
+                        self.auth = Some(auth);
+                        let _ = events.send(BackendEvent::StartFailed(StartFailure::Unavailable));
+                        return;
+                    }
+                } else {
+                    // An Adopted receipt is historical. The solo journal may
+                    // already describe a later ordinary travel, so compare it
+                    // with the currently acquired world instead of the old
+                    // paired destination. A solo ArrivalAcknowledged record
+                    // is also valid: the normal solo recovery below must be
+                    // allowed to replay its remote commit.
+                    let solo_matches = journal_record.as_ref().is_some_and(|solo| {
+                        solo.active_world == response.active_world_id
+                            || (solo.phase == TravelPhase::ArrivalAcknowledged
+                                && solo.destination_world == Some(response.active_world_id))
+                    });
+                    if !solo_matches {
+                        self.auth = Some(auth);
+                        let _ = events.send(BackendEvent::StartFailed(StartFailure::Unavailable));
+                        return;
+                    }
+                }
+            }
+        }
+        // A crash can occur after the server commits but before the local
+        // journal records Committed. A fresh acquire may therefore already
+        // return the destination world. Keep that response so the exact
+        // commit key can be replayed below instead of rejecting a valid
+        // handoff as a world mismatch.
+        let remote_committed = journal_record.as_ref().is_some_and(|record| {
+            record.phase == TravelPhase::ArrivalAcknowledged
+                && record.active_world != response.active_world_id
+                && record.destination_world == Some(response.active_world_id)
+        });
+        let pending_handoff = journal_record.as_ref().is_some_and(|record| {
+            matches!(
+                record.phase,
+                TravelPhase::PrepareIntent
+                    | TravelPhase::Prepared
+                    | TravelPhase::SourceSaved
+                    | TravelPhase::DestinationReady
+                    | TravelPhase::Launched
+                    | TravelPhase::ArrivalAcknowledged
+            ) && !remote_committed
+        });
+        match journal_record {
+            Some(record)
+                if record.active_world != response.active_world_id && !remote_committed =>
+            {
+                let released = SessionLifecycle::release_preacquired_world_lease(
+                    &self.api,
+                    &mut auth,
+                    response,
+                    &self.keychain,
+                )
+                .await
+                .is_ok();
+                if released {
+                    let _ = intent.clear_exact(request);
+                }
+                self.auth = Some(auth);
+                let _ = events.send(BackendEvent::StartFailed(StartFailure::NotReady));
+                return;
+            }
+            Some(_) => {}
+            None => {
+                if journal.initialize(response.active_world_id).is_err() {
+                    let released = SessionLifecycle::release_preacquired_world_lease(
+                        &self.api,
+                        &mut auth,
+                        response,
+                        &self.keychain,
+                    )
+                    .await
+                    .is_ok();
+                    if released {
+                        let _ = intent.clear_exact(request);
+                    }
+                    self.auth = Some(auth);
+                    let _ = events.send(BackendEvent::StartFailed(StartFailure::Unavailable));
+                    return;
+                }
+            }
+        }
+        let settled = if pending_handoff {
+            let result =
+                recover_pending_handoff_before_restore(&self.api, &auth, &response, &journal).await;
+            matches!(result, Ok(StageOutcome::Aborted))
+        } else {
+            true
+        };
+        if !settled {
+            let released = SessionLifecycle::release_preacquired_world_lease(
+                &self.api,
+                &mut auth,
+                response,
+                &self.keychain,
+            )
+            .await
+            .is_ok();
+            if released {
+                let _ = intent.clear_exact(request);
+            }
+            self.auth = Some(auth);
+            let _ = events.send(BackendEvent::StartFailed(StartFailure::Unavailable));
+            return;
+        }
+        let selected = match catalog.world(response.active_world_id) {
+            Ok(selected) => selected,
+            Err(_) => {
+                let released = SessionLifecycle::release_preacquired_world_lease(
+                    &self.api,
+                    &mut auth,
+                    response,
+                    &self.keychain,
+                )
+                .await
+                .is_ok();
+                if released {
+                    let _ = intent.clear_exact(request);
+                }
+                self.auth = Some(auth);
+                let _ = events.send(BackendEvent::StartFailed(StartFailure::NotReady));
+                return;
+            }
+        };
+        let compatibility = match BuildCompatibility::validate(
+            &selected.bridge_path,
+            &selected.rom_path,
+            mgba.path(),
+        ) {
+            Ok(compatibility) => compatibility,
+            Err(_) => {
+                let released = SessionLifecycle::release_preacquired_world_lease(
+                    &self.api,
+                    &mut auth,
+                    response,
+                    &self.keychain,
+                )
+                .await
+                .is_ok();
+                if released {
+                    let _ = intent.clear_exact(request);
+                }
+                self.auth = Some(auth);
+                let _ = events.send(BackendEvent::StartFailed(StartFailure::NotReady));
+                return;
+            }
+        };
+        if selected.check_compatibility(&compatibility).is_err() {
+            let released = SessionLifecycle::release_preacquired_world_lease(
+                &self.api,
+                &mut auth,
+                response,
+                &self.keychain,
+            )
+            .await
+            .is_ok();
+            if released {
+                let _ = intent.clear_exact(request);
+            }
+            self.auth = Some(auth);
+            let _ = events.send(BackendEvent::StartFailed(StartFailure::NotReady));
+            return;
+        }
+
+        let rom_path = selected.rom_path.clone();
+        let sidecar_path = sidecar.path().to_owned();
+        let mgba_path = mgba.path().to_owned();
         let handoff = generation.handoff();
-        let api = self.api.clone();
-        let keychain = Arc::clone(&self.keychain);
-        let paths = self.config.paths.clone();
-        let trusted_manifest_key = self.config.runtime.manifest_key.clone();
-        let (stop_tx, stop_rx) = oneshot::channel();
-        let commands = self.commands.clone();
         let bridge_path = handoff.path().join("bridge");
+        let config = SessionConfig {
+            client_instance_id: response.lease.client_instance_id,
+            rom_world_id: response.active_world_id,
+            manifest: compatibility,
+            trusted_manifest_key: self.config.runtime.manifest_key.clone(),
+            epoch_store: EpochStore::new(self.config.paths.epoch_file()),
+            workspace_parent: self.config.paths.workspace_parent().to_owned(),
+            bridge_lua_dir: bridge_path.clone(),
+        };
+        let mut session = match SessionLifecycle::from_world_lease_with_keychain(
+            &self.api,
+            auth,
+            config,
+            Arc::clone(&self.keychain),
+            response,
+        )
+        .await
+        {
+            Ok(session) => session,
+            Err(error) => {
+                #[cfg(debug_assertions)]
+                eprintln!("test diagnostic: world session materialization failed: {error:?}");
+                let _ = events.send(BackendEvent::StartFailed(StartFailure::Unavailable));
+                return;
+            }
+        };
+        let cold_source_resume = journal.read().ok().flatten().is_some_and(|record| {
+            record.phase == TravelPhase::Aborted
+                && record.active_world == session.rom_world_id()
+                && record.source_revision == Some(session.revision)
+        });
+        if cold_source_resume && session.discard_resume_after_aborted_handoff().is_err() {
+            let released = session
+                .release_lease_keep_credentials(&self.api)
+                .await
+                .is_ok();
+            if released {
+                let _ = intent.clear_exact(request);
+            }
+            self.auth = Some(session.auth);
+            let _ = events.send(BackendEvent::StartFailed(StartFailure::Unavailable));
+            return;
+        }
+        match journal.read() {
+            Ok(Some(record)) => match record.phase {
+                TravelPhase::PrepareIntent
+                | TravelPhase::Prepared
+                | TravelPhase::SourceSaved
+                | TravelPhase::DestinationReady
+                | TravelPhase::Launched
+                | TravelPhase::ArrivalAcknowledged
+                    if !remote_committed =>
+                {
+                    if !matches!(
+                        recover_pending_handoff(&self.api, &session, &journal).await,
+                        Ok(StageOutcome::Aborted)
+                    ) {
+                        self.auth = Some(session.auth);
+                        let _ = events.send(BackendEvent::StartFailed(StartFailure::Unavailable));
+                        return;
+                    }
+                }
+                TravelPhase::ArrivalAcknowledged if remote_committed => {
+                    if commit_acknowledged_handoff(&self.api, &session.auth, &journal, None)
+                        .await
+                        .is_err()
+                    {
+                        self.auth = Some(session.auth);
+                        let _ = events.send(BackendEvent::StartFailed(StartFailure::Unavailable));
+                        return;
+                    }
+                }
+                _ => {}
+            },
+            Ok(None) => {}
+            Err(_) => {
+                self.auth = Some(session.auth);
+                let _ = events.send(BackendEvent::StartFailed(StartFailure::Unavailable));
+                return;
+            }
+        }
+        let api = self.api.clone();
+        let (stop_tx, stop_rx) = oneshot::channel();
+        let stop_signal = Arc::new(Notify::new());
+        let stop_relay = Arc::clone(&stop_signal);
         tokio::spawn(async move {
-            let result = run_runtime(
-                api,
-                keychain,
-                auth,
-                handoff,
-                compatibility,
-                trusted_manifest_key,
-                sidecar_path,
-                rom_path,
-                mgba_path,
-                bridge_path,
-                paths,
-                stop_rx,
+            let _ = stop_rx.await;
+            stop_relay.notify_one();
+        });
+        let portal = PortalRuntime {
+            catalog,
+            journal,
+            paired_journal,
+            stop: Arc::clone(&stop_signal),
+        };
+        let trusted_manifest_key = self.config.runtime.manifest_key.clone();
+        let epoch_file = self.config.paths.epoch_file().to_owned();
+        let workspace_parent = self.config.paths.workspace_parent().to_owned();
+        let keychain = Arc::clone(&self.keychain);
+        let commands = self.commands.clone();
+        tokio::spawn(async move {
+            let result = run_runtime_chain(
+                NextRuntime {
+                    api,
+                    session,
+                    keychain,
+                    handoff,
+                    trusted_manifest_key,
+                    epoch_file,
+                    workspace_parent,
+                    sidecar_path,
+                    rom_path,
+                    mgba_path,
+                    bridge_path,
+                    world_intent: Some((intent, request)),
+                    shutdown: Box::pin(async move { stop_signal.notified().await }),
+                    portal: Some(portal),
+                    announce_start: true,
+                },
                 &commands,
             )
             .await;
@@ -780,6 +1386,12 @@ impl BackendActor {
                     return;
                 }
             },
+            RecoveryMarker::OrphanSave => {
+                let _ = events.send(BackendEvent::RecoveryReconciled(
+                    RecoveryResult::StillUncertain,
+                ));
+                return;
+            }
         };
         let auth = match self.take_or_resume_auth().await {
             Ok(auth) => auth,
@@ -790,8 +1402,10 @@ impl BackendActor {
                 return;
             }
         };
-        let config = match self.session_config(client_instance_id) {
-            Ok(config) => config,
+        // A generation without a trusted region catalog cannot bind a lease
+        // to a ROM world, and the server rejects resume for an unbound lease.
+        let selection = match self.recovery_world_selection() {
+            Ok(selection) => selection,
             Err(_) => {
                 self.auth = Some(auth);
                 let _ = events.send(BackendEvent::RecoveryReconciled(
@@ -800,26 +1414,32 @@ impl BackendActor {
                 return;
             }
         };
-        let result = match RecoveryReconciler::reconcile(
-            &self.api,
-            auth,
-            config,
-            Some(self.keychain.clone()),
-        )
-        .await
-        {
-            Ok(session) => {
-                self.auth = Some(session.auth);
-                match session.outcome {
-                    RecoveryOutcome::AuthorizationMissing => RecoveryResult::StillUncertain,
-                    RecoveryOutcome::NoEvidence
-                    | RecoveryOutcome::RetiredLegacy
-                    | RecoveryOutcome::RetiredCommittedV2
-                    | RecoveryOutcome::CommittedV2 => RecoveryResult::Reconciled,
-                }
+        // Recovery owns a durable acquire intent separate from the play
+        // intent: it is bound to the marker's prior client instance, while
+        // play mints its own instance.
+        let intent = match WorldAcquireIntentStore::new(
+            self.config.paths.state_root().join("recovery-acquire"),
+            auth.character_id,
+        ) {
+            Ok(intent) => intent,
+            Err(_) => {
+                self.auth = Some(auth);
+                let _ = events.send(BackendEvent::RecoveryReconciled(
+                    RecoveryResult::StillUncertain,
+                ));
+                return;
             }
-            Err(_) => RecoveryResult::StillUncertain,
         };
+        let (result, auth) = reconcile_recovery_with_world(
+            &self.api,
+            &self.keychain,
+            auth,
+            &intent,
+            client_instance_id,
+            |response| selection.session_config(response),
+        )
+        .await;
+        self.auth = auth;
         let _ = events.send(BackendEvent::RecoveryReconciled(result));
     }
 
@@ -967,35 +1587,220 @@ impl BackendActor {
         Ok(())
     }
 
-    fn session_config(
-        &self,
-        client_instance_id: ClientInstanceId,
-    ) -> Result<SessionConfig, BackendError> {
+    /// Loads the accepted generation's trusted region catalog for recovery.
+    /// The world itself is chosen later from the server's acquire response.
+    fn recovery_world_selection(&self) -> Result<RecoveryWorldSelection, BackendError> {
         let now = now_seconds().map_err(|_| BackendError::Store)?;
         let generation = self
             .store
             .open_accepted_current(self.release.trusted_key(), now)
             .map_err(|_| BackendError::Store)?;
-        let manifest = generation
-            .artifact(ArtifactIdentity::CompatibilityManifest)
-            .ok_or(BackendError::Store)?;
-        let rom = generation
-            .artifact(ArtifactIdentity::Rom)
+        let catalog_artifact = generation
+            .artifact(ArtifactIdentity::RegionCatalog)
             .ok_or(BackendError::Store)?;
         let mgba = generation
             .artifact(ArtifactIdentity::ManagedMgba)
             .ok_or(BackendError::Store)?;
-        let compatibility = BuildCompatibility::validate(manifest.path(), rom.path(), mgba.path())
-            .map_err(|_| BackendError::Store)?;
-        Ok(SessionConfig {
-            client_instance_id,
-            manifest: compatibility,
-            trusted_manifest_key: self.config.runtime.manifest_key.clone(),
-            epoch_store: EpochStore::new(self.config.paths.epoch_file()),
+        let catalog = TrustedRomCatalog::load(
+            catalog_artifact.path(),
+            &hex_digest(catalog_artifact.digest()),
+        )
+        .map_err(|_| BackendError::Store)?;
+        Ok(RecoveryWorldSelection {
+            catalog,
+            mgba_path: mgba.path().to_owned(),
+            manifest_key: self.config.runtime.manifest_key.clone(),
+            epoch_file: self.config.paths.epoch_file().to_owned(),
             workspace_parent: self.config.paths.workspace_parent().to_owned(),
             bridge_lua_dir: generation.handoff().path().join("bridge"),
         })
     }
+}
+
+/// Local inputs for building a recovery session once the server has named
+/// the active world.
+struct RecoveryWorldSelection {
+    catalog: TrustedRomCatalog,
+    mgba_path: PathBuf,
+    manifest_key: TrustedManifestKey,
+    epoch_file: PathBuf,
+    workspace_parent: PathBuf,
+    bridge_lua_dir: PathBuf,
+}
+
+impl RecoveryWorldSelection {
+    /// Mirrors `start_world_runtime`: the server-selected world must be in
+    /// the trusted catalog and its pinned ROM must pass compatibility.
+    fn session_config(&self, response: &AcquireWorldLeaseResponse) -> Result<SessionConfig, ()> {
+        let selected = self
+            .catalog
+            .world(response.active_world_id)
+            .map_err(|_| ())?;
+        let compatibility = BuildCompatibility::validate(
+            &selected.bridge_path,
+            &selected.rom_path,
+            &self.mgba_path,
+        )
+        .map_err(|_| ())?;
+        selected
+            .check_compatibility(&compatibility)
+            .map_err(|_| ())?;
+        Ok(SessionConfig {
+            client_instance_id: response.lease.client_instance_id,
+            rom_world_id: response.active_world_id,
+            manifest: compatibility,
+            trusted_manifest_key: self.manifest_key.clone(),
+            epoch_store: EpochStore::new(self.epoch_file.clone()),
+            workspace_parent: self.workspace_parent.clone(),
+            bridge_lua_dir: self.bridge_lua_dir.clone(),
+        })
+    }
+}
+
+/// Crash recovery under a world-bound lease.
+///
+/// The request is persisted in `intent` before it is sent and carries the
+/// marker's prior client instance. A closed key (410) is rotated once with a
+/// fresh idempotency key for the same instance. When `configure` cannot map
+/// the server's `active_world_id` to a compatible local world, the lease is
+/// released without materializing a session and the evidence is untouched.
+/// The intent is cleared only after the server confirmed the release.
+async fn reconcile_recovery_with_world<A: CloudApi>(
+    api: &A,
+    keychain: &Arc<dyn RefreshTokenStore>,
+    mut auth: AuthSession,
+    intent: &WorldAcquireIntentStore,
+    client_instance_id: ClientInstanceId,
+    configure: impl FnOnce(&AcquireWorldLeaseResponse) -> Result<SessionConfig, ()>,
+) -> (RecoveryResult, Option<AuthSession>) {
+    let Ok(mut request) =
+        recovery_acquire_request(api, keychain, &mut auth, intent, client_instance_id).await
+    else {
+        return (RecoveryResult::StillUncertain, Some(auth));
+    };
+    let response = match SessionLifecycle::acquire_world_with_keychain(
+        api, &mut auth, request, keychain,
+    )
+    .await
+    {
+        Ok(response) => response,
+        Err(SessionError::AcquireClosed) => {
+            // The server proved this exact key can no longer acquire.
+            // Rotate only the key; V2 recovery keeps the prior instance.
+            if intent.clear_exact(request).is_err() {
+                return (RecoveryResult::StillUncertain, Some(auth));
+            }
+            request = match persist_recovery_request(intent, auth.character_id, client_instance_id)
+            {
+                Ok(request) => request,
+                Err(()) => return (RecoveryResult::StillUncertain, Some(auth)),
+            };
+            match SessionLifecycle::acquire_world_with_keychain(api, &mut auth, request, keychain)
+                .await
+            {
+                Ok(response) => response,
+                Err(_) => return (RecoveryResult::StillUncertain, Some(auth)),
+            }
+        }
+        Err(_) => return (RecoveryResult::StillUncertain, Some(auth)),
+    };
+    let config = match configure(&response) {
+        Ok(config)
+            if config.rom_world_id == response.active_world_id
+                && config.client_instance_id == client_instance_id =>
+        {
+            config
+        }
+        _ => {
+            if SessionLifecycle::release_preacquired_world_lease(api, &mut auth, response, keychain)
+                .await
+                .is_ok()
+            {
+                let _ = intent.clear_exact(request);
+            }
+            return (RecoveryResult::StillUncertain, Some(auth));
+        }
+    };
+    match RecoveryReconciler::reconcile_world_lease(
+        api,
+        auth,
+        config,
+        Arc::clone(keychain),
+        response,
+    )
+    .await
+    {
+        Ok(session) => {
+            // Success always follows a confirmed lease release.
+            let _ = intent.clear_exact(request);
+            let result = match session.outcome {
+                RecoveryOutcome::AuthorizationMissing => RecoveryResult::StillUncertain,
+                RecoveryOutcome::NoEvidence
+                | RecoveryOutcome::RetiredLegacy
+                | RecoveryOutcome::RetiredCommittedV2
+                | RecoveryOutcome::CommittedV2 => RecoveryResult::Reconciled,
+            };
+            (result, Some(session.auth))
+        }
+        // The intent stays: a retry replays it and learns whether the lease
+        // is still live or closed before minting a replacement.
+        Err(_) => (RecoveryResult::StillUncertain, None),
+    }
+}
+
+/// Returns the durable recovery request for `client_instance_id`. A stale
+/// intent left for other evidence is settled with the server first.
+async fn recovery_acquire_request<A: CloudApi>(
+    api: &A,
+    keychain: &Arc<dyn RefreshTokenStore>,
+    auth: &mut AuthSession,
+    intent: &WorldAcquireIntentStore,
+    client_instance_id: ClientInstanceId,
+) -> Result<AcquireLeaseRequest, ()> {
+    match intent.read() {
+        Ok(Some(existing)) if existing.request.client_instance_id == client_instance_id => {
+            return Ok(existing.request);
+        }
+        Ok(Some(existing)) => {
+            match SessionLifecycle::acquire_world_with_keychain(
+                api,
+                auth,
+                existing.request,
+                keychain,
+            )
+            .await
+            {
+                Ok(response) => {
+                    SessionLifecycle::release_preacquired_world_lease(
+                        api, auth, response, keychain,
+                    )
+                    .await
+                    .map_err(|_| ())?;
+                }
+                Err(SessionError::AcquireClosed) => {}
+                Err(_) => return Err(()),
+            }
+            intent.clear_exact(existing.request).map_err(|_| ())?;
+        }
+        Ok(None) => {}
+        Err(_) => return Err(()),
+    }
+    persist_recovery_request(intent, auth.character_id, client_instance_id)
+}
+
+fn persist_recovery_request(
+    intent: &WorldAcquireIntentStore,
+    character_id: coop_cloud::CharacterId,
+    client_instance_id: ClientInstanceId,
+) -> Result<AcquireLeaseRequest, ()> {
+    let idempotency_key = IdempotencyKey::new(uuid::Uuid::new_v4()).map_err(|_| ())?;
+    intent
+        .load_or_create(AcquireLeaseRequest::new(
+            character_id,
+            client_instance_id,
+            idempotency_key,
+        ))
+        .map_err(|_| ())
 }
 
 fn story_recovery_status(
@@ -1184,62 +1989,83 @@ async fn story_recovery_under_lease<A: CloudApi>(
     }
 }
 
-async fn run_runtime(
+async fn run_runtime_chain(
+    mut next: NextRuntime,
+    commands: &tokio_mpsc::UnboundedSender<BackendCommand>,
+) -> RuntimeCompletion {
+    loop {
+        let NextRuntime {
+            api,
+            session,
+            keychain,
+            handoff,
+            trusted_manifest_key,
+            epoch_file,
+            workspace_parent,
+            sidecar_path,
+            rom_path,
+            mgba_path,
+            bridge_path,
+            world_intent,
+            shutdown,
+            portal,
+            announce_start,
+        } = next;
+        let result = run_runtime_with_session(
+            api,
+            session,
+            keychain,
+            handoff,
+            trusted_manifest_key,
+            epoch_file,
+            workspace_parent,
+            sidecar_path,
+            rom_path,
+            mgba_path,
+            bridge_path,
+            world_intent,
+            shutdown,
+            portal,
+            announce_start,
+            commands,
+        )
+        .await;
+        match result {
+            RuntimeCompletion {
+                outcome: RuntimeOutcome::Continue(leg),
+                ..
+            } => next = *leg,
+            finished => return finished,
+        }
+    }
+}
+
+async fn run_runtime_with_session(
     api: coop_launcher::ReqwestCloudApi,
+    mut session: SessionLifecycle,
     keychain: Arc<dyn RefreshTokenStore>,
-    auth: AuthSession,
     _handoff: coop_launcher::GenerationHandoff,
-    compatibility: BuildCompatibility,
     trusted_manifest_key: TrustedManifestKey,
+    epoch_file: PathBuf,
+    workspace_parent: PathBuf,
     sidecar_path: PathBuf,
     rom_path: PathBuf,
     mgba_path: PathBuf,
     bridge_path: PathBuf,
-    paths: UserPaths,
-    stop_rx: oneshot::Receiver<()>,
+    world_intent: Option<PendingWorldAcquire>,
+    shutdown: ShutdownFuture,
+    portal: Option<PortalRuntime>,
+    announce_start: bool,
     commands: &tokio_mpsc::UnboundedSender<BackendCommand>,
 ) -> RuntimeCompletion {
-    let config = SessionConfig {
-        client_instance_id: match ClientInstanceId::new(uuid::Uuid::new_v4()) {
-            Ok(value) => value,
-            Err(_) => {
-                return RuntimeCompletion {
-                    auth: Some(auth),
-                    outcome: RuntimeOutcome::StartupFailed(StartFailure::Unavailable),
-                };
-            }
-        },
-        manifest: compatibility,
-        trusted_manifest_key,
-        epoch_store: EpochStore::new(paths.epoch_file()),
-        workspace_parent: paths.workspace_parent().to_owned(),
-        bridge_lua_dir: bridge_path.clone(),
-    };
-    let mut session = match SessionLifecycle::acquire_with_keychain(&api, auth, config, keychain)
-        .await
-    {
-        Ok(session) => session,
-        Err(SessionError::StoryTravelRecoveryPending) => {
-            return RuntimeCompletion {
-                auth: None,
-                outcome: RuntimeOutcome::StartupFailed(StartFailure::StoryTravelRecoveryPending),
-            };
-        }
-        Err(_) => {
-            return RuntimeCompletion {
-                auth: None,
-                outcome: RuntimeOutcome::StartupFailed(StartFailure::Unavailable),
-            };
-        }
-    };
     let staged_rom = session.workspace.path().join("game.gba");
     if fs::copy(&rom_path, &staged_rom).is_err() {
-        return retain_auth(session, &api).await;
+        return retain_auth(session, &api, world_intent).await;
     }
     let marker = staged_rom_marker_path(&staged_rom);
     let marker_bytes = match staged_rom_marker_contents(&staged_rom) {
         Ok(bytes) => bytes,
-        Err(_) => return retain_auth(session, &api).await,
+        Err(_) => return retain_auth(session, &api, world_intent).await,
     };
     let marker_result = OpenOptions::new()
         .write(true)
@@ -1250,17 +2076,17 @@ async fn run_runtime(
             file.write_all(&marker_bytes)
         });
     if marker_result.is_err() {
-        return retain_auth(session, &api).await;
+        return retain_auth(session, &api, world_intent).await;
     }
     let mgba = match CommandSpec::mgba_owned_staged(&mgba_path, &staged_rom, &marker) {
         Ok(spec) => spec,
-        Err(_) => return retain_auth(session, &api).await,
+        Err(_) => return retain_auth(session, &api, world_intent).await,
     };
     let sidecar = match CommandSpec::sidecar_template(&sidecar_path)
         .and_then(|spec| spec.with_session_epoch(session.lease.session_epoch.value()))
     {
         Ok(spec) => spec,
-        Err(_) => return retain_auth(session, &api).await,
+        Err(_) => return retain_auth(session, &api, world_intent).await,
     };
     let mut children = match SupervisedChildren::start_with_bridge(
         sidecar,
@@ -1272,46 +2098,1060 @@ async fn run_runtime(
     .await
     {
         Ok(children) => children,
-        Err(_) => return retain_auth(session, &api).await,
+        Err(error) => {
+            #[cfg(debug_assertions)]
+            eprintln!("test diagnostic: managed children startup failed: {error:?}");
+            return retain_auth(session, &api, world_intent).await;
+        }
     };
     let (live, live_requests) = live_request_channel();
     session.serve_live_requests(live_requests);
-    let _ = commands.send(BackendCommand::RuntimeStarted(live));
-    // Realtime carries presence, Online, pairing, invitations, and group
-    // travel; the session keeps its own heartbeat and checkpoint duties.
-    let lifecycle = session
-        .run_until_shutdown_with_realtime(&api, &mut children, async move {
-            let _ = stop_rx.await;
-        })
-        .await;
-    let stopped = children.stop().await;
-    if lifecycle.is_err() || stopped.is_err() {
-        let _ = session.preserve_recovery_after_child_failure();
-        let _ = session.close_credentials(&api).await;
+    let started = if announce_start {
+        BackendCommand::RuntimeStarted(live)
+    } else {
+        BackendCommand::RuntimeLiveRebound(live)
+    };
+    let _ = commands.send(started);
+    let lifecycle = if portal.is_some() {
+        match session
+            .run_until_shutdown_with_realtime_portal(&api, &mut children, shutdown)
+            .await
+        {
+            Ok(SessionRunOutcome::Completed) => Ok(None),
+            Ok(SessionRunOutcome::PortalTravel(source)) => Ok(Some(source)),
+            Err(error) => Err(error),
+        }
+    } else {
+        session
+            .run_until_shutdown_with_realtime(&api, &mut children, shutdown)
+            .await
+            .map(|()| None)
+    };
+    let Some(source) = (match lifecycle {
+        Ok(source) => {
+            if source.is_none() {
+                let stopped = children.stop().await;
+                if stopped.is_err() {
+                    let _ = session.preserve_recovery_after_child_failure();
+                    let _ = session.close_credentials(&api).await;
+                    return RuntimeCompletion {
+                        auth: None,
+                        outcome: RuntimeOutcome::Exited { clean_stop: false },
+                    };
+                }
+            }
+            source
+        }
+        Err(error) => {
+            #[cfg(debug_assertions)]
+            eprintln!(
+                "test diagnostic: live session failed: {error:?}; control terminal: {:?}",
+                children.control().terminal_cause()
+            );
+            let _ = children.stop().await;
+            let _ = session.preserve_recovery_after_child_failure();
+            let _ = session.close_credentials(&api).await;
+            return RuntimeCompletion {
+                auth: None,
+                outcome: RuntimeOutcome::Exited { clean_stop: false },
+            };
+        }
+    }) else {
+        let released = session.release_lease_keep_credentials(&api).await.is_ok();
+        clear_world_intent_after_confirmed_release(world_intent, released);
+        let auth = session.auth;
         return RuntimeCompletion {
-            auth: None,
+            auth: Some(auth),
+            outcome: RuntimeOutcome::Exited {
+                clean_stop: released,
+            },
+        };
+    };
+
+    let Some(portal) = portal else {
+        return RuntimeCompletion {
+            auth: Some(session.auth),
+            outcome: RuntimeOutcome::Exited { clean_stop: false },
+        };
+    };
+    run_portal_transition(
+        api,
+        session,
+        keychain,
+        _handoff,
+        trusted_manifest_key,
+        epoch_file,
+        workspace_parent,
+        sidecar_path,
+        mgba_path,
+        bridge_path,
+        world_intent,
+        portal,
+        Some(source),
+        false,
+        commands,
+    )
+    .await
+}
+
+fn reusable_prepare_key(
+    record: &TravelRecord,
+    current_world: coop_launcher::session::RomWorldId,
+) -> Option<IdempotencyKey> {
+    // A committed record describes the previous trip. Reusing its key for a
+    // return journey makes the server reject the new commit as a conflicting
+    // replay of that earlier journey.
+    if record.active_world == current_world
+        && !matches!(
+            record.phase,
+            TravelPhase::Idle | TravelPhase::Committed | TravelPhase::Aborted
+        )
+    {
+        record.prepare_idempotency_key
+    } else {
+        None
+    }
+}
+
+async fn run_portal_transition(
+    api: coop_launcher::ReqwestCloudApi,
+    mut session: SessionLifecycle,
+    keychain: Arc<dyn RefreshTokenStore>,
+    handoff: coop_launcher::GenerationHandoff,
+    trusted_manifest_key: TrustedManifestKey,
+    epoch_file: PathBuf,
+    workspace_parent: PathBuf,
+    sidecar_path: PathBuf,
+    mgba_path: PathBuf,
+    bridge_path: PathBuf,
+    world_intent: Option<PendingWorldAcquire>,
+    portal: PortalRuntime,
+    source: Option<PortalTravelSource>,
+    announce_start: bool,
+    commands: &tokio_mpsc::UnboundedSender<BackendCommand>,
+) -> RuntimeCompletion {
+    let PortalRuntime {
+        catalog,
+        journal,
+        paired_journal,
+        stop,
+    } = portal;
+    if session.heartbeat(&api).await.is_err() {
+        return portal_failure(session, &api, world_intent).await;
+    }
+    let active_group = match authoritative_group(&api, &session).await {
+        Ok(group) => group,
+        Err(_) => return portal_failure(session, &api, world_intent).await,
+    };
+    if let Some(group_id) = active_group {
+        let Some(source) = source else {
+            return portal_failure(session, &api, world_intent).await;
+        };
+        return run_paired_portal_transition(
+            api,
+            session,
+            keychain,
+            handoff,
+            trusted_manifest_key,
+            epoch_file,
+            workspace_parent,
+            sidecar_path,
+            mgba_path,
+            bridge_path,
+            world_intent,
+            source,
+            group_id,
+            catalog,
+            journal,
+            paired_journal,
+            stop,
+            announce_start,
+            commands,
+        )
+        .await;
+    }
+    let record = match journal.read() {
+        Ok(Some(record)) => record,
+        _ => return portal_failure(session, &api, world_intent).await,
+    };
+    let (committed, destination_world) = if record.phase == TravelPhase::ArrivalAcknowledged {
+        let result = commit_acknowledged_handoff(&api, &session.auth, &journal, None).await;
+        let Ok(record) = result else {
+            return portal_failure(session, &api, world_intent).await;
+        };
+        let Some(destination_world) = record.destination_world else {
+            return portal_failure(session, &api, world_intent).await;
+        };
+        (record, destination_world)
+    } else {
+        let Some(source) = source else {
+            return portal_failure(session, &api, world_intent).await;
+        };
+        let prepare_key = reusable_prepare_key(&record, session.rom_world_id())
+            .or_else(|| IdempotencyKey::new(uuid::Uuid::new_v4()).ok());
+        let Some(prepare_key) = prepare_key else {
+            return portal_failure(session, &api, world_intent).await;
+        };
+        let staged_result = {
+            let staging =
+                stage_portal_travel(&api, &session, &source, &catalog, &journal, prepare_key);
+            tokio::pin!(staging);
+            let mut staging_heartbeat = tokio::time::interval(std::time::Duration::from_secs(10));
+            loop {
+                tokio::select! {
+                    result = &mut staging => break result,
+                    _ = staging_heartbeat.tick() => {
+                        let renewal = api.heartbeat(&session.auth, HeartbeatLeaseRequest::new(session.lease.fence()));
+                        tokio::pin!(renewal);
+                        tokio::select! {
+                            result = &mut staging => break result,
+                            result = &mut renewal => {
+                                let _ = result;
+                            }
+                        }
+                    }
+                }
+            }
+        };
+        let staged = match staged_result {
+            Ok(StageOutcome::Staged(staged)) => staged,
+            Ok(StageOutcome::Aborted) | Err(_) => {
+                return portal_failure(session, &api, world_intent).await;
+            }
+        };
+        if session.heartbeat(&api).await.is_err() {
+            return portal_failure(session, &api, world_intent).await;
+        }
+        let selected = match catalog.world(staged.destination_world()) {
+            Ok(selected) => selected,
+            Err(_) => return portal_failure(session, &api, world_intent).await,
+        };
+        let destination_compatibility = match BuildCompatibility::validate(
+            &selected.bridge_path,
+            &selected.rom_path,
+            &mgba_path,
+        ) {
+            Ok(compatibility) => compatibility,
+            Err(_) => return portal_failure(session, &api, world_intent).await,
+        };
+        if selected
+            .check_compatibility(&destination_compatibility)
+            .is_err()
+        {
+            return portal_failure(session, &api, world_intent).await;
+        }
+        let destination_workspace = match SessionWorkspace::create(&workspace_parent) {
+            Ok(workspace) => workspace,
+            Err(_) => return portal_failure(session, &api, world_intent).await,
+        };
+        if destination_workspace
+            .write_generated_addresses(&destination_compatibility.manifest)
+            .is_err()
+        {
+            return portal_failure(session, &api, world_intent).await;
+        }
+        if destination_workspace
+            .write_atomic("pending_commits.json", b"[]")
+            .is_err()
+        {
+            return portal_failure(session, &api, world_intent).await;
+        }
+        let destination_rom = destination_workspace.path().join("destination.gba");
+        if fs::copy(&selected.rom_path, &destination_rom).is_err() {
+            return portal_failure(session, &api, world_intent).await;
+        }
+        let destination_marker = staged_rom_marker_path(&destination_rom);
+        let marker_bytes = match staged_rom_marker_contents(&destination_rom) {
+            Ok(bytes) => bytes,
+            Err(_) => return portal_failure(session, &api, world_intent).await,
+        };
+        let marker_result = OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&destination_marker)
+            .and_then(|mut file| {
+                use std::io::Write;
+                file.write_all(&marker_bytes)
+            });
+        if marker_result.is_err() {
+            return portal_failure(session, &api, world_intent).await;
+        }
+        let verifier_mgba =
+            match CommandSpec::mgba_owned_staged(&mgba_path, &destination_rom, &destination_marker)
+            {
+                Ok(spec) => spec,
+                Err(_) => return portal_failure(session, &api, world_intent).await,
+            };
+        let verifier_sidecar = match CommandSpec::sidecar_template(&sidecar_path)
+            .and_then(|spec| spec.with_arrival_verifier())
+        {
+            Ok(spec) => spec,
+            Err(_) => return portal_failure(session, &api, world_intent).await,
+        };
+        let registry = match session.registry_contract() {
+            Ok(registry) => registry,
+            Err(_) => return portal_failure(session, &api, world_intent).await,
+        };
+        let lease_fence = LeaseFenceIdentity::new(
+            session.lease.session_id,
+            session.lease.session_epoch,
+            session.lease.client_instance_id,
+        );
+        if session.heartbeat(&api).await.is_err() {
+            return portal_failure(session, &api, world_intent).await;
+        }
+        let verification = verify_staged_arrival(
+            &journal,
+            &staged,
+            lease_fence,
+            ArrivalVerificationConfig {
+                registry,
+                catalog: &catalog,
+                workspace: &destination_workspace,
+                sidecar: verifier_sidecar,
+                mgba: verifier_mgba,
+                bridge_source: &bridge_path,
+            },
+        );
+        tokio::pin!(verification);
+        let mut heartbeat = tokio::time::interval(std::time::Duration::from_secs(10));
+        let arrival_result = loop {
+            tokio::select! {
+                result = &mut verification => break result,
+                _ = heartbeat.tick() => {
+                    let renewal = session.heartbeat(&api);
+                    tokio::pin!(renewal);
+                    tokio::select! {
+                        result = &mut verification => break result,
+                        result = &mut renewal => {
+                            let _ = result;
+                        }
+                    }
+                }
+            }
+        };
+        if arrival_result.is_err() {
+            return portal_failure(session, &api, world_intent).await;
+        }
+        if session.heartbeat(&api).await.is_err() {
+            #[cfg(debug_assertions)]
+            if let Some(path) = std::env::var_os("HOENN_LOCAL_RETURN_DIAGNOSTIC") {
+                let _ = std::fs::write(path, b"post_arrival_heartbeat_error");
+            }
+            return portal_failure(session, &api, world_intent).await;
+        }
+        let record = match commit_acknowledged_handoff(
+            &api,
+            &session.auth,
+            &journal,
+            Some(&destination_workspace),
+        )
+        .await
+        {
+            Ok(record) => record,
+            Err(_) => return portal_failure(session, &api, world_intent).await,
+        };
+        let Some(destination_world) = record.destination_world else {
+            return portal_failure(session, &api, world_intent).await;
+        };
+        (record, destination_world)
+    };
+    let mut auth = match session.into_auth_after_committed_handoff(&committed) {
+        Ok(auth) => auth,
+        Err(_) => {
+            return RuntimeCompletion {
+                auth: None,
+                outcome: RuntimeOutcome::Exited { clean_stop: false },
+            };
+        }
+    };
+    let Some((intent, old_request)) = world_intent else {
+        return RuntimeCompletion {
+            auth: Some(auth),
+            outcome: RuntimeOutcome::Exited { clean_stop: false },
+        };
+    };
+    if intent.clear_exact(old_request).is_err() {
+        return RuntimeCompletion {
+            auth: Some(auth),
             outcome: RuntimeOutcome::Exited { clean_stop: false },
         };
     }
-    let released = session.release_lease_keep_credentials(&api).await.is_ok();
-    let auth = session.auth;
+    let new_request = match new_world_acquire_request(auth.character_id)
+        .ok()
+        .and_then(|request| intent.load_or_create(request).ok())
+    {
+        Some(request) => request,
+        None => {
+            return RuntimeCompletion {
+                auth: Some(auth),
+                outcome: RuntimeOutcome::Exited { clean_stop: false },
+            };
+        }
+    };
+    let response = match SessionLifecycle::acquire_world_with_keychain(
+        &api,
+        &mut auth,
+        new_request,
+        &keychain,
+    )
+    .await
+    {
+        Ok(response) if response.active_world_id == destination_world => response,
+        _ => {
+            return RuntimeCompletion {
+                auth: Some(auth),
+                outcome: RuntimeOutcome::Exited { clean_stop: false },
+            };
+        }
+    };
+    let selected = match catalog.world(destination_world) {
+        Ok(selected) => selected,
+        Err(_) => {
+            return RuntimeCompletion {
+                auth: Some(auth),
+                outcome: RuntimeOutcome::Exited { clean_stop: false },
+            };
+        }
+    };
+    let compatibility =
+        match BuildCompatibility::validate(&selected.bridge_path, &selected.rom_path, &mgba_path) {
+            Ok(compatibility) => compatibility,
+            Err(_) => {
+                return RuntimeCompletion {
+                    auth: Some(auth),
+                    outcome: RuntimeOutcome::Exited { clean_stop: false },
+                };
+            }
+        };
+    if selected.check_compatibility(&compatibility).is_err() {
+        return RuntimeCompletion {
+            auth: Some(auth),
+            outcome: RuntimeOutcome::Exited { clean_stop: false },
+        };
+    }
+    let destination_rom_path = selected.rom_path.clone();
+    let config = SessionConfig {
+        client_instance_id: response.lease.client_instance_id,
+        rom_world_id: destination_world,
+        manifest: compatibility,
+        trusted_manifest_key: trusted_manifest_key.clone(),
+        epoch_store: EpochStore::new(epoch_file.clone()),
+        workspace_parent: workspace_parent.clone(),
+        bridge_lua_dir: bridge_path.clone(),
+    };
+    let destination = match SessionLifecycle::from_world_lease_with_keychain(
+        &api,
+        auth,
+        config,
+        Arc::clone(&keychain),
+        response,
+    )
+    .await
+    {
+        Ok(session) => session,
+        Err(_) => {
+            return RuntimeCompletion {
+                auth: None,
+                outcome: RuntimeOutcome::Exited { clean_stop: false },
+            };
+        }
+    };
+    let destination_portal = PortalRuntime {
+        catalog,
+        journal,
+        paired_journal,
+        stop: Arc::clone(&stop),
+    };
+    // Return the next leg to the outer loop so the previous future drops
+    // before another ROM runtime is polled. Nested futures overflowed the
+    // signed client's stack on the live Cormoria -> Main return.
     RuntimeCompletion {
-        auth: Some(auth),
-        outcome: RuntimeOutcome::Exited {
-            clean_stop: released,
+        auth: None,
+        outcome: RuntimeOutcome::Continue(Box::new(NextRuntime {
+            api,
+            session: destination,
+            keychain,
+            handoff,
+            trusted_manifest_key,
+            epoch_file,
+            workspace_parent,
+            sidecar_path,
+            rom_path: destination_rom_path,
+            mgba_path,
+            bridge_path,
+            world_intent: Some((intent, new_request)),
+            shutdown: Box::pin(async move { stop.notified().await }),
+            portal: Some(destination_portal),
+            announce_start,
+        })),
+    }
+}
+
+async fn authoritative_group(
+    api: &coop_launcher::ReqwestCloudApi,
+    session: &SessionLifecycle,
+) -> Result<Option<coop_cloud::GroupId>, coop_launcher::SessionError> {
+    let token = session
+        .auth
+        .access_token()
+        .cloned()
+        .ok_or(coop_launcher::SessionError::Unauthorized)?;
+    let response = api
+        .online_snapshot(
+            token,
+            OnlineSnapshotRequest {
+                api_version: ApiVersion::V1,
+                fence: session.lease.fence(),
+                incoming_after: None,
+            },
+        )
+        .await
+        .map_err(|_| coop_launcher::SessionError::Cloud)?;
+    if response.api_version != ApiVersion::V1 {
+        return Err(coop_launcher::SessionError::Realtime);
+    }
+    let Some(group) = response.group else {
+        return Ok(None);
+    };
+    if !group
+        .group
+        .members
+        .iter()
+        .any(|member| member.character_id == session.lease.character_id)
+    {
+        return Err(coop_launcher::SessionError::Realtime);
+    }
+    Ok(Some(group.group.group_id))
+}
+
+async fn stop_paired_handoff(
+    api: &coop_launcher::ReqwestCloudApi,
+    auth: &AuthSession,
+    journal: &PairedTravelJournal,
+) -> Option<PairedHandoffOutcome> {
+    let mut record = journal.read().ok()??;
+    if record.attempt_key.is_none() {
+        match recover_paired_handoff(api, auth, journal).await.ok()? {
+            PairedHandoffOutcome::Committed(commit) => {
+                return Some(PairedHandoffOutcome::Committed(commit));
+            }
+            PairedHandoffOutcome::Aborted => return Some(PairedHandoffOutcome::Aborted),
+            PairedHandoffOutcome::Pending { .. } | PairedHandoffOutcome::Staged { .. } => {
+                record = journal.read().ok()??;
+            }
+        }
+    }
+    let attempt_key = record.attempt_key?;
+    api.abort_group_rom_handoff(
+        auth,
+        GroupRomHandoffAbortRequest {
+            api_version: record.intent.request.api_version,
+            group_id: record.intent.request.group_id,
+            fence: record.intent.request.fence,
+            idempotency_key: attempt_key,
         },
+    )
+    .await
+    .ok()?;
+    recover_paired_handoff(api, auth, journal).await.ok()
+}
+
+async fn run_paired_portal_transition(
+    api: coop_launcher::ReqwestCloudApi,
+    session: SessionLifecycle,
+    keychain: Arc<dyn RefreshTokenStore>,
+    handoff: coop_launcher::GenerationHandoff,
+    trusted_manifest_key: TrustedManifestKey,
+    epoch_file: PathBuf,
+    workspace_parent: PathBuf,
+    sidecar_path: PathBuf,
+    mgba_path: PathBuf,
+    bridge_path: PathBuf,
+    world_intent: Option<PendingWorldAcquire>,
+    source: PortalTravelSource,
+    group_id: coop_cloud::GroupId,
+    catalog: TrustedRomCatalog,
+    journal: RomTravelJournal,
+    paired_journal: PairedTravelJournal,
+    stop: Arc<Notify>,
+    announce_start: bool,
+    commands: &tokio_mpsc::UnboundedSender<BackendCommand>,
+) -> RuntimeCompletion {
+    let client_intent_key = match IdempotencyKey::new(uuid::Uuid::new_v4()) {
+        Ok(key) => key,
+        Err(_) => return portal_failure(session, &api, world_intent).await,
+    };
+    let intent = PairedJoinIntent {
+        request: GroupRomHandoffJoinRequest {
+            api_version: ApiVersion::V1,
+            group_id,
+            fence: session.lease.fence(),
+            source_snapshot_id: source.source_snapshot_id,
+            portal_id: source.portal_id.clone(),
+            client_intent_key,
+        },
+        source_world_id: session.rom_world_id(),
+        source_save_sha256: source.source_save_digest,
+        catalog_digest: catalog.digest(),
+    };
+    let expected_nonce = *uuid::Uuid::new_v4().as_bytes();
+    if expected_nonce == [0; 16] {
+        return portal_failure(session, &api, world_intent).await;
+    }
+    if session.registry_contract().is_err() {
+        return portal_failure(session, &api, world_intent).await;
+    }
+    let destination_build = |world: coop_launcher::session::RomWorldId| {
+        let selected = catalog
+            .world(world)
+            .map_err(|_| coop_launcher::SessionError::Lease)?;
+        let compatibility =
+            BuildCompatibility::validate(&selected.bridge_path, &selected.rom_path, &mgba_path)
+                .map_err(|_| coop_launcher::SessionError::Lease)?;
+        selected
+            .check_compatibility(&compatibility)
+            .map_err(|_| coop_launcher::SessionError::Lease)?;
+        Ok(RuntimeBuildIdentity::from(&compatibility.target))
+    };
+
+    let mut stop_requested = false;
+    let committed = loop {
+        if stop_requested {
+            match stop_paired_handoff(&api, &session.auth, &paired_journal).await {
+                Some(PairedHandoffOutcome::Committed(_)) => {}
+                Some(PairedHandoffOutcome::Aborted) => {
+                    return portal_failure(session, &api, world_intent).await;
+                }
+                _ => {
+                    return RuntimeCompletion {
+                        auth: Some(session.auth),
+                        outcome: RuntimeOutcome::Exited { clean_stop: false },
+                    };
+                }
+            }
+        }
+        let verify_catalog = &catalog;
+        let verify_workspace_parent = &workspace_parent;
+        let verify_sidecar = &sidecar_path;
+        let verify_mgba = &mgba_path;
+        let verify_bridge = &bridge_path;
+        let verify = move |checked: &coop_launcher::travel_coordinator::PairedStagedDestination,
+                           nonce| {
+            let destination_world = checked.destination().destination_world();
+            let destination_save_sha256 = checked.destination().destination_save_sha256();
+            let destination_save = checked.destination().destination_save().to_vec();
+            let destination_save_generation = checked.destination().destination_save_generation();
+            let arrival_location = checked.destination().arrival_location();
+            async move {
+                verify_paired_arrival(
+                    destination_world,
+                    destination_save_sha256,
+                    destination_save,
+                    destination_save_generation,
+                    arrival_location,
+                    nonce,
+                    verify_catalog,
+                    verify_workspace_parent,
+                    verify_sidecar,
+                    verify_mgba,
+                    verify_bridge,
+                )
+                .await
+                .map_err(|error| error.to_string())
+            }
+        };
+        let (attempt, heartbeat_failed) = {
+            let attempt = run_paired_handoff(
+                &api,
+                &session.auth,
+                &paired_journal,
+                intent.clone(),
+                &source,
+                session.rom_world_id(),
+                &catalog,
+                &destination_build,
+                expected_nonce,
+                verify,
+            );
+            tokio::pin!(attempt);
+            let mut heartbeat = tokio::time::interval(std::time::Duration::from_secs(10));
+            let mut heartbeat_failed = false;
+            let stop_wait = stop.notified();
+            tokio::pin!(stop_wait);
+            let attempt = loop {
+                tokio::select! {
+                    result = &mut attempt => break result,
+                    _ = &mut stop_wait, if !stop_requested => {
+                        // Do not cancel an owned ROM verifier: it must reap
+                        // its children before the exact attempt is aborted.
+                        stop_requested = true;
+                    }
+                    _ = heartbeat.tick() => {
+                        let renewed = api.heartbeat(
+                            &session.auth,
+                            HeartbeatLeaseRequest::new(session.lease.fence()),
+                        ).await;
+                        if renewed.is_err() {
+                            heartbeat_failed = true;
+                        }
+                    }
+                }
+            };
+            (attempt, heartbeat_failed)
+        };
+        match attempt {
+            Ok(PairedHandoffOutcome::Committed(_)) => {
+                break match paired_journal.read() {
+                    Ok(Some(record)) => record,
+                    _ => {
+                        return RuntimeCompletion {
+                            auth: Some(session.auth),
+                            outcome: RuntimeOutcome::Exited { clean_stop: false },
+                        };
+                    }
+                };
+            }
+            Ok(PairedHandoffOutcome::Aborted) => {
+                return portal_failure(session, &api, world_intent).await;
+            }
+            Ok(PairedHandoffOutcome::Pending { .. }) | Ok(PairedHandoffOutcome::Staged { .. }) => {
+                if heartbeat_failed {
+                    match recover_paired_handoff(&api, &session.auth, &paired_journal).await {
+                        Ok(PairedHandoffOutcome::Committed(_)) => continue,
+                        Ok(PairedHandoffOutcome::Aborted) => {
+                            return portal_failure(session, &api, world_intent).await;
+                        }
+                        _ => {
+                            return RuntimeCompletion {
+                                auth: Some(session.auth),
+                                outcome: RuntimeOutcome::Exited { clean_stop: false },
+                            };
+                        }
+                    }
+                }
+                if !stop_requested {
+                    tokio::select! {
+                        _ = tokio::time::sleep(std::time::Duration::from_secs(1)) => {},
+                        _ = stop.notified() => stop_requested = true,
+                    }
+                }
+            }
+            Err(_) => {
+                if stop_requested {
+                    match stop_paired_handoff(&api, &session.auth, &paired_journal).await {
+                        Some(PairedHandoffOutcome::Committed(_)) => continue,
+                        Some(PairedHandoffOutcome::Aborted) => {
+                            return portal_failure(session, &api, world_intent).await;
+                        }
+                        _ => {
+                            return RuntimeCompletion {
+                                auth: Some(session.auth),
+                                outcome: RuntimeOutcome::Exited { clean_stop: false },
+                            };
+                        }
+                    }
+                }
+                let recovered = recover_paired_handoff(&api, &session.auth, &paired_journal).await;
+                match recovered {
+                    Ok(PairedHandoffOutcome::Committed(_)) => continue,
+                    Ok(PairedHandoffOutcome::Aborted) => {
+                        return portal_failure(session, &api, world_intent).await;
+                    }
+                    Ok(PairedHandoffOutcome::Pending { .. })
+                    | Ok(PairedHandoffOutcome::Staged { .. })
+                    | Err(_) => {
+                        return RuntimeCompletion {
+                            auth: Some(session.auth),
+                            outcome: RuntimeOutcome::Exited { clean_stop: false },
+                        };
+                    }
+                }
+            }
+        }
+    };
+    let destination_world = match committed.terminal.as_ref() {
+        Some(PairedTerminal::Committed(commit)) => commit.own_world_id,
+        _ => {
+            return RuntimeCompletion {
+                auth: Some(session.auth),
+                outcome: RuntimeOutcome::Exited { clean_stop: false },
+            };
+        }
+    };
+    if committed.phase != PairedPhase::Committed && committed.phase != PairedPhase::Adopted {
+        return RuntimeCompletion {
+            auth: Some(session.auth),
+            outcome: RuntimeOutcome::Exited { clean_stop: false },
+        };
+    }
+    if journal.adopt_paired_commit(&committed).is_err()
+        || paired_journal
+            .record_adopted(committed.intent.request.client_intent_key)
+            .is_err()
+    {
+        return RuntimeCompletion {
+            auth: Some(session.auth),
+            outcome: RuntimeOutcome::Exited { clean_stop: false },
+        };
+    }
+    let mut auth = match session.into_auth_after_committed_paired_handoff(&committed) {
+        Ok(auth) => auth,
+        Err(_) => {
+            return RuntimeCompletion {
+                auth: None,
+                outcome: RuntimeOutcome::Exited { clean_stop: false },
+            };
+        }
+    };
+    let Some((intent_store, old_request)) = world_intent else {
+        return RuntimeCompletion {
+            auth: Some(auth),
+            outcome: RuntimeOutcome::Exited { clean_stop: false },
+        };
+    };
+    if intent_store.clear_exact(old_request).is_err() {
+        return RuntimeCompletion {
+            auth: Some(auth),
+            outcome: RuntimeOutcome::Exited { clean_stop: false },
+        };
+    }
+    let new_request = match new_world_acquire_request(auth.character_id)
+        .ok()
+        .and_then(|request| intent_store.load_or_create(request).ok())
+    {
+        Some(request) => request,
+        None => {
+            return RuntimeCompletion {
+                auth: Some(auth),
+                outcome: RuntimeOutcome::Exited { clean_stop: false },
+            };
+        }
+    };
+    let response = match SessionLifecycle::acquire_world_with_keychain(
+        &api,
+        &mut auth,
+        new_request,
+        &keychain,
+    )
+    .await
+    {
+        Ok(response) if response.active_world_id == destination_world => response,
+        _ => {
+            return RuntimeCompletion {
+                auth: Some(auth),
+                outcome: RuntimeOutcome::Exited { clean_stop: false },
+            };
+        }
+    };
+    let selected = match catalog.world(destination_world) {
+        Ok(selected) => selected,
+        Err(_) => {
+            return RuntimeCompletion {
+                auth: Some(auth),
+                outcome: RuntimeOutcome::Exited { clean_stop: false },
+            };
+        }
+    };
+    let compatibility =
+        match BuildCompatibility::validate(&selected.bridge_path, &selected.rom_path, &mgba_path) {
+            Ok(compatibility) => compatibility,
+            Err(_) => {
+                return RuntimeCompletion {
+                    auth: Some(auth),
+                    outcome: RuntimeOutcome::Exited { clean_stop: false },
+                };
+            }
+        };
+    if selected.check_compatibility(&compatibility).is_err() {
+        return RuntimeCompletion {
+            auth: Some(auth),
+            outcome: RuntimeOutcome::Exited { clean_stop: false },
+        };
+    }
+    let destination_rom_path = selected.rom_path.clone();
+    let config = SessionConfig {
+        client_instance_id: response.lease.client_instance_id,
+        rom_world_id: destination_world,
+        manifest: compatibility,
+        trusted_manifest_key: trusted_manifest_key.clone(),
+        epoch_store: EpochStore::new(epoch_file.clone()),
+        workspace_parent: workspace_parent.clone(),
+        bridge_lua_dir: bridge_path.clone(),
+    };
+    let destination = match SessionLifecycle::from_world_lease_with_keychain(
+        &api,
+        auth,
+        config,
+        Arc::clone(&keychain),
+        response,
+    )
+    .await
+    {
+        Ok(session) => session,
+        Err(_) => {
+            return RuntimeCompletion {
+                auth: None,
+                outcome: RuntimeOutcome::Exited { clean_stop: false },
+            };
+        }
+    };
+    let destination_portal = PortalRuntime {
+        catalog,
+        journal,
+        paired_journal,
+        stop: Arc::clone(&stop),
+    };
+    RuntimeCompletion {
+        auth: None,
+        outcome: RuntimeOutcome::Continue(Box::new(NextRuntime {
+            api,
+            session: destination,
+            keychain,
+            handoff,
+            trusted_manifest_key,
+            epoch_file,
+            workspace_parent,
+            sidecar_path,
+            rom_path: destination_rom_path,
+            mgba_path,
+            bridge_path,
+            world_intent: Some((intent_store, new_request)),
+            shutdown: Box::pin(async move {
+                if stop_requested {
+                    stop.notify_one();
+                }
+                stop.notified().await;
+            }),
+            portal: Some(destination_portal),
+            announce_start,
+        })),
+    }
+}
+
+async fn verify_paired_arrival(
+    destination_world: coop_launcher::session::RomWorldId,
+    destination_save_sha256: coop_cloud::Sha256Digest,
+    destination_save: Vec<u8>,
+    destination_save_generation: u32,
+    arrival_location: [u8; 3],
+    nonce: [u8; 16],
+    catalog: &TrustedRomCatalog,
+    workspace_parent: &std::path::Path,
+    sidecar_path: &std::path::Path,
+    mgba_path: &std::path::Path,
+    bridge_path: &std::path::Path,
+) -> Result<AuthenticatedArrivalEvidence, coop_launcher::arrival_verifier::ArrivalVerificationError>
+{
+    let selected = catalog
+        .world(destination_world)
+        .map_err(|_| coop_launcher::arrival_verifier::ArrivalVerificationError::WorldMismatch)?;
+    let compatibility =
+        BuildCompatibility::validate(&selected.bridge_path, &selected.rom_path, mgba_path)
+            .map_err(|_| {
+                coop_launcher::arrival_verifier::ArrivalVerificationError::InvalidProcessSpec
+            })?;
+    selected.check_compatibility(&compatibility).map_err(|_| {
+        coop_launcher::arrival_verifier::ArrivalVerificationError::InvalidProcessSpec
+    })?;
+    let registry = compatibility
+        .manifest
+        .save
+        .registry_contract()
+        .map_err(|_| {
+            coop_launcher::arrival_verifier::ArrivalVerificationError::InvalidProcessSpec
+        })?;
+    let workspace = SessionWorkspace::create(workspace_parent)
+        .map_err(coop_launcher::arrival_verifier::ArrivalVerificationError::Workspace)?;
+    workspace
+        .write_generated_addresses(&compatibility.manifest)
+        .map_err(coop_launcher::arrival_verifier::ArrivalVerificationError::Workspace)?;
+    workspace
+        .write_atomic("pending_commits.json", b"[]")
+        .map_err(coop_launcher::arrival_verifier::ArrivalVerificationError::Workspace)?;
+    let destination_rom = workspace.path().join("destination.gba");
+    fs::copy(&selected.rom_path, &destination_rom).map_err(|_| {
+        coop_launcher::arrival_verifier::ArrivalVerificationError::InvalidProcessSpec
+    })?;
+    let marker = staged_rom_marker_path(&destination_rom);
+    let marker_bytes = staged_rom_marker_contents(&destination_rom).map_err(|_| {
+        coop_launcher::arrival_verifier::ArrivalVerificationError::InvalidProcessSpec
+    })?;
+    let marker_result = OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&marker)
+        .and_then(|mut file| {
+            use std::io::Write;
+            file.write_all(&marker_bytes)
+        });
+    if marker_result.is_err() {
+        return Err(coop_launcher::arrival_verifier::ArrivalVerificationError::InvalidProcessSpec);
+    }
+    let mgba =
+        CommandSpec::mgba_owned_staged(mgba_path, &destination_rom, &marker).map_err(|_| {
+            coop_launcher::arrival_verifier::ArrivalVerificationError::InvalidProcessSpec
+        })?;
+    let sidecar = CommandSpec::sidecar_template(sidecar_path)
+        .and_then(|spec| spec.with_arrival_verifier())
+        .map_err(|_| {
+            coop_launcher::arrival_verifier::ArrivalVerificationError::InvalidProcessSpec
+        })?;
+    verify_arrival(ArrivalVerificationInput {
+        expected_full_sav_sha256: destination_save_sha256,
+        staged_sav: &destination_save,
+        registry,
+        destination_world,
+        expected_save_generation: destination_save_generation,
+        expected_map_group: arrival_location[0],
+        expected_map_num: arrival_location[1],
+        persisted_nonce: nonce,
+        workspace: &workspace,
+        sidecar,
+        mgba,
+        bridge_source: bridge_path,
+    })
+    .await
+}
+
+async fn portal_failure(
+    mut session: SessionLifecycle,
+    api: &coop_launcher::ReqwestCloudApi,
+    world_intent: Option<PendingWorldAcquire>,
+) -> RuntimeCompletion {
+    let released = session.release_lease_keep_credentials(api).await.is_ok();
+    clear_world_intent_after_confirmed_release(world_intent, released);
+    RuntimeCompletion {
+        auth: Some(session.auth),
+        outcome: RuntimeOutcome::Exited { clean_stop: false },
     }
 }
 
 async fn retain_auth(
     mut session: SessionLifecycle,
     api: &coop_launcher::ReqwestCloudApi,
+    world_intent: Option<PendingWorldAcquire>,
 ) -> RuntimeCompletion {
     let clean_stop = session.release_lease_keep_credentials(api).await.is_ok();
+    clear_world_intent_after_confirmed_release(world_intent, clean_stop);
     let auth = session.auth;
     RuntimeCompletion {
         auth: Some(auth),
         outcome: startup_failure_outcome(clean_stop),
+    }
+}
+
+fn clear_world_intent_after_confirmed_release(
+    world_intent: Option<PendingWorldAcquire>,
+    release_confirmed: bool,
+) {
+    // A durable request is cleared only after the server has confirmed the
+    // release. If release is ambiguous, leave it for the next cold start to
+    // receive the exact closed-key (410) result before minting a new key.
+    if release_confirmed {
+        if let Some((store, request)) = world_intent {
+            let _ = store.clear_exact(request);
+        }
     }
 }
 
@@ -1371,6 +3211,22 @@ fn now_seconds() -> Result<i64, ()> {
         .ok_or(())
 }
 
+fn hex_digest(digest: [u8; 32]) -> String {
+    digest.iter().map(|byte| format!("{byte:02x}")).collect()
+}
+
+fn new_world_acquire_request(
+    character_id: coop_cloud::CharacterId,
+) -> Result<AcquireLeaseRequest, ()> {
+    let client_instance_id = ClientInstanceId::new(uuid::Uuid::new_v4()).map_err(|_| ())?;
+    let idempotency_key = IdempotencyKey::new(uuid::Uuid::new_v4()).map_err(|_| ())?;
+    Ok(AcquireLeaseRequest::new(
+        character_id,
+        client_instance_id,
+        idempotency_key,
+    ))
+}
+
 fn runtime_completion_event(stop_requested: bool, outcome: RuntimeOutcome) -> BackendEvent {
     match outcome {
         RuntimeOutcome::StartupFailed(_) if stop_requested => BackendEvent::StopCompleted,
@@ -1379,6 +3235,7 @@ fn runtime_completion_event(stop_requested: bool, outcome: RuntimeOutcome) -> Ba
             BackendEvent::StopCompleted
         }
         RuntimeOutcome::Exited { .. } => BackendEvent::ShutdownUncertain,
+        RuntimeOutcome::Continue(_) => BackendEvent::ShutdownUncertain,
     }
 }
 
@@ -1397,11 +3254,16 @@ fn delete_local_account(
 mod tests {
     use super::{
         BackendConfig, BackendEvent, RuntimeOutcome, StoryRecoveryStatus, abandon_proposal_id,
-        delete_local_account, runtime_completion_event, spawn_backend, story_recovery_status,
+        delete_local_account, reusable_prepare_key, runtime_completion_event, spawn_backend,
+        story_recovery_status,
     };
     use crate::config::{AccountRecord, RuntimeConfig, UserPaths};
-    use coop_cloud::{CharacterId, RefreshToken, UserId};
-    use coop_launcher::{KeychainError, RefreshTokenStore, TrustedManifestKey, TrustedReleaseKey};
+    use coop_cloud::{CharacterId, IdempotencyKey, RefreshToken, UserId};
+    use coop_launcher::{
+        KeychainError, RefreshTokenStore, TrustedManifestKey, TrustedReleaseKey,
+        rom_travel::{RomTravelJournal, TravelPhase},
+        session::RomWorldId,
+    };
     use std::sync::atomic::{AtomicBool, Ordering};
 
     #[test]
@@ -1564,6 +3426,31 @@ mod tests {
     }
 
     struct DeleteOnlyKeychain(AtomicBool);
+
+    #[test]
+    fn return_trip_does_not_reuse_the_previous_committed_handoff_key() {
+        let root = tempfile::tempdir().unwrap();
+        let main = RomWorldId::new(1).unwrap();
+        let cormoria = RomWorldId::new(2).unwrap();
+        let journal = RomTravelJournal::new(
+            root.path(),
+            CharacterId::new(uuid::Uuid::from_u128(41)).unwrap(),
+            [main, cormoria],
+        )
+        .unwrap();
+        let mut record = journal.initialize(main).unwrap();
+        let previous_key = IdempotencyKey::new(uuid::Uuid::from_u128(42)).unwrap();
+        record.active_world = cormoria;
+        record.phase = TravelPhase::Committed;
+        record.prepare_idempotency_key = Some(previous_key);
+
+        assert_eq!(reusable_prepare_key(&record, cormoria), None);
+        record.phase = TravelPhase::Aborted;
+        assert_eq!(reusable_prepare_key(&record, cormoria), None);
+        record.phase = TravelPhase::PrepareIntent;
+        assert_eq!(reusable_prepare_key(&record, cormoria), Some(previous_key));
+        assert_eq!(reusable_prepare_key(&record, main), None);
+    }
 
     #[test]
     fn startup_cleanup_failure_requires_recovery_even_after_stop() {
@@ -1744,6 +3631,573 @@ mod tests {
         );
 
         assert!(spawn_backend(BackendConfig::for_test(paths, runtime).expect("config")).is_err());
+    }
+
+    /// A catalog-bound server: legacy acquire is never acceptable, a resume
+    /// package is served only for a lease bound through `acquire-world`, and
+    /// every snapshot mutation is counted so tests can prove there is none.
+    mod catalog_bound_recovery {
+        use std::{
+            collections::VecDeque,
+            sync::{Arc, Mutex},
+        };
+
+        use coop_cloud::{
+            AccessToken, AcquireLeaseRequest, AcquireWorldLeaseResponse, ArtifactIdentity,
+            CharacterId, ClientInstanceId, CompatibilityTarget, GameBuildId, HeartbeatLeaseRequest,
+            IdempotencyKey, LeaseContract, LeaseFence, LoginRequest, LoginResponse, LogoutRequest,
+            LogoutResponse, MgbaVersion, PrepareSnapshotRequest, ReconnectLeaseRequest,
+            RefreshFamilyId, RefreshRequest, RefreshResponse, RefreshToken, ReleaseLeaseRequest,
+            Revision, SessionEpoch, SessionId, Sha256Digest, SignedManifestEnvelope,
+            SnapshotFinalizeRequest, SnapshotListRequest, SnapshotListResponse,
+            SnapshotPrepareResponse, SnapshotRecord, SnapshotRestoreRequest,
+            SnapshotRestoreResponse, TrustedManifestKey, UnixTimestampMillis, UploadTarget, UserId,
+        };
+        use coop_launcher::{
+            AuthApi, AuthError, AuthSession, BuildCompatibility, CloudApi, EpochStore,
+            KeychainError, RecoveryMarkerV2, RecoveryResult, RefreshTokenStore, SessionConfig,
+            SessionError, WorldAcquireIntentStore, auth::AuthFuture, session::CloudFuture,
+            session::RomWorldId,
+        };
+
+        const CHARACTER: u128 = 0x51;
+        const PRIOR_CLIENT: u128 = 0x52;
+
+        fn character() -> CharacterId {
+            CharacterId::new(uuid::Uuid::from_u128(CHARACTER)).unwrap()
+        }
+
+        fn prior_client() -> ClientInstanceId {
+            ClientInstanceId::new(uuid::Uuid::from_u128(PRIOR_CLIENT)).unwrap()
+        }
+
+        fn server_world() -> RomWorldId {
+            RomWorldId::new(2).unwrap()
+        }
+
+        #[derive(Default)]
+        struct Calls {
+            legacy_acquires: usize,
+            world_acquires: Vec<AcquireLeaseRequest>,
+            world_bound: bool,
+            resume_packages: usize,
+            releases: Vec<ReleaseLeaseRequest>,
+            mutations: usize,
+        }
+
+        #[derive(Default)]
+        struct CatalogBoundCloud {
+            calls: Mutex<Calls>,
+            /// Scripted acquire-world failures, consumed before success.
+            world_acquire_failures: Mutex<VecDeque<SessionError>>,
+        }
+
+        impl CatalogBoundCloud {
+            fn lease(client: ClientInstanceId) -> LeaseContract {
+                LeaseContract::new(
+                    LeaseFence::new(
+                        SessionId::new(uuid::Uuid::from_u128(0x53)).unwrap(),
+                        character(),
+                        Revision::initial(),
+                        SessionEpoch::new(2).unwrap(),
+                        client,
+                    ),
+                    UnixTimestampMillis::new(4_000_000_000_000),
+                    1,
+                )
+                .unwrap()
+            }
+        }
+
+        impl AuthApi for CatalogBoundCloud {
+            fn login(&self, _: LoginRequest) -> AuthFuture<'_, LoginResponse> {
+                Box::pin(async {
+                    LoginResponse::new(
+                        UserId::new(uuid::Uuid::from_u128(0x54)).unwrap(),
+                        character(),
+                        AccessToken::new("recovery-access").unwrap(),
+                        RefreshToken::new("recovery-refresh").unwrap(),
+                        RefreshFamilyId::new(uuid::Uuid::from_u128(0x55)).unwrap(),
+                        UnixTimestampMillis::new(u64::MAX / 4),
+                        UnixTimestampMillis::new(u64::MAX / 4),
+                    )
+                    .map_err(|_| AuthError::InvalidResponse)
+                })
+            }
+            fn refresh(&self, _: RefreshRequest) -> AuthFuture<'_, RefreshResponse> {
+                Box::pin(async { Err(AuthError::Transport) })
+            }
+            fn logout(&self, _: LogoutRequest) -> AuthFuture<'_, LogoutResponse> {
+                Box::pin(async { Ok(LogoutResponse::default()) })
+            }
+        }
+
+        impl CloudApi for CatalogBoundCloud {
+            fn acquire<'a>(
+                &'a self,
+                _: &'a AuthSession,
+                _: AcquireLeaseRequest,
+            ) -> CloudFuture<'a, LeaseContract> {
+                let mut calls = self.calls.lock().unwrap();
+                calls.legacy_acquires += 1;
+                calls.world_bound = false;
+                Box::pin(async { Err(SessionError::Unauthorized) })
+            }
+            fn acquire_world<'a>(
+                &'a self,
+                _: &'a AuthSession,
+                request: AcquireLeaseRequest,
+            ) -> CloudFuture<'a, AcquireWorldLeaseResponse> {
+                let mut calls = self.calls.lock().unwrap();
+                calls.world_acquires.push(request);
+                if let Some(error) = self.world_acquire_failures.lock().unwrap().pop_front() {
+                    return Box::pin(async move { Err(error) });
+                }
+                calls.world_bound = true;
+                let response = AcquireWorldLeaseResponse {
+                    lease: Self::lease(request.client_instance_id),
+                    active_world_id: server_world(),
+                    active_snapshot_id: None,
+                };
+                Box::pin(async move { Ok(response) })
+            }
+            fn heartbeat<'a>(
+                &'a self,
+                _: &'a AuthSession,
+                request: HeartbeatLeaseRequest,
+            ) -> CloudFuture<'a, LeaseContract> {
+                let lease = Self::lease(request.client_instance_id);
+                Box::pin(async move { Ok(lease) })
+            }
+            fn reconnect<'a>(
+                &'a self,
+                _: &'a AuthSession,
+                _: ReconnectLeaseRequest,
+            ) -> CloudFuture<'a, LeaseContract> {
+                Box::pin(async { Err(SessionError::Cloud) })
+            }
+            fn release<'a>(
+                &'a self,
+                _: &'a AuthSession,
+                request: ReleaseLeaseRequest,
+            ) -> CloudFuture<'a, LogoutResponse> {
+                let mut calls = self.calls.lock().unwrap();
+                calls.releases.push(request);
+                calls.world_bound = false;
+                Box::pin(async { Ok(LogoutResponse::default()) })
+            }
+            fn resume_package<'a>(
+                &'a self,
+                _: &'a AuthSession,
+                _: CharacterId,
+                _: Revision,
+            ) -> CloudFuture<'a, Option<SignedManifestEnvelope>> {
+                let mut calls = self.calls.lock().unwrap();
+                calls.resume_packages += 1;
+                if calls.world_bound {
+                    Box::pin(async { Ok(None) })
+                } else {
+                    Box::pin(async { Err(SessionError::Unauthorized) })
+                }
+            }
+            fn artifact<'a>(
+                &'a self,
+                _: &'a AuthSession,
+                _: CharacterId,
+                _: ArtifactIdentity,
+                _: Revision,
+            ) -> CloudFuture<'a, Vec<u8>> {
+                Box::pin(async { Err(SessionError::ArtifactNotFound) })
+            }
+            fn list_snapshots<'a>(
+                &'a self,
+                _: &'a AuthSession,
+                _: SnapshotListRequest,
+            ) -> CloudFuture<'a, SnapshotListResponse> {
+                Box::pin(async { Err(SessionError::Cloud) })
+            }
+            fn restore<'a>(
+                &'a self,
+                _: &'a AuthSession,
+                _: SnapshotRestoreRequest,
+            ) -> CloudFuture<'a, SnapshotRestoreResponse> {
+                self.calls.lock().unwrap().mutations += 1;
+                Box::pin(async { Err(SessionError::Cloud) })
+            }
+            fn prepare<'a>(
+                &'a self,
+                _: &'a AuthSession,
+                _: PrepareSnapshotRequest,
+            ) -> CloudFuture<'a, SnapshotPrepareResponse> {
+                self.calls.lock().unwrap().mutations += 1;
+                Box::pin(async { Err(SessionError::Cloud) })
+            }
+            fn upload<'a>(&'a self, _: &'a UploadTarget, _: Vec<u8>) -> CloudFuture<'a, ()> {
+                self.calls.lock().unwrap().mutations += 1;
+                Box::pin(async { Err(SessionError::Cloud) })
+            }
+            fn finalize<'a>(
+                &'a self,
+                _: &'a AuthSession,
+                _: SnapshotFinalizeRequest,
+            ) -> CloudFuture<'a, SnapshotRecord> {
+                self.calls.lock().unwrap().mutations += 1;
+                Box::pin(async { Err(SessionError::Cloud) })
+            }
+        }
+
+        struct NoKeychain;
+        impl RefreshTokenStore for NoKeychain {
+            fn load(&self, _: &str, _: &str) -> Result<Option<RefreshToken>, KeychainError> {
+                Ok(None)
+            }
+            fn store(&self, _: &str, _: &str, _: &RefreshToken) -> Result<(), KeychainError> {
+                Ok(())
+            }
+            fn delete(&self, _: &str, _: &str) -> Result<(), KeychainError> {
+                Ok(())
+            }
+        }
+
+        struct Fixture {
+            root: tempfile::TempDir,
+            cloud: CatalogBoundCloud,
+            keychain: Arc<dyn RefreshTokenStore>,
+            intent: WorldAcquireIntentStore,
+            evidence: std::path::PathBuf,
+            save: Vec<u8>,
+            marker: Vec<u8>,
+        }
+
+        impl Fixture {
+            /// Interrupted revision-zero save from the prior client
+            /// instance: the marker binds the prior lease and exact SAV.
+            fn new() -> Self {
+                let root = tempfile::tempdir().unwrap();
+                let workspace_parent = root.path().join("sessions");
+                let evidence = workspace_parent.join("coop-recovery-crash");
+                std::fs::create_dir_all(&evidence).unwrap();
+                std::fs::create_dir_all(root.path().join("bridge")).unwrap();
+                let save = b"unsynced revision-zero save".to_vec();
+                let prior_fence = LeaseFence::new(
+                    SessionId::new(uuid::Uuid::from_u128(0x56)).unwrap(),
+                    character(),
+                    Revision::initial(),
+                    SessionEpoch::new(1).unwrap(),
+                    prior_client(),
+                );
+                let marker = RecoveryMarkerV2::new(
+                    prior_fence,
+                    Revision::initial(),
+                    1,
+                    Sha256Digest::of_bytes(&save),
+                )
+                .unwrap()
+                .encode()
+                .unwrap();
+                std::fs::write(evidence.join("character.sav"), &save).unwrap();
+                std::fs::write(evidence.join("recovery.marker"), &marker).unwrap();
+                let intent =
+                    WorldAcquireIntentStore::new(root.path().join("recovery-acquire"), character())
+                        .unwrap();
+                Self {
+                    root,
+                    cloud: CatalogBoundCloud::default(),
+                    keychain: Arc::new(NoKeychain),
+                    intent,
+                    evidence,
+                    save,
+                    marker,
+                }
+            }
+
+            async fn auth(&self) -> AuthSession {
+                AuthSession::login(
+                    &self.cloud,
+                    self.keychain.as_ref(),
+                    "recovery-player",
+                    AuthSession::password("test-password").unwrap(),
+                )
+                .await
+                .unwrap()
+            }
+
+            /// The configuration a trusted catalog would produce for the
+            /// server-selected world.
+            fn config(&self, response: &AcquireWorldLeaseResponse) -> SessionConfig {
+                SessionConfig {
+                    client_instance_id: response.lease.client_instance_id,
+                    rom_world_id: response.active_world_id,
+                    manifest: compatibility(),
+                    trusted_manifest_key: TrustedManifestKey::new(
+                        "manifest-test",
+                        ed25519_dalek::SigningKey::from_bytes(&[2; 32])
+                            .verifying_key()
+                            .to_bytes(),
+                    )
+                    .unwrap(),
+                    epoch_store: EpochStore::new(self.root.path().join("epoch.json")),
+                    workspace_parent: self.root.path().join("sessions"),
+                    bridge_lua_dir: self.root.path().join("bridge"),
+                }
+            }
+
+            fn assert_evidence_untouched(&self) {
+                assert_eq!(
+                    std::fs::read(self.evidence.join("character.sav")).unwrap(),
+                    self.save
+                );
+                assert_eq!(
+                    std::fs::read(self.evidence.join("recovery.marker")).unwrap(),
+                    self.marker
+                );
+            }
+
+            fn session_dirs(&self) -> usize {
+                std::fs::read_dir(self.root.path().join("sessions"))
+                    .unwrap()
+                    .filter(|entry| {
+                        entry
+                            .as_ref()
+                            .unwrap()
+                            .file_name()
+                            .to_string_lossy()
+                            .starts_with("coop-session-")
+                    })
+                    .count()
+            }
+        }
+
+        fn compatibility() -> BuildCompatibility {
+            let registry_digest = coop_protocol::IDENTITY_REGISTRY_DIGEST
+                .iter()
+                .map(|byte| format!("{byte:02x}"))
+                .collect::<String>();
+            let manifest = serde_json::from_value(serde_json::json!({
+                "schema_version": 4,
+                "emulator": {
+                    "name": "mGBA",
+                    "version": "0.11.0",
+                    "build_id": "0.11-9139-3a5bc2462",
+                    "source_commit": "3a5bc24629867576b0fb576a5d5a21d3b3d6b576",
+                    "platform": "windows-x64",
+                    "variant": "Qt",
+                    "archive_sha256": "ea7cc0e8632cd80d28bdb55e37aacc58b2b018f564209f790e8cc3caed8c002b",
+                    "executable_sha256": "743157a16a1cb478a2b45e6e20e9a482ea397c3820d7e8e27b1e048e85bd5546"
+                },
+                "game_build": {
+                    "id": "pokeemerald-coop",
+                    "numeric_id": 65536,
+                    "rom_sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+                },
+                "net_bridge": {
+                    "symbol": "gCoopNetBridge",
+                    "address": 33_554_432,
+                    "size": 9244,
+                    "magic": 1_347_111_759,
+                    "abi_version": 1,
+                    "game_protocol_version": 5,
+                    "byte_order": "little",
+                    "checksum": {"algorithm": "CRC-32/IEEE", "covered_bytes": [0, 139], "stored_offset": 140},
+                    "offsets": {"magic": 0, "abi_version": 4, "game_protocol_version": 6, "game_build_id": 8, "status_flags": 12, "last_sidecar_heartbeat": 16, "game_to_network": 20, "network_to_game": 4632},
+                    "queue": {"capacity": 32, "size": 4612, "read_index_offset": 0, "write_index_offset": 2, "entries_offset": 4},
+                    "message": {"size": 144, "payload_size": 128, "offsets": {"type": 0, "length": 2, "sequence": 4, "session_epoch": 8, "payload": 12, "checksum": 140}}
+                },
+                "save": {
+                    "block3_address": 33_554_432,
+                    "coop_offset": 4,
+                    "generation_offset": 28,
+                    "generation_address": 33_554_464,
+                    "crc_offset": 668,
+                    "schema_version": 2,
+                    "struct_size": 672,
+                    "registry_version": coop_protocol::IDENTITY_REGISTRY_VERSION,
+                    "registry_digest": registry_digest
+                }
+            }))
+            .unwrap();
+            BuildCompatibility {
+                target: CompatibilityTarget::new(
+                    GameBuildId::new("pokeemerald-coop").unwrap(),
+                    Sha256Digest::of_bytes(b"rom"),
+                    MgbaVersion::new("0.11.0").unwrap(),
+                    coop_cloud::BridgeAbiVersion::new(1).unwrap(),
+                    coop_cloud::ProtocolVersion::new(1).unwrap(),
+                    Revision::initial(),
+                ),
+                manifest,
+                rom_path: "rom.gba".into(),
+                mgba_path: "mgba".into(),
+            }
+        }
+
+        fn assert_only_world_bound(cloud: &CatalogBoundCloud) {
+            let calls = cloud.calls.lock().unwrap();
+            assert_eq!(calls.legacy_acquires, 0);
+            assert_eq!(calls.mutations, 0);
+        }
+
+        #[tokio::test]
+        async fn recovery_binds_the_prior_instance_to_the_server_world_and_settles() {
+            let fixture = Fixture::new();
+            let auth = fixture.auth().await;
+            let selected = Mutex::new(None);
+            let (result, auth) = super::super::reconcile_recovery_with_world(
+                &fixture.cloud,
+                &fixture.keychain,
+                auth,
+                &fixture.intent,
+                prior_client(),
+                |response| {
+                    *selected.lock().unwrap() = Some(response.active_world_id);
+                    Ok(fixture.config(response))
+                },
+            )
+            .await;
+            // Revision-zero divergent evidence has no server-signed recovery
+            // capability: the terminal outcome keeps it for an operator.
+            assert_eq!(result, RecoveryResult::StillUncertain);
+            assert!(auth.is_some(), "credentials survive a settled lease");
+            assert_eq!(*selected.lock().unwrap(), Some(server_world()));
+            assert_only_world_bound(&fixture.cloud);
+            let calls = fixture.cloud.calls.lock().unwrap();
+            assert_eq!(calls.world_acquires.len(), 1);
+            let request = calls.world_acquires[0];
+            assert_eq!(request.client_instance_id, prior_client());
+            assert!(!request.replace_same_client);
+            assert_eq!(calls.resume_packages, 1, "resumed under the world lease");
+            assert_eq!(calls.releases.len(), 1, "terminal state releases its lease");
+            assert_eq!(calls.releases[0].client_instance_id, prior_client());
+            drop(calls);
+            assert_eq!(fixture.intent.read().unwrap(), None);
+            fixture.assert_evidence_untouched();
+        }
+
+        #[tokio::test]
+        async fn unselectable_server_world_releases_without_materializing() {
+            let fixture = Fixture::new();
+            let auth = fixture.auth().await;
+            let (result, auth) = super::super::reconcile_recovery_with_world(
+                &fixture.cloud,
+                &fixture.keychain,
+                auth,
+                &fixture.intent,
+                prior_client(),
+                // The trusted catalog has no compatible ROM for this world.
+                |_| Err(()),
+            )
+            .await;
+            assert_eq!(result, RecoveryResult::StillUncertain);
+            assert!(auth.is_some());
+            assert_only_world_bound(&fixture.cloud);
+            let calls = fixture.cloud.calls.lock().unwrap();
+            assert_eq!(calls.resume_packages, 0);
+            assert_eq!(calls.releases.len(), 1);
+            drop(calls);
+            assert_eq!(fixture.session_dirs(), 0);
+            assert_eq!(fixture.intent.read().unwrap(), None);
+            fixture.assert_evidence_untouched();
+        }
+
+        #[tokio::test]
+        async fn configuration_for_another_world_is_rejected_before_resume() {
+            let fixture = Fixture::new();
+            let auth = fixture.auth().await;
+            let (result, _) = super::super::reconcile_recovery_with_world(
+                &fixture.cloud,
+                &fixture.keychain,
+                auth,
+                &fixture.intent,
+                prior_client(),
+                |response| {
+                    let mut config = fixture.config(response);
+                    config.rom_world_id = RomWorldId::new(1).unwrap();
+                    Ok(config)
+                },
+            )
+            .await;
+            assert_eq!(result, RecoveryResult::StillUncertain);
+            assert_only_world_bound(&fixture.cloud);
+            let calls = fixture.cloud.calls.lock().unwrap();
+            assert_eq!(calls.resume_packages, 0);
+            assert_eq!(calls.releases.len(), 1);
+            drop(calls);
+            assert_eq!(fixture.session_dirs(), 0);
+            fixture.assert_evidence_untouched();
+        }
+
+        #[tokio::test]
+        async fn closed_key_rotates_only_the_key_and_stale_intent_is_settled_first() {
+            let fixture = Fixture::new();
+            let stale = AcquireLeaseRequest::new(
+                character(),
+                ClientInstanceId::new(uuid::Uuid::from_u128(0x57)).unwrap(),
+                IdempotencyKey::new(uuid::Uuid::from_u128(0x58)).unwrap(),
+            );
+            fixture.intent.load_or_create(stale).unwrap();
+            // The stale request's lease is still live: it is replayed and
+            // released before a request for the prior instance is minted.
+            let auth = fixture.auth().await;
+            let cloud = &fixture.cloud;
+            let (first, _) = super::super::reconcile_recovery_with_world(
+                cloud,
+                &fixture.keychain,
+                auth,
+                &fixture.intent,
+                prior_client(),
+                |_| Err(()),
+            )
+            .await;
+            assert_eq!(first, RecoveryResult::StillUncertain);
+            {
+                let calls = cloud.calls.lock().unwrap();
+                assert_eq!(calls.world_acquires.len(), 2);
+                assert_eq!(calls.world_acquires[0], stale);
+                assert_eq!(calls.world_acquires[1].client_instance_id, prior_client());
+                assert_ne!(
+                    calls.world_acquires[1].idempotency_key,
+                    stale.idempotency_key
+                );
+                assert_eq!(calls.releases.len(), 2, "stale lease released first");
+            }
+
+            // A persisted request whose key the server reports closed.
+            let closed = AcquireLeaseRequest::new(
+                character(),
+                prior_client(),
+                IdempotencyKey::new(uuid::Uuid::from_u128(0x59)).unwrap(),
+            );
+            fixture.intent.load_or_create(closed).unwrap();
+            cloud
+                .world_acquire_failures
+                .lock()
+                .unwrap()
+                .push_back(SessionError::AcquireClosed);
+            let auth = fixture.auth().await;
+            let (second, _) = super::super::reconcile_recovery_with_world(
+                cloud,
+                &fixture.keychain,
+                auth,
+                &fixture.intent,
+                prior_client(),
+                |_| Err(()),
+            )
+            .await;
+            assert_eq!(second, RecoveryResult::StillUncertain);
+            let calls = cloud.calls.lock().unwrap();
+            assert_eq!(calls.world_acquires.len(), 4);
+            assert_eq!(calls.world_acquires[2], closed);
+            assert_eq!(calls.world_acquires[3].client_instance_id, prior_client());
+            assert_ne!(
+                calls.world_acquires[3].idempotency_key,
+                closed.idempotency_key
+            );
+            assert_eq!(calls.legacy_acquires, 0);
+            assert_eq!(calls.mutations, 0);
+            drop(calls);
+            assert_eq!(fixture.intent.read().unwrap(), None);
+            fixture.assert_evidence_untouched();
+        }
     }
 
     #[test]

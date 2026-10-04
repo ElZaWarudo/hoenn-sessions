@@ -27,7 +27,7 @@ struct RegionalProgress
 
 struct CoopProgress
 {
-    /* Slots are ordered HOENN, KANTO, JOHTO, SEVII. */
+    /* Slots are ordered HOENN, KANTO, JOHTO, SEVII, CORMORIA. */
     /* 0x00 */ struct RegionalProgress regions[COOP_PROGRESS_REGION_COUNT];
 };
 
@@ -37,7 +37,7 @@ typedef struct CoopProgress CoopProgress;
 _Static_assert(sizeof(struct RegionalProgress) == 8, "RegionalProgress ABI size");
 _Static_assert(offsetof(struct RegionalProgress, badge_mask) == 0, "RegionalProgress badges offset");
 _Static_assert(offsetof(struct RegionalProgress, story_checkpoint) == 4, "RegionalProgress story offset");
-_Static_assert(sizeof(struct CoopProgress) == 32, "CoopProgress ABI size");
+_Static_assert(sizeof(struct CoopProgress) == 40, "CoopProgress ABI size");
 
 /* Runtime state is EWRAM-only and is initialized separately from SaveBlock. */
 extern EWRAM_DATA struct CoopProgress gCoopProgress;

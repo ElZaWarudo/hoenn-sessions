@@ -21,6 +21,8 @@ pub mod progress_observation;
 pub use progress_observation::*;
 pub mod group_travel;
 pub use group_travel::*;
+pub mod rom_world;
+pub use rom_world::RomWorldId;
 pub mod battle_bridge;
 pub use battle_bridge::*;
 pub mod trade_offer;
@@ -46,6 +48,7 @@ pub enum RegionId {
     Kanto = 2,
     Johto = 3,
     Sevii = 4,
+    Cormoria = 5,
 }
 
 impl RegionId {
@@ -67,6 +70,7 @@ impl RegionId {
             2 => Ok(Self::Kanto),
             3 => Ok(Self::Johto),
             4 => Ok(Self::Sevii),
+            5 => Ok(Self::Cormoria),
             ordinal => Err(ProtocolError::UnknownRegionOrdinal { ordinal }),
         }
     }
@@ -79,6 +83,7 @@ impl RegionId {
             Self::Kanto => "KANTO",
             Self::Johto => "JOHTO",
             Self::Sevii => "SEVII",
+            Self::Cormoria => "CORMORIA",
         }
     }
 
@@ -94,6 +99,7 @@ impl RegionId {
             "KANTO" => Ok(Self::Kanto),
             "JOHTO" => Ok(Self::Johto),
             "SEVII" => Ok(Self::Sevii),
+            "CORMORIA" => Ok(Self::Cormoria),
             _ => Err(ProtocolError::InvalidRegion {
                 value: value.to_owned(),
             }),
@@ -1508,7 +1514,11 @@ mod tests {
         assert_eq!(RegionId::Kanto.wire(), 2);
         assert_eq!(RegionId::Johto.wire(), 3);
         assert_eq!(RegionId::Sevii.wire(), 4);
+        assert_eq!(RegionId::Cormoria.wire(), 5);
         assert_eq!(RegionId::from_wire(4), Ok(RegionId::Sevii));
+        assert_eq!(RegionId::from_wire(5), Ok(RegionId::Cormoria));
+        assert_eq!(RegionId::Cormoria.to_string(), "CORMORIA");
+        assert_eq!(RegionId::parse_token("CORMORIA"), Ok(RegionId::Cormoria));
         assert!(matches!(
             RegionId::from_wire(99),
             Err(ProtocolError::UnknownRegionOrdinal { .. })

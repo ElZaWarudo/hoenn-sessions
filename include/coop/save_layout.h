@@ -5,11 +5,14 @@
  * src/coop/save.c asserts each one against the real structs, and coop-save's
  * tests parse this header, so the ROM and server cannot drift apart. Do not
  * trust the offset comments in global.h: the regional flag table made the
- * flags array larger than vanilla, which moved everything after it. */
+ * flags array larger than vanilla, which moved everything after it, and the
+ * enlarged Bag pockets (40 items, 64 key items, 90 TM/HM slots, 70 extra
+ * 4-byte ItemSlots = 0x118 bytes) moved flags and vars again. Both worlds
+ * share this SaveBlock1 layout. */
 #define COOP_SAVE_LAYOUT_SB1_MONEY 0x490
-#define COOP_SAVE_LAYOUT_SB1_FLAGS 0x1270
+#define COOP_SAVE_LAYOUT_SB1_FLAGS 0x1388
 #define COOP_SAVE_LAYOUT_SB1_FLAG_BYTES 0x18B
-#define COOP_SAVE_LAYOUT_SB1_VARS 0x13FC
+#define COOP_SAVE_LAYOUT_SB1_VARS 0x1514
 #define COOP_SAVE_LAYOUT_SB1_VAR_COUNT 0x18C
 #define COOP_SAVE_LAYOUT_SB2_ENCRYPTION_KEY 0xB4
 #define COOP_SAVE_LAYOUT_TRAINER_FLAGS_START 0x500

@@ -111,17 +111,25 @@ impl UserPaths {
     }
 
     pub fn ensure_directories(&self) -> Result<(), ConfigError> {
+        // RomTravelJournal requires its directory to exist before the first
+        // world lease is acquired; it deliberately does not create it itself.
+        let travel_directory = self.state_root.join("travel");
         for path in [
             self.state_root.as_path(),
             self.runtime_root.as_path(),
             self.generations_root.as_path(),
             self.workspace_parent.as_path(),
+            travel_directory.as_path(),
         ] {
             std::fs::create_dir_all(path).map_err(ConfigError::StateIo)?;
             let metadata = std::fs::symlink_metadata(path).map_err(ConfigError::StateIo)?;
             if !metadata.is_dir() || metadata.file_type().is_symlink() {
                 return Err(ConfigError::InvalidLocalAppData);
             }
+            #[cfg(not(windows))]
+            std::fs::File::open(path.parent().ok_or(ConfigError::InvalidLocalAppData)?)
+                .and_then(|parent| parent.sync_all())
+                .map_err(ConfigError::StateIo)?;
         }
         Ok(())
     }
@@ -325,6 +333,29 @@ fn hex(value: u8) -> Option<u8> {
 mod tests {
     use super::{AccountRecord, UserPaths};
     use coop_cloud::{CharacterId, UserId};
+    use coop_launcher::rom_travel::RomTravelJournal;
+    use coop_protocol::RomWorldId;
+
+    #[test]
+    fn fresh_install_provisions_travel_journal_directory() {
+        let root = tempfile::tempdir().expect("temp directory");
+        let paths = UserPaths::from_local_app_data(root.path()).expect("paths");
+
+        paths.ensure_directories().expect("state directories");
+
+        let travel_directory = paths.state_root().join("travel");
+        assert!(travel_directory.is_dir());
+        let journal = RomTravelJournal::new(
+            travel_directory,
+            account("first-player", 10).character_id,
+            [RomWorldId::new(1).expect("world")],
+        )
+        .expect("journal");
+        assert!(journal.read().expect("fresh journal read").is_none());
+        journal
+            .initialize(RomWorldId::new(1).expect("world"))
+            .expect("first world initialization");
+    }
 
     fn account(username: &str, seed: u128) -> AccountRecord {
         AccountRecord {

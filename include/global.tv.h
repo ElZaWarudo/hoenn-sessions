@@ -228,7 +228,7 @@ typedef union // size = 0x24
         /*0x0C*/ u16 itemAmounts[SMARTSHOPPER_NUM_ITEMS];
         /*0x12*/ mapsec_u8_t shopLocation;
         /*0x13*/ u8 playerName[PLAYER_NAME_LENGTH + 1];
-        /*0x1B*/ //u8 padding;
+        /*0x1B*/ u8 locationHi;
     } smartshopperShow;
 
     // TVSHOW_POKEMON_TODAY_FAILED
@@ -243,7 +243,7 @@ typedef union // size = 0x24
         /*0x11*/ u8 outcome;
         /*0x12*/ mapsec_u8_t location;
         /*0x13*/ u8 playerName[PLAYER_NAME_LENGTH + 1];
-        /*0x1B*/ //u8 padding;
+        /*0x1B*/ u8 locationHi;
     } pokemonTodayFailed;
 
     // TVSHOW_FISHING_ADVICE
@@ -271,7 +271,7 @@ typedef union // size = 0x24
         /*0x0B*/ u8 language;
         /*0x0C*/ u8 filler_0C[7];
         /*0x13*/ u8 playerName[PLAYER_NAME_LENGTH + 1];
-        /*0x1B*/ //u8 padding2;
+        /*0x1B*/ u8 locationHi;
     } worldOfMasters;
 
     // TVSHOW_TODAYS_RIVAL_TRAINER
@@ -288,7 +288,7 @@ typedef union // size = 0x24
         /*0x0C*/ u8 language;
         /*0x0D*/ u8 filler_0D[6];
         /*0x13*/ u8 playerName[PLAYER_NAME_LENGTH + 1];
-        /*0x1B*/ //u8 padding2;
+        /*0x1B*/ u8 locationHi;
     } rivalTrainer;
 
     // TVSHOW_TREND_WATCHER
@@ -314,7 +314,7 @@ typedef union // size = 0x24
         /*0x06*/ u16 mapLayoutId;
         /*0x08*/ u8 filler_08[11];
         /*0x13*/ u8 playerName[PLAYER_NAME_LENGTH + 1];
-        /*0x1B*/ //u8 padding;
+        /*0x1B*/ u8 locationHi;
     } treasureInvestigators;
 
     // TVSHOW_FIND_THAT_GAMER
@@ -345,7 +345,7 @@ typedef union // size = 0x24
         /*0x0E*/ u8 language;
         /*0x0F*/ u8 filler_0f[4];
         /*0x13*/ u8 playerName[PLAYER_NAME_LENGTH + 1];
-        /*0x1B*/ //u8 padding;
+        /*0x1B*/ u8 locationHi;
     } breakingNews;
 
     // TVSHOW_SECRET_BASE_VISIT
@@ -492,6 +492,16 @@ typedef union // size = 0x24
     } massOutbreak;
 } TVShow;
 
+// The high byte travels with each record through TV compaction and record mixing.
+// Keep the on-disk/wire union layout unchanged.
+_Static_assert(sizeof(TVShow) == 0x24, "TV show save ABI size");
+_Static_assert(offsetof(TVShow, smartshopperShow.locationHi) == 0x1B, "smart shopper location high byte");
+_Static_assert(offsetof(TVShow, pokemonTodayFailed.locationHi) == 0x1B, "failed capture location high byte");
+_Static_assert(offsetof(TVShow, worldOfMasters.locationHi) == 0x1B, "world of masters location high byte");
+_Static_assert(offsetof(TVShow, rivalTrainer.locationHi) == 0x1B, "rival trainer location high byte");
+_Static_assert(offsetof(TVShow, treasureInvestigators.locationHi) == 0x1B, "treasure investigators location high byte");
+_Static_assert(offsetof(TVShow, breakingNews.locationHi) == 0x1B, "breaking news location high byte");
+
 typedef struct
 {
     u8 kind;
@@ -517,7 +527,11 @@ struct GabbyAndTyData
              u8 playerLostAMon2:1;
              u8 playerUsedHealingItem2:1;
              u8 playerThrewABall2:1;
-             u8 valB_4:4;
+             u8 mapnumHi:4;
 };
+
+_Static_assert(sizeof(struct GabbyAndTyData) == 12, "Gabby and Ty save ABI size");
+_Static_assert(offsetof(struct GabbyAndTyData, mapnum) == 8, "Gabby and Ty map byte offset");
+_Static_assert(offsetof(struct GabbyAndTyData, battleNum) == 9, "Gabby and Ty battle count offset");
 
 #endif //GUARD_GLOBAL_TV_H

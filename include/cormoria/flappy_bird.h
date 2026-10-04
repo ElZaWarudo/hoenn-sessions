@@ -1,0 +1,6 @@
+#ifndef GUARD_CORMORIA_FLAPPY_BIRD_H
+#define GUARD_CORMORIA_FLAPPY_BIRD_H
+
+void StartFlappyBird(void);
+
+#endif // GUARD_CORMORIA_FLAPPY_BIRD_H

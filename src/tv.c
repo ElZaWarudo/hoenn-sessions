@@ -48,6 +48,101 @@
 
 #define LAST_TVSHOW_IDX (TV_SHOWS_COUNT - 1)
 
+static void SetTVShowLocation(mapsec_u8_t *low, u8 *high, mapsec_u16_t section)
+{
+    *low = section;
+    *high = section >> 8;
+}
+
+static mapsec_u16_t GetTVShowLocation(mapsec_u8_t low, u8 high)
+{
+    return ((mapsec_u16_t)high << 8) | low;
+}
+
+bool8 TVShow_SetMapSection(TVShow *show, mapsec_u16_t section)
+{
+    mapsec_u8_t *low;
+    u8 *high;
+
+    if (show == NULL)
+        return FALSE;
+
+    switch (show->common.kind)
+    {
+    case TVSHOW_SMART_SHOPPER:
+        low = &show->smartshopperShow.shopLocation;
+        high = &show->smartshopperShow.locationHi;
+        break;
+    case TVSHOW_POKEMON_TODAY_FAILED:
+        low = &show->pokemonTodayFailed.location;
+        high = &show->pokemonTodayFailed.locationHi;
+        break;
+    case TVSHOW_WORLD_OF_MASTERS:
+        low = &show->worldOfMasters.location;
+        high = &show->worldOfMasters.locationHi;
+        break;
+    case TVSHOW_TODAYS_RIVAL_TRAINER:
+        low = &show->rivalTrainer.location;
+        high = &show->rivalTrainer.locationHi;
+        break;
+    case TVSHOW_TREASURE_INVESTIGATORS:
+        low = &show->treasureInvestigators.location;
+        high = &show->treasureInvestigators.locationHi;
+        break;
+    case TVSHOW_BREAKING_NEWS:
+        low = &show->breakingNews.location;
+        high = &show->breakingNews.locationHi;
+        break;
+    default:
+        return FALSE;
+    }
+
+    SetTVShowLocation(low, high, section);
+    return TRUE;
+}
+
+mapsec_u16_t TVShow_GetMapSection(const TVShow *show)
+{
+    if (show == NULL)
+        return MAPSEC_NONE;
+
+    switch (show->common.kind)
+    {
+    case TVSHOW_SMART_SHOPPER:
+        return GetTVShowLocation(show->smartshopperShow.shopLocation, show->smartshopperShow.locationHi);
+    case TVSHOW_POKEMON_TODAY_FAILED:
+        return GetTVShowLocation(show->pokemonTodayFailed.location, show->pokemonTodayFailed.locationHi);
+    case TVSHOW_WORLD_OF_MASTERS:
+        return GetTVShowLocation(show->worldOfMasters.location, show->worldOfMasters.locationHi);
+    case TVSHOW_TODAYS_RIVAL_TRAINER:
+        return GetTVShowLocation(show->rivalTrainer.location, show->rivalTrainer.locationHi);
+    case TVSHOW_TREASURE_INVESTIGATORS:
+        return GetTVShowLocation(show->treasureInvestigators.location, show->treasureInvestigators.locationHi);
+    case TVSHOW_BREAKING_NEWS:
+        return GetTVShowLocation(show->breakingNews.location, show->breakingNews.locationHi);
+    default:
+        return MAPSEC_NONE;
+    }
+}
+
+bool8 GabbyAndTy_SetMapSection(struct GabbyAndTyData *data, mapsec_u16_t section)
+{
+    if (data == NULL || section > 0x0FFF)
+        return FALSE;
+
+    data->mapnum = section;
+    data->mapnumHi = section >> 8;
+    return TRUE;
+}
+
+mapsec_u16_t GabbyAndTy_GetMapSection(const struct GabbyAndTyData *data)
+{
+    if (data == NULL)
+        return MAPSEC_NONE;
+
+    return ((mapsec_u16_t)data->mapnumHi << 8) | data->mapnum;
+}
+
 #define rbernoulli(num, den) BernoulliTrial(0xFFFF * (num) / (den))
 
 enum {
@@ -926,7 +1021,7 @@ void ResetGabbyAndTy(void)
     gSaveBlock1Ptr->gabbyAndTyData.playerLostAMon2 = FALSE;
     gSaveBlock1Ptr->gabbyAndTyData.playerUsedHealingItem2 = FALSE;
     gSaveBlock1Ptr->gabbyAndTyData.playerThrewABall2 = FALSE;
-    gSaveBlock1Ptr->gabbyAndTyData.valB_4 = 0;
+    gSaveBlock1Ptr->gabbyAndTyData.mapnumHi = 0;
     gSaveBlock1Ptr->gabbyAndTyData.mapnum = 0;
     gSaveBlock1Ptr->gabbyAndTyData.battleNum = 0;
 }
@@ -974,7 +1069,11 @@ void GabbyAndTyAfterInterview(void)
     gSaveBlock1Ptr->gabbyAndTyData.playerUsedHealingItem2 = gSaveBlock1Ptr->gabbyAndTyData.playerUsedHealingItem;
     gSaveBlock1Ptr->gabbyAndTyData.playerThrewABall2 = gSaveBlock1Ptr->gabbyAndTyData.playerThrewABall;
     gSaveBlock1Ptr->gabbyAndTyData.onAir = TRUE;
-    gSaveBlock1Ptr->gabbyAndTyData.mapnum = gMapHeader.regionMapSectionId;
+    if (!GabbyAndTy_SetMapSection(&gSaveBlock1Ptr->gabbyAndTyData, gMapHeader.regionMapSectionId))
+    {
+        gSaveBlock1Ptr->gabbyAndTyData.onAir = FALSE;
+        return;
+    }
     IncrementGameStat(GAME_STAT_GOT_INTERVIEWED);
 }
 
@@ -1161,7 +1260,7 @@ static void InitWorldOfMastersShowAttempt(void)
     show->worldOfMasters.numPokeCaught++;
     show->worldOfMasters.caughtPoke = gBattleResults.caughtMonSpecies;
     show->worldOfMasters.species = gBattleResults.playerMon1Species;
-    show->worldOfMasters.location = gMapHeader.regionMapSectionId;
+    TVShow_SetMapSection(show, gMapHeader.regionMapSectionId);
 }
 
 static void TryPutPokemonTodayFailedOnTheAir(void)
@@ -1189,7 +1288,7 @@ static void TryPutPokemonTodayFailedOnTheAir(void)
                 show->pokemonTodayFailed.species2 = gBattleResults.lastOpponentSpecies;
                 show->pokemonTodayFailed.nBallsUsed = ballsUsed;
                 show->pokemonTodayFailed.outcome = gBattleOutcome;
-                show->pokemonTodayFailed.location = gMapHeader.regionMapSectionId;
+                TVShow_SetMapSection(show, gMapHeader.regionMapSectionId);
                 StringCopy(show->pokemonTodayFailed.playerName, gSaveBlock2Ptr->playerName);
                 StorePlayerIdInRecordMixShow(show);
                 show->pokemonTodayFailed.language = gGameLanguage;
@@ -1505,7 +1604,7 @@ void TryPutSmartShopperOnAir(void)
                 show = &gSaveBlock1Ptr->tvShows[sCurTVShowSlot];
                 show->smartshopperShow.kind = TVSHOW_SMART_SHOPPER;
                 show->smartshopperShow.active = FALSE; // NOTE: Show is not active until passed via Record Mix.
-                show->smartshopperShow.shopLocation = gMapHeader.regionMapSectionId;
+                TVShow_SetMapSection(show, gMapHeader.regionMapSectionId);
                 for (i = 0; i < SMARTSHOPPER_NUM_ITEMS; i++)
                 {
                     show->smartshopperShow.itemIds[i] = gMartPurchaseHistory[i].itemId;
@@ -1808,7 +1907,7 @@ static void TryPutWorldOfMastersOnAir(void)
             show2->worldOfMasters.steps = GetGameStat(GAME_STAT_STEPS) - show->worldOfMasters.steps;
             show2->worldOfMasters.caughtPoke = show->worldOfMasters.caughtPoke;
             show2->worldOfMasters.species = show->worldOfMasters.species;
-            show2->worldOfMasters.location = show->worldOfMasters.location;
+            TVShow_SetMapSection(show2, TVShow_GetMapSection(show));
             StringCopy(show2->worldOfMasters.playerName, gSaveBlock2Ptr->playerName);
             StorePlayerIdInRecordMixShow(show2);
             show2->worldOfMasters.language = gGameLanguage;
@@ -1840,7 +1939,7 @@ void TryPutTodaysRivalTrainerOnAir(void)
             show->rivalTrainer.dexCount = GetNationalPokedexCount(FLAG_GET_CAUGHT);
         else
             show->rivalTrainer.dexCount = GetRegionalPokedexCount(FLAG_GET_CAUGHT);
-        show->rivalTrainer.location = gMapHeader.regionMapSectionId;
+        TVShow_SetMapSection(show, gMapHeader.regionMapSectionId);
         show->rivalTrainer.mapLayoutId = gMapHeader.mapLayoutId;
         show->rivalTrainer.nSilverSymbols = 0;
         show->rivalTrainer.nGoldSymbols = 0;
@@ -1889,7 +1988,7 @@ void TryPutTreasureInvestigatorsOnAir(void)
         show->treasureInvestigators.kind = TVSHOW_TREASURE_INVESTIGATORS;
         show->treasureInvestigators.active = FALSE; // NOTE: Show is not active until passed via Record Mix.
         show->treasureInvestigators.item = gSpecialVar_0x8005;
-        show->treasureInvestigators.location = gMapHeader.regionMapSectionId;
+        TVShow_SetMapSection(show, gMapHeader.regionMapSectionId);
         show->treasureInvestigators.mapLayoutId = gMapHeader.mapLayoutId;
         StringCopy(show->treasureInvestigators.playerName, gSaveBlock2Ptr->playerName);
         StorePlayerIdInRecordMixShow(show);
@@ -2101,7 +2200,7 @@ void TryPutBreakingNewsOnAir(void)
         balls = 0;
         for (i = 0; i < POKEBALL_COUNT; i++)
             balls += gBattleResults.catchAttempts[i];
-        show->breakingNews.location = gMapHeader.regionMapSectionId;
+        TVShow_SetMapSection(show, gMapHeader.regionMapSectionId);
         StringCopy(show->breakingNews.playerName, gSaveBlock2Ptr->playerName);
         show->breakingNews.poke1Species = gBattleResults.playerMon1Species;
         switch (gBattleOutcome)
@@ -4129,12 +4228,13 @@ void SanitizeTVShowLocationsForRuby(TVShow *shows)
     {
         switch (shows[i].common.kind)
         {
+        case TVSHOW_SMART_SHOPPER:
+        case TVSHOW_TODAYS_RIVAL_TRAINER:
+        case TVSHOW_TREASURE_INVESTIGATORS:
+        case TVSHOW_BREAKING_NEWS:
         case TVSHOW_WORLD_OF_MASTERS:
-            if (shows[i].worldOfMasters.location > KANTO_MAPSEC_START)
-                memset(&shows[i], 0, sizeof(TVShow));
-            break;
         case TVSHOW_POKEMON_TODAY_FAILED:
-            if (shows[i].pokemonTodayFailed.location > KANTO_MAPSEC_START)
+            if (TVShow_GetMapSection(&shows[i]) > KANTO_MAPSEC_START)
                 memset(&shows[i], 0, sizeof(TVShow));
             break;
         }
@@ -4430,7 +4530,7 @@ static void DoTVShowTodaysSmartShopper(void)
     {
     case SMARTSHOPPER_STATE_INTRO:
         TVShowConvertInternationalString(gStringVar1, show->smartshopperShow.playerName, show->smartshopperShow.language);
-        GetMapName(gStringVar2, show->smartshopperShow.shopLocation, 0);
+        GetMapName(gStringVar2, TVShow_GetMapSection(show), 0);
         if (show->smartshopperShow.itemAmounts[0] >= 255)
             sTVShowState = SMARTSHOPPER_STATE_CLERK_MAX;
         else
@@ -4687,7 +4787,7 @@ static void DoTVShowPokemonTodayFailedCapture(void)
         break;
     case 1:
         TVShowConvertInternationalString(gStringVar1, show->pokemonTodayFailed.playerName, show->pokemonTodayFailed.language);
-        GetMapName(gStringVar2, show->pokemonTodayFailed.location, 0);
+        GetMapName(gStringVar2, TVShow_GetMapSection(show), 0);
         StringCopy(gStringVar3, GetSpeciesName(show->pokemonTodayFailed.species2));
         if (show->pokemonTodayFailed.outcome == 1)
             sTVShowState = 3;
@@ -5384,7 +5484,7 @@ void DoTVShowInSearchOfTrainers(void)
     switch (state)
     {
     case 0:
-        GetMapName(gStringVar1, gSaveBlock1Ptr->gabbyAndTyData.mapnum, 0);
+        GetMapName(gStringVar1, GabbyAndTy_GetMapSection(&gSaveBlock1Ptr->gabbyAndTyData), 0);
         if (gSaveBlock1Ptr->gabbyAndTyData.battleNum > 1)
             sTVShowState = 1;
         else
@@ -5481,7 +5581,7 @@ static void DoTVShowTheWorldOfMasters(void)
         break;
     case 2:
         TVShowConvertInternationalString(gStringVar1, show->worldOfMasters.playerName, show->worldOfMasters.language);
-        GetMapName(gStringVar2, show->worldOfMasters.location, 0);
+        GetMapName(gStringVar2, TVShow_GetMapSection(show), 0);
         StringCopy(gStringVar3, GetSpeciesName(show->worldOfMasters.caughtPoke));
         TVShowDone();
         break;
@@ -5500,7 +5600,7 @@ static void DoTVShowTodaysRivalTrainer(void)
     switch (state)
     {
     case 0:
-        switch (show->rivalTrainer.location)
+        switch (TVShow_GetMapSection(show))
         {
         default:
             sTVShowState = 7;
@@ -5526,7 +5626,7 @@ static void DoTVShowTodaysRivalTrainer(void)
     case 7:
         TVShowConvertInternationalString(gStringVar1, show->rivalTrainer.playerName, show->rivalTrainer.language);
         ConvertIntToDecimalString(1, show->rivalTrainer.dexCount);
-        GetMapName(gStringVar3, show->rivalTrainer.location, 0);
+        GetMapName(gStringVar3, TVShow_GetMapSection(show), 0);
         if (show->rivalTrainer.badgeCount != 0)
             sTVShowState = 1;
         else
@@ -5668,7 +5768,7 @@ static void DoTVShowHoennTreasureInvestigators(void)
     {
     case 0:
         StringCopy(gStringVar1, GetItemName(show->treasureInvestigators.item));
-        if (show->treasureInvestigators.location == MAPSEC_DYNAMIC)
+        if (TVShow_GetMapSection(show) == MAPSEC_DYNAMIC)
         {
             switch (show->treasureInvestigators.mapLayoutId)
             {
@@ -5690,7 +5790,7 @@ static void DoTVShowHoennTreasureInvestigators(void)
     case 1:
         StringCopy(gStringVar1, GetItemName(show->treasureInvestigators.item));
         TVShowConvertInternationalString(gStringVar2, show->treasureInvestigators.playerName, show->treasureInvestigators.language);
-        GetMapName(gStringVar3, show->treasureInvestigators.location, 0);
+        GetMapName(gStringVar3, TVShow_GetMapSection(show), 0);
         TVShowDone();
         break;
     case 2:
@@ -5791,7 +5891,7 @@ static void DoTVShowBreakingNewsTV(void)
     case 1:
         TVShowConvertInternationalString(gStringVar1, show->breakingNews.playerName, show->breakingNews.language);
         StringCopy(gStringVar2, GetSpeciesName(show->breakingNews.lastOpponentSpecies));
-        GetMapName(gStringVar3, show->breakingNews.location, 0);
+        GetMapName(gStringVar3, TVShow_GetMapSection(show), 0);
         sTVShowState = 2;
         break;
     case 2:
@@ -5807,13 +5907,13 @@ static void DoTVShowBreakingNewsTV(void)
         break;
     case 4:
         TVShowConvertInternationalString(gStringVar1, show->breakingNews.playerName, show->breakingNews.language);
-        GetMapName(gStringVar2, show->breakingNews.location, 0);
+        GetMapName(gStringVar2, TVShow_GetMapSection(show), 0);
         TVShowDone();
         break;
     case 5:
         TVShowConvertInternationalString(gStringVar1, show->breakingNews.playerName, show->breakingNews.language);
         StringCopy(gStringVar2, GetSpeciesName(show->breakingNews.lastOpponentSpecies));
-        GetMapName(gStringVar3, show->breakingNews.location, 0);
+        GetMapName(gStringVar3, TVShow_GetMapSection(show), 0);
         sTVShowState = 6;
         break;
     case 6:
@@ -5849,14 +5949,14 @@ static void DoTVShowBreakingNewsTV(void)
         break;
     case 8:
         TVShowConvertInternationalString(gStringVar1, show->breakingNews.playerName, show->breakingNews.language);
-        GetMapName(gStringVar2, show->breakingNews.location, 0);
+        GetMapName(gStringVar2, TVShow_GetMapSection(show), 0);
         sTVShowState = 11;
         break;
     case 9:
     case 10:
         TVShowConvertInternationalString(gStringVar1, show->breakingNews.playerName, show->breakingNews.language);
         StringCopy(gStringVar2, GetSpeciesName(show->breakingNews.lastOpponentSpecies));
-        GetMapName(gStringVar3, show->breakingNews.location, 0);
+        GetMapName(gStringVar3, TVShow_GetMapSection(show), 0);
         sTVShowState = 11;
         break;
     case 11:

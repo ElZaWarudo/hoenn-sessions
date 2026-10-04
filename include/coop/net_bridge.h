@@ -44,6 +44,10 @@ enum CoopBridgeMessageType
     COOP_BRIDGE_MESSAGE_BATTLE_READY = 21,
     COOP_BRIDGE_MESSAGE_TRADE_OFFER_REQUEST = 22,
     COOP_BRIDGE_MESSAGE_TRADE_OFFER_DECISION = 23,
+    /* Raw ASCII portal ID (1..96 bytes), followed by CHECKPOINT_READY. */
+    COOP_BRIDGE_MESSAGE_PORTAL_TRAVEL_REQUEST = 24,
+    /* Offline verifier proof; carries COOP_ARRIVAL_PROOF_PAYLOAD_SIZE bytes. */
+    COOP_BRIDGE_MESSAGE_ARRIVAL_PROOF = 25,
 
     COOP_BRIDGE_MESSAGE_SESSION_READY = 0x0100,
     COOP_BRIDGE_MESSAGE_REMOTE_PLAYER_SPAWN = 0x0101,
@@ -73,6 +77,8 @@ enum CoopBridgeMessageType
     COOP_BRIDGE_MESSAGE_TRADE_COMMIT = 0x0119,
     COOP_BRIDGE_MESSAGE_TRADE_OFFER_RECEIVED = 0x011A,
     COOP_BRIDGE_MESSAGE_TRADE_OFFER_STATUS = 0x011B,
+    /* Epoch-0 verifier challenge; carries exactly a 16-byte nonce. */
+    COOP_BRIDGE_MESSAGE_ARRIVAL_CHALLENGE = 0x011C,
 };
 
 enum CoopBridgeStatus
@@ -93,6 +99,11 @@ enum CoopBridgeStatus
 #define COOP_NET_BRIDGE_PLAYER_STATE_INTERVAL 6
 #define COOP_NET_BRIDGE_SIDECAR_STALE_INTERVAL 180
 #define COOP_NET_BRIDGE_CHECKPOINT_TIMEOUT_FRAMES 180
+/* A checkpoint request refused by the single-frame gate (usually ordinary
+ * bridge traffic in flight) is retried once per frame, for this many attempts
+ * in all, before the player sees the refusal. */
+#define COOP_NET_BRIDGE_CHECKPOINT_REQUEST_FRAMES 120
+#define COOP_NET_BRIDGE_PORTAL_REQUEST_FRAMES COOP_NET_BRIDGE_CHECKPOINT_REQUEST_FRAMES
 
 /* Checkpoint coordination is deliberately kept outside the wire structure.
  * The structure above is an ABI shared with Lua and changing it would make
@@ -219,6 +230,25 @@ enum CoopCheckpointState CoopNetBridge_GetCheckpointState(void);
 bool8 CoopNetBridge_IsCloudMode(void);
 bool8 CoopNetBridge_IsRecoveryRequired(void);
 enum CoopCheckpointRequestResult CoopNetBridge_RequestCheckpoint(void);
+/* Call after a REJECTED request the player is waiting on. Counts that attempt
+ * and returns TRUE while one more request may be made on the next frame:
+ * cloud mode still holds and fewer than COOP_NET_BRIDGE_CHECKPOINT_REQUEST_FRAMES
+ * attempts were made. FALSE means refuse now; callers never queue late. */
+bool8 CoopNetBridge_ShouldRetryCheckpointRequest(u16 *attempts);
+/* Begins a cloud checkpoint for travel through a catalog portal. The ID is
+ * [a-z][a-z0-9_]*, 1..96 bytes. A successful request queues the portal intent
+ * before CHECKPOINT_READY; no travel occurs before the saved checkpoint is
+ * authenticated and committed by the host. */
+enum CoopCheckpointRequestResult CoopNetBridge_RequestPortalTravel(const char *portal_id);
+/* Event-script entry points set VAR_RESULT to TRUE only after the portal
+ * request has been queued; the host completes travel after a saved checkpoint.
+ * A request refused only by transient bridge traffic is retried once per frame
+ * for up to COOP_NET_BRIDGE_PORTAL_REQUEST_FRAMES, holding the script, before
+ * VAR_RESULT is set to FALSE. */
+struct ScriptContext;
+void CoopNetBridge_ScriptPortalAvailable(void);
+void CoopNetBridge_ScriptTravelToCormoria(struct ScriptContext *ctx);
+void CoopNetBridge_ScriptTravelToMain(struct ScriptContext *ctx);
 bool8 CoopNetBridge_ConsumeCheckpointGrant(void);
 bool8 CoopNetBridge_IsCheckpointAuthorizedForSave(void);
 /* Called by the normal save path after TrySavingData has completed. A failed
@@ -250,6 +280,9 @@ void CoopStartMenu_TestSetCheckpointRequired(bool8 required);
 u8 CoopStartMenu_TestRunSaveSavingMessageCallback(void);
 u8 CoopStartMenu_TestRunSaveDoSaveCallback(void);
 u8 CoopStartMenu_TestRunCheckpointWaitCallback(void);
+u8 CoopStartMenu_TestRunCurrentSaveCallback(void);
+bool8 CoopStartMenu_TestIsSaveCheckpointRetrying(void);
+bool8 CoopStartMenu_TestIsSaveAborting(void);
 u8 CoopStartMenu_TestRunCheckpointAbortCallback(void);
 u8 CoopStartMenu_TestRunAuthorizedSaveCallback(void);
 #endif

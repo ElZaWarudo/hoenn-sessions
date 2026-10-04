@@ -8,6 +8,7 @@
 
 pub mod auth;
 pub mod group;
+pub mod group_handoff;
 pub mod ids;
 pub mod online;
 pub mod presence;
@@ -35,6 +36,11 @@ pub use group::{
     PartnerStatusResponse, RedeemPairingCodeRequest, RedeemPairingCodeResponse, RouteId,
     StoryTravelRecoveryAction, StoryTravelRecoveryActionRequest, StoryTravelRecoveryOutcome,
     StoryTravelRecoveryResolutionView, StoryTravelRecoveryView, pairing_code_from_join_text,
+};
+pub use group_handoff::{
+    GroupRomHandoffAbortRequest, GroupRomHandoffArrivalRequest, GroupRomHandoffError,
+    GroupRomHandoffIntent, GroupRomHandoffJoinRequest, GroupRomHandoffSource,
+    GroupRomHandoffStatus, GroupRomHandoffStatusRequest,
 };
 pub use ids::{
     BridgeAbiVersion, CharacterId, ClientInstanceId, CommitId, GameBuildId, GroupId,
@@ -71,17 +77,19 @@ pub use security::{
     SecretError, SigningKey, SigningPrivateKey,
 };
 pub use session::{
-    AcquireLeaseRequest, AcquireRequest, CharacterCloudState, HeartbeatLeaseRequest,
-    HeartbeatRequest, LeaseContract, LeaseFence, ReconnectLeaseRequest, ReconnectRequest,
-    ReleaseLeaseRequest, ReleaseRequest, SessionError,
+    AcquireLeaseRequest, AcquireRequest, AcquireWorldLeaseResponse, CharacterCloudState,
+    HeartbeatLeaseRequest, HeartbeatRequest, LeaseContract, LeaseFence, ReconnectLeaseRequest,
+    ReconnectRequest, ReleaseLeaseRequest, ReleaseRequest, SessionError,
 };
 pub use snapshot::{
     ArtifactIdentity, FinalizeSnapshotRequest, ListSnapshotsRequest, ListSnapshotsResponse,
     PrepareSnapshotRequest, PrepareSnapshotResponse, RestoreSnapshotRequest,
-    RestoreSnapshotResponse, SnapshotError, SnapshotFence, SnapshotFile, SnapshotFinalizeFence,
-    SnapshotFinalizeRequest, SnapshotListRequest, SnapshotListResponse, SnapshotPrepareFence,
-    SnapshotPrepareRequest, SnapshotPrepareResponse, SnapshotRecord, SnapshotRestoreRequest,
-    SnapshotRestoreResponse, UploadCapabilityUrl, UploadMethod, UploadTarget,
+    RestoreSnapshotResponse, RomHandoffCommitRequest, RomHandoffPrepareRequest,
+    RomHandoffPrepareResponse, RomHandoffRecoveryRequest, RomHandoffRecoveryStatus, SnapshotError,
+    SnapshotFence, SnapshotFile, SnapshotFinalizeFence, SnapshotFinalizeRequest,
+    SnapshotListRequest, SnapshotListResponse, SnapshotPrepareFence, SnapshotPrepareRequest,
+    SnapshotPrepareResponse, SnapshotRecord, SnapshotRestoreRequest, SnapshotRestoreResponse,
+    UploadCapabilityUrl, UploadMethod, UploadTarget,
 };
 pub use trade::{
     PartyPosition, TradeDecision, TradeDecisionRequest, TradeOfferCurrentView, TradeOfferRequest,
@@ -90,7 +98,9 @@ pub use trade::{
 
 #[cfg(test)]
 mod tests {
-    use coop_protocol::{EventId, GymId, RegionId, RegionalProgress, TrainerInstanceId, WorldZone};
+    use coop_protocol::{
+        EventId, GymId, RegionId, RegionalProgress, RomWorldId, TrainerInstanceId, WorldZone,
+    };
     use ed25519_dalek::{SigningKey as DalekSigningKey, VerifyingKey};
     use serde_json::json;
 
@@ -98,6 +108,10 @@ mod tests {
 
     fn id<T>(constructor: fn(uuid::Uuid) -> Result<T, IdError>) -> T {
         constructor(uuid::Uuid::from_u128(1)).expect("test UUID is non-nil")
+    }
+
+    fn rom_world_id() -> RomWorldId {
+        RomWorldId::new(2).unwrap()
     }
 
     fn state() -> CharacterCloudState {
@@ -264,6 +278,30 @@ mod tests {
     }
 
     #[test]
+    fn state_round_trips_progress_for_all_five_regions() {
+        let regions = [
+            RegionId::Hoenn,
+            RegionId::Kanto,
+            RegionId::Johto,
+            RegionId::Sevii,
+            RegionId::Cormoria,
+        ];
+        let progress = regions
+            .into_iter()
+            .map(|region| RegionalProgress::new(region, 0, 0, vec![], vec![]).unwrap())
+            .collect();
+        let original = CharacterCloudState::new(
+            id(CharacterId::new),
+            WorldZone::new(RegionId::Cormoria, "CORMORIA_CARABRUE_TOWN_HOME1F", 1).unwrap(),
+            progress,
+        )
+        .unwrap();
+        let wire = serde_json::to_string(&original).unwrap();
+        let decoded: CharacterCloudState = serde_json::from_str(&wire).unwrap();
+        assert_eq!(decoded, original);
+    }
+
+    #[test]
     fn cloud_state_round_trips_registered_gyms_and_events() {
         let progress = RegionalProgress::new_complete(
             RegionId::Hoenn,
@@ -360,6 +398,30 @@ mod tests {
         let mut legacy_wire = serde_json::to_value(request).unwrap();
         legacy_wire["expected_revision"] = json!(0);
         assert!(serde_json::from_value::<AcquireLeaseRequest>(legacy_wire).is_err());
+    }
+
+    #[test]
+    fn world_aware_lease_response_rejects_incoherent_snapshot_revision() {
+        let fence = LeaseFence::new(
+            id(SessionId::new),
+            id(CharacterId::new),
+            Revision::initial(),
+            SessionEpoch::new(1).unwrap(),
+            id(ClientInstanceId::new),
+        );
+        let response = AcquireWorldLeaseResponse {
+            lease: LeaseContract::new(fence, UnixTimestampMillis::new(1), 1).unwrap(),
+            active_world_id: rom_world_id(),
+            active_snapshot_id: None,
+        };
+        let encoded = serde_json::to_value(response).unwrap();
+        assert_eq!(
+            serde_json::from_value::<AcquireWorldLeaseResponse>(encoded.clone()).unwrap(),
+            response
+        );
+        let mut malformed = encoded;
+        malformed["active_snapshot_id"] = json!(uuid::Uuid::from_u128(1));
+        assert!(serde_json::from_value::<AcquireWorldLeaseResponse>(malformed).is_err());
     }
 
     #[test]
@@ -518,18 +580,37 @@ mod tests {
             .find(|file| file.artifact == ArtifactIdentity::PendingCommits)
             .unwrap()
             .sha256;
-        let prepare =
-            SnapshotPrepareRequest::new(snapshot_id, fence, declared.clone(), pending_digest)
-                .unwrap();
+        let prepare = SnapshotPrepareRequest::new(
+            snapshot_id,
+            rom_world_id(),
+            fence,
+            declared.clone(),
+            pending_digest,
+        )
+        .unwrap();
         assert_eq!(prepare.expected_parent_revision, Revision::initial());
         let encoded = serde_json::to_string(&prepare).unwrap();
         assert_eq!(
             serde_json::from_str::<SnapshotPrepareRequest>(&encoded).unwrap(),
             prepare
         );
+        assert_eq!(prepare.rom_world_id, rom_world_id());
+        let mut missing_world = serde_json::to_value(&prepare).unwrap();
+        missing_world
+            .as_object_mut()
+            .unwrap()
+            .remove("rom_world_id");
+        assert!(serde_json::from_value::<SnapshotPrepareRequest>(missing_world).is_err());
+        let mut zero_world = serde_json::to_value(&prepare).unwrap();
+        zero_world["rom_world_id"] = json!(0);
+        assert!(serde_json::from_value::<SnapshotPrepareRequest>(zero_world).is_err());
+        let mut text_world = serde_json::to_value(&prepare).unwrap();
+        text_world["rom_world_id"] = json!("CORMORIA");
+        assert!(serde_json::from_value::<SnapshotPrepareRequest>(text_world).is_err());
         assert!(
             SnapshotPrepareRequest::new(
                 snapshot_id,
+                rom_world_id(),
                 fence,
                 files(false),
                 Sha256Digest::of_bytes(b"wrong"),
@@ -561,7 +642,10 @@ mod tests {
         assert!(serde_json::from_value::<SnapshotFile>(path_like).is_err());
         let three = files(true);
         let three_digest = three[1].sha256;
-        assert!(SnapshotPrepareRequest::new(snapshot_id, fence, three, three_digest).is_ok());
+        assert!(
+            SnapshotPrepareRequest::new(snapshot_id, rom_world_id(), fence, three, three_digest)
+                .is_ok()
+        );
 
         let targets = declared
             .iter()
@@ -745,6 +829,7 @@ mod tests {
         assert!(
             SnapshotRecord::new(
                 snapshot_id,
+                rom_world_id(),
                 SnapshotFence::new(session_id, character_id, epoch),
                 Revision::initial(),
                 Revision::initial(),
@@ -828,6 +913,7 @@ mod tests {
         let pending = files[1].sha256;
         let record = SnapshotRecord::new(
             snapshot_id,
+            rom_world_id(),
             SnapshotFence::new(session_id, character_id, epoch),
             Revision::initial(),
             Revision::new(1),
@@ -838,11 +924,21 @@ mod tests {
         )
         .unwrap();
         assert_eq!(record.parent_revision, Revision::initial());
+        assert_eq!(record.rom_world_id, rom_world_id());
         assert_eq!(
             serde_json::from_value::<SnapshotRecord>(serde_json::to_value(&record).unwrap())
                 .unwrap(),
             record
         );
+        let mut missing_world = serde_json::to_value(&record).unwrap();
+        missing_world
+            .as_object_mut()
+            .unwrap()
+            .remove("rom_world_id");
+        assert!(serde_json::from_value::<SnapshotRecord>(missing_world).is_err());
+        let mut zero_world = serde_json::to_value(&record).unwrap();
+        zero_world["rom_world_id"] = json!(0);
+        assert!(serde_json::from_value::<SnapshotRecord>(zero_world).is_err());
 
         for invalid_parent in [Revision::new(1), Revision::new(3)] {
             let mut invalid_record = record.clone();
@@ -1018,6 +1114,7 @@ mod tests {
 
         let record = SnapshotRecord::new(
             id(SnapshotId::new),
+            rom_world_id(),
             SnapshotFence::new(
                 id(SessionId::new),
                 id(CharacterId::new),

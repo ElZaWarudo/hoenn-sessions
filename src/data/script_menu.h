@@ -1230,6 +1230,15 @@ static const struct MenuAction sMultichoiceList_JohtoHoennStarters[] =
     { COMPOUND_STRING("Green Stone") }, { COMPOUND_STRING("Red Stone") }, { COMPOUND_STRING("Blue Stone") },
 };
 
+/* Dreamstone's four-row, five-column keypad for Galecrest Gym. */
+static const struct MenuAction sMultichoiceGrid_CormoriaNumberInput[] =
+{
+    { COMPOUND_STRING("1") }, { COMPOUND_STRING("2") }, { COMPOUND_STRING("3") }, { COMPOUND_STRING("4") }, { COMPOUND_STRING("5") },
+    { COMPOUND_STRING("1") }, { COMPOUND_STRING("2") }, { COMPOUND_STRING("3") }, { COMPOUND_STRING("4") }, { COMPOUND_STRING("5") },
+    { COMPOUND_STRING("1") }, { COMPOUND_STRING("2") }, { COMPOUND_STRING("3") }, { COMPOUND_STRING("4") }, { COMPOUND_STRING("5") },
+    { COMPOUND_STRING("1") }, { COMPOUND_STRING("2") }, { COMPOUND_STRING("3") }, { COMPOUND_STRING("4") }, { COMPOUND_STRING("5") },
+};
+
 static const struct MultichoiceListStruct sMultichoiceLists[] =
 {
     [MULTI_BRINEY_ON_DEWFORD]          = MULTICHOICE(MultichoiceList_BrineyOnDewford),
@@ -1407,6 +1416,7 @@ static const struct MultichoiceListStruct sMultichoiceLists[] =
     [MULTI_JOHTO_VERMILION_HARBOR]                      = MULTICHOICE(sMultichoiceList_JohtoVermilionHarbor),
     [MULTI_JOHTO_HOENN_STARTERS]                        = MULTICHOICE(sMultichoiceList_JohtoHoennStarters),
     [MULTI_JOHTO_5FLOORS]                               = MULTICHOICE(sMultichoiceList_Johto5Floors),
+    [MULTI_CORMORIA_NUMBER_INPUT]                        = MULTICHOICE(sMultichoiceGrid_CormoriaNumberInput),
 };
 
 const u8 *const gStdStrings[] =

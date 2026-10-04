@@ -48,7 +48,7 @@ static void PrepareOfflineCoopSave(bool8 ambiguous)
 
 static void ExpectOnlineJohtoRejectionPreservesStores(void)
 {
-    struct CoopSaveV1 coopBefore = gSaveBlock3Ptr->coop;
+    struct CoopSaveV2 coopBefore = gSaveBlock3Ptr->coop;
     struct JohtoSaveV1 johtoBefore = gSaveblock1.johto;
     bool8 legacyFlagBefore = FlagGet(TRAINER_FLAGS_START + TRAINER_JOEY);
     bool8 defeated = TRUE;
@@ -189,7 +189,7 @@ TEST("Johto legacy identity keeps ordinary and Frontier overlaps on legacy flags
 
 TEST("Johto offline trainer defeat uses the Johto save bit")
 {
-    struct CoopSaveV1 coopBefore;
+    struct CoopSaveV2 coopBefore;
     bool8 defeated = TRUE;
 
     PrepareOfflineCoopSave(TRUE);

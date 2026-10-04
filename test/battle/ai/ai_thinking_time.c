@@ -4,10 +4,14 @@
 #define AI_FRAME_CEILING_SINGLES_NO_FLAGS                       3
 #define AI_FRAME_CEILING_SINGLES_SMART_TRAINER                  8
 #define AI_FRAME_CEILING_DOUBLES_NO_FLAGS                       21
-#define AI_FRAME_CEILING_DOUBLES_SMART_TRAINER                  37
+// Main's guarded co-op trainer battle path (61112ebb70 lineage) plus the
+// Cormoria battle integration (6be11d394e) add one frame together in the
+// smart doubles and smart multi cases; neither side alone exceeds the old
+// ceilings. Measured +1, stable over two full merged runs.
+#define AI_FRAME_CEILING_DOUBLES_SMART_TRAINER                  38
 // The guarded co-op battle path adds one frame in this four-battler case.
 #define AI_FRAME_CEILING_STEVEN_MULTI                           27
-#define AI_FRAME_CEILING_STEVEN_MULTI_SMART_TRAINER             30
+#define AI_FRAME_CEILING_STEVEN_MULTI_SMART_TRAINER             31
 #define AI_FRAME_CEILING_CHECK                                  FALSE // If TRUE, forces all thinking time tests to fail. Useful for printing all actual frame times to console by running the tests
 
 AI_SINGLE_BATTLE_TEST("AI thinking time doesn't explode (singles, no flags)")

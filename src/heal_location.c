@@ -6,6 +6,46 @@
 #include "constants/maps.h"
 
 #include "data/heal_locations.h"
+#if ROM_WORLD == 2
+#include "cormoria/heal_locations.h"
+#include "cormoria/heal_locations_data.h"
+#include "constants/cormoria_event_ids.h"
+STATIC_ASSERT(ARRAY_COUNT(sCormoriaHealLocations) == NUM_CORMORIA_HEAL_LOCATIONS - HEAL_LOCATION_CORMORIA_CARABRUE_TOWN, CormoriaHealLocationCountMismatch);
+STATIC_ASSERT(NUM_CORMORIA_HEAL_LOCATIONS <= 256, ScriptCormoriaHealLocationsFitU8);
+#endif
+STATIC_ASSERT(NUM_HEAL_LOCATIONS <= 256, ScriptHostHealLocationsFitU8);
+
+u8 ResolveScriptHealLocation(u16 scriptId)
+{
+#if ROM_WORLD == 2
+    // Ledger tokens are alphabetical; native indices follow the campaign.
+    // Resolve before the native u8 API so a qualified ID cannot truncate to
+    // an unrelated host location. Keep both namespaces unchanged.
+    switch (scriptId)
+    {
+    case Cormoria_HEAL_LOCATION_ANCIENT_CERAM: return HEAL_LOCATION_CORMORIA_ANCIENT_CERAM;
+    case Cormoria_HEAL_LOCATION_ANCIENT_CORMORIA_FINAL_ISLAND: return HEAL_LOCATION_CORMORIA_ANCIENT_CORMORIA_FINAL_ISLAND;
+    case Cormoria_HEAL_LOCATION_ANCIENT_MIRROH: return HEAL_LOCATION_CORMORIA_ANCIENT_MIRROH;
+    case Cormoria_HEAL_LOCATION_CARABRUE_TOWN: return HEAL_LOCATION_CORMORIA_CARABRUE_TOWN;
+    case Cormoria_HEAL_LOCATION_CERAM_BASE_CAMP: return HEAL_LOCATION_CORMORIA_CERAM_BASE_CAMP;
+    case Cormoria_HEAL_LOCATION_CHAMPIONSHIP_CORRIDOR: return HEAL_LOCATION_CORMORIA_CHAMPIONSHIP_CORRIDOR;
+    case Cormoria_HEAL_LOCATION_FENNILAHL_TOWN: return HEAL_LOCATION_CORMORIA_FENNILAHL_TOWN;
+    case Cormoria_HEAL_LOCATION_GALECREST_CITY: return HEAL_LOCATION_CORMORIA_GALECREST_CITY;
+    case Cormoria_HEAL_LOCATION_GASTREE_CITY: return HEAL_LOCATION_CORMORIA_GASTREE_CITY;
+    case Cormoria_HEAL_LOCATION_MIRROH_BASE_CAMP: return HEAL_LOCATION_CORMORIA_MIRROH_BASE_CAMP;
+    case Cormoria_HEAL_LOCATION_PELLUCA_CITY: return HEAL_LOCATION_CORMORIA_PELLUCA_CITY;
+    case Cormoria_HEAL_LOCATION_RIVETSHORE_CITY: return HEAL_LOCATION_CORMORIA_RIVETSHORE_CITY;
+    case Cormoria_HEAL_LOCATION_SILVERSUN_CITY: return HEAL_LOCATION_CORMORIA_SILVERSUN_CITY;
+    case Cormoria_HEAL_LOCATION_SSELEGANT: return HEAL_LOCATION_CORMORIA_SSELEGANT;
+    case Cormoria_HEAL_LOCATION_UNCHARTED_ISLAND: return HEAL_LOCATION_CORMORIA_UNCHARTED_ISLAND;
+    case Cormoria_HEAL_LOCATION_VICTORY_CAPE: return HEAL_LOCATION_CORMORIA_VICTORY_CAPE;
+    case Cormoria_HEAL_LOCATION_WINTERLILY_HOLLOW: return HEAL_LOCATION_CORMORIA_WINTERLILY_HOLLOW;
+    }
+#endif
+    // Preserve valid native IDs and reject unsupported full-width values.
+    // NONE makes SetLastHealLocationWarp leave the saved destination alone.
+    return GetHealLocation(scriptId) != NULL ? scriptId : HEAL_LOCATION_NONE;
+}
 
 u32 GetHealLocationIndexByMap(u16 mapGroup, u16 mapNum)
 {
@@ -16,6 +56,13 @@ u32 GetHealLocationIndexByMap(u16 mapGroup, u16 mapNum)
         if (sHealLocations[i].mapGroup == mapGroup && sHealLocations[i].mapNum == mapNum)
             return i + 1;
     }
+#if ROM_WORLD == 2
+    for (i = 0; i < ARRAY_COUNT(sCormoriaHealLocations); i++)
+    {
+        if (sCormoriaHealLocations[i].mapGroup == mapGroup && sCormoriaHealLocations[i].mapNum == mapNum)
+            return HEAL_LOCATION_CORMORIA_CARABRUE_TOWN + i;
+    }
+#endif
     return HEAL_LOCATION_NONE;
 }
 
@@ -23,10 +70,7 @@ const struct HealLocation *GetHealLocationByMap(u16 mapGroup, u16 mapNum)
 {
     u32 index = GetHealLocationIndexByMap(mapGroup, mapNum);
 
-    if (index == HEAL_LOCATION_NONE)
-        return NULL;
-    else
-        return &sHealLocations[index - 1];
+    return GetHealLocation(index);
 }
 
 u32 GetHealLocationIndexByWarpData(struct WarpData *warp)
@@ -40,6 +84,16 @@ u32 GetHealLocationIndexByWarpData(struct WarpData *warp)
         && sHealLocations[i].y == warp->y)
             return i + 1;
     }
+#if ROM_WORLD == 2
+    for (i = 0; i < ARRAY_COUNT(sCormoriaHealLocations); i++)
+    {
+        if (sCormoriaHealLocations[i].mapGroup == warp->mapGroup
+         && sCormoriaHealLocations[i].mapNum == warp->mapNum
+         && sCormoriaHealLocations[i].x == warp->x
+         && sCormoriaHealLocations[i].y == warp->y)
+            return HEAL_LOCATION_CORMORIA_CARABRUE_TOWN + i;
+    }
+#endif
     return HEAL_LOCATION_NONE;
 }
 
@@ -47,10 +101,13 @@ const struct HealLocation *GetHealLocation(u32 index)
 {
     if (index == HEAL_LOCATION_NONE)
         return NULL;
-    else if (index > ARRAY_COUNT(sHealLocations))
-        return NULL;
-    else
+    else if (index <= ARRAY_COUNT(sHealLocations))
         return &sHealLocations[index - 1];
+#if ROM_WORLD == 2
+    else if (index < NUM_CORMORIA_HEAL_LOCATIONS)
+        return &sCormoriaHealLocations[index - HEAL_LOCATION_CORMORIA_CARABRUE_TOWN];
+#endif
+    return NULL;
 }
 
 static bool32 IsLastHealLocation(u32 healLocation)
@@ -79,6 +136,10 @@ bool32 IsLastHealLocationPlayerHouse()
 
 u32 GetHealNpcLocalId(u32 healLocationId)
 {
+#if ROM_WORLD == 2
+    if (healLocationId >= HEAL_LOCATION_CORMORIA_CARABRUE_TOWN)
+        return LOCALID_NONE;
+#endif
     if (healLocationId == HEAL_LOCATION_NONE || healLocationId >= NUM_HEAL_LOCATIONS)
         return LOCALID_NONE;
 

@@ -1,0 +1,226 @@
+{
+  "id": "MAP_CORMORIA_GALECREST_CITY_GYM",
+  "name": "Cormoria_GalecrestCityGym",
+  "layout": "LAYOUT_CORMORIA_GALECREST_CITY_GYM",
+  "music": "MUS_GYM",
+  "region_map_section": "MAPSEC_CORMORIA_GALECREST_CITY",
+  "requires_flash": false,
+  "weather": "WEATHER_NONE",
+  "map_type": "MAP_TYPE_INDOOR",
+  "allow_cycling": false,
+  "allow_escaping": false,
+  "allow_running": true,
+  "show_map_name": false,
+  "battle_scene": "MAP_BATTLE_SCENE_NORMAL",
+  "connections": 0,
+  "object_events": [
+    {
+      "graphics_id": "OBJ_EVENT_GFX_MYSTERY_GIFT_MAN",
+      "x": 12,
+      "y": 11,
+      "elevation": 0,
+      "movement_type": "MOVEMENT_TYPE_NONE",
+      "movement_range_x": 0,
+      "movement_range_y": 0,
+      "trainer_type": "TRAINER_TYPE_NONE",
+      "trainer_sight_or_berry_tree_id": "0",
+      "script": "Cormoria_GalecrestCityGym_NPC2",
+      "flag": "0"
+    },
+    {
+      "graphics_id": "OBJ_EVENT_GFX_SCHOOL_KID_M",
+      "x": 5,
+      "y": 34,
+      "elevation": 0,
+      "movement_type": "MOVEMENT_TYPE_NONE",
+      "movement_range_x": 0,
+      "movement_range_y": 0,
+      "trainer_type": "TRAINER_TYPE_NORMAL",
+      "trainer_sight_or_berry_tree_id": "4",
+      "script": "Cormoria_GalecrestCityGym_Trainer1",
+      "flag": "0"
+    },
+    {
+      "graphics_id": "OBJ_EVENT_GFX_LEAF",
+      "x": 25,
+      "y": 34,
+      "elevation": 0,
+      "movement_type": "MOVEMENT_TYPE_NONE",
+      "movement_range_x": 0,
+      "movement_range_y": 0,
+      "trainer_type": "TRAINER_TYPE_NORMAL",
+      "trainer_sight_or_berry_tree_id": "4",
+      "script": "Cormoria_GalecrestCityGym_Trainer2",
+      "flag": "0"
+    },
+    {
+      "graphics_id": "OBJ_EVENT_GFX_LEAF",
+      "x": 5,
+      "y": 54,
+      "elevation": 0,
+      "movement_type": "MOVEMENT_TYPE_NONE",
+      "movement_range_x": 0,
+      "movement_range_y": 0,
+      "trainer_type": "TRAINER_TYPE_NORMAL",
+      "trainer_sight_or_berry_tree_id": "4",
+      "script": "Cormoria_GalecrestCityGym_Trainer3",
+      "flag": "0"
+    },
+    {
+      "graphics_id": "OBJ_EVENT_GFX_WALLY",
+      "x": 25,
+      "y": 53,
+      "elevation": 0,
+      "movement_type": "MOVEMENT_TYPE_NONE",
+      "movement_range_x": 0,
+      "movement_range_y": 0,
+      "trainer_type": "TRAINER_TYPE_NONE",
+      "trainer_sight_or_berry_tree_id": "0",
+      "script": "Cormoria_GalecrestCityGym_Leader",
+      "flag": "Cormoria_FLAG_BADGE03_GET"
+    },
+    {
+      "graphics_id": "OBJ_EVENT_GFX_ANABEL",
+      "x": 5,
+      "y": 6,
+      "elevation": 0,
+      "movement_type": "MOVEMENT_TYPE_WALK_LEFT_AND_RIGHT",
+      "movement_range_x": 2,
+      "movement_range_y": 0,
+      "trainer_type": "TRAINER_TYPE_NONE",
+      "trainer_sight_or_berry_tree_id": "0",
+      "script": "Cormoria_GalecrestCityGym_NPC3",
+      "flag": "0"
+    },
+    {
+      "graphics_id": "OBJ_EVENT_GFX_MANIAC",
+      "x": 2,
+      "y": 12,
+      "elevation": 0,
+      "movement_type": "MOVEMENT_TYPE_WANDER_AROUND",
+      "movement_range_x": 1,
+      "movement_range_y": 1,
+      "trainer_type": "TRAINER_TYPE_NONE",
+      "trainer_sight_or_berry_tree_id": "0",
+      "script": "Cormoria_GalecrestCityGym_NPC1",
+      "flag": "0"
+    },
+    {
+      "graphics_id": "OBJ_EVENT_GFX_SPENSER",
+      "x": 8,
+      "y": 11,
+      "elevation": 0,
+      "movement_type": "MOVEMENT_TYPE_NONE",
+      "movement_range_x": 0,
+      "movement_range_y": 0,
+      "trainer_type": "TRAINER_TYPE_NONE",
+      "trainer_sight_or_berry_tree_id": "0",
+      "script": "Cormoria_GalecrestCityGym_Red",
+      "flag": "0"
+    }
+  ],
+  "warp_events": [
+    {
+      "x": 8,
+      "y": 18,
+      "elevation": 0,
+      "dest_map": "MAP_CORMORIA_GALECREST_CITY",
+      "dest_warp_id": "10"
+    },
+    {
+      "x": 7,
+      "y": 18,
+      "elevation": 0,
+      "dest_map": "MAP_CORMORIA_GALECREST_CITY",
+      "dest_warp_id": "10"
+    },
+    {
+      "x": 7,
+      "y": 4,
+      "elevation": 0,
+      "dest_map": "MAP_CORMORIA_GALECREST_CITY_GYM",
+      "dest_warp_id": "3"
+    },
+    {
+      "x": 5,
+      "y": 37,
+      "elevation": 0,
+      "dest_map": "MAP_CORMORIA_GALECREST_CITY",
+      "dest_warp_id": "0"
+    },
+    {
+      "x": 1,
+      "y": 32,
+      "elevation": 0,
+      "dest_map": "MAP_CORMORIA_GALECREST_CITY_GYM",
+      "dest_warp_id": "2"
+    },
+    {
+      "x": 9,
+      "y": 32,
+      "elevation": 0,
+      "dest_map": "MAP_CORMORIA_GALECREST_CITY_GYM",
+      "dest_warp_id": "6"
+    },
+    {
+      "x": 25,
+      "y": 37,
+      "elevation": 0,
+      "dest_map": "MAP_CORMORIA_GALECREST_CITY_GYM",
+      "dest_warp_id": "0"
+    },
+    {
+      "x": 21,
+      "y": 32,
+      "elevation": 0,
+      "dest_map": "MAP_CORMORIA_GALECREST_CITY_GYM",
+      "dest_warp_id": "11"
+    },
+    {
+      "x": 29,
+      "y": 32,
+      "elevation": 0,
+      "dest_map": "MAP_CORMORIA_GALECREST_CITY_GYM",
+      "dest_warp_id": "2"
+    },
+    {
+      "x": 1,
+      "y": 52,
+      "elevation": 0,
+      "dest_map": "MAP_CORMORIA_GALECREST_CITY_GYM",
+      "dest_warp_id": "12"
+    },
+    {
+      "x": 9,
+      "y": 52,
+      "elevation": 0,
+      "dest_map": "MAP_CORMORIA_GALECREST_CITY_GYM",
+      "dest_warp_id": "2"
+    },
+    {
+      "x": 5,
+      "y": 57,
+      "elevation": 0,
+      "dest_map": "MAP_CORMORIA_GALECREST_CITY_GYM",
+      "dest_warp_id": "0"
+    },
+    {
+      "x": 25,
+      "y": 58,
+      "elevation": 0,
+      "dest_map": "MAP_CORMORIA_GALECREST_CITY_GYM",
+      "dest_warp_id": "0"
+    },
+    {
+      "x": 25,
+      "y": 52,
+      "elevation": 0,
+      "dest_map": "MAP_CORMORIA_GALECREST_CITY_GYM",
+      "dest_warp_id": "2"
+    }
+  ],
+  "coord_events": [],
+  "bg_events": [],
+  "rom_world": "cormoria",
+  "region": "REGION_CORMORIA"
+}

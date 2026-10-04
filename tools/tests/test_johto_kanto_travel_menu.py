@@ -75,6 +75,12 @@ class KantoTravelMenuContractTests(unittest.TestCase):
         self.assertLess(cancel, clear_forced)
         self.assertNotIn("CancelFlightCall", exit_callback[success:cancel])
         self.assertIn("JohtoTravel_PrepareCrossing", exit_callback[prepare:success])
+        # Group Fly decides first; the solo warp is resolved only afterwards,
+        # so a waiting group flight never leaves a local fly warp behind.
+        group_fly = exit_callback.index("CoopGroupTravel_BeginFly(", success)
+        solo_warp = exit_callback.index("SetFlyDestination(", success)
+        self.assertNotIn("SetFlyDestination(", exit_callback[:success])
+        self.assertLess(group_fly, solo_warp)
 
         field_specials = (ROOT / "src/field_specials.c").read_text(encoding="utf-8")
         open_start = field_specials.index("void Special_FlightCallSelectedKantoEra(void)")

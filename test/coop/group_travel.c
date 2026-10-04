@@ -1,4 +1,5 @@
 #include "global.h"
+#include "coop/arrival_proof.h"
 #include "coop/group_travel.h"
 #include "coop/net_bridge.h"
 #include "event_data.h"
@@ -20,6 +21,10 @@
 #include "constants/maps.h"
 #include "constants/region_map_sections.h"
 #include "test/test.h"
+
+/* Tests whose fixtures use Hoenn, Johto or Kanto maps and heal locations are
+ * gated to the Main ROM (ROM_WORLD == 1); the Cormoria ROM does not link
+ * those map headers. */
 
 extern void Johto_CommitKantoTravel(void);
 extern const u8 EventScript_CoopGroupTravelOffer[];
@@ -170,6 +175,10 @@ static void EndDepartureScript(void)
 
 static void ResetGroupTravelFixture(void)
 {
+    /* These tests use the boot-initialized bridge without CoopNetBridge_Init,
+     * so do not inherit an arrival verifier left by an earlier test: it would
+     * refuse every GROUP_TRAVEL_CLIENT frame. */
+    CoopArrivalProof_Reset();
     ResetTasks();
     ScriptContext_Init();
     ScriptUnfreezeObjectEvents();
@@ -317,6 +326,7 @@ TEST("Group travel rejects unapproved or unmaterialized script departures")
     EndDepartureScript();
 }
 
+#if ROM_WORLD == 1
 TEST("Maiden ferry group commit enters SS Aqua and applies maiden story state")
 {
     ResetGroupTravelFixture();
@@ -385,6 +395,7 @@ TEST("Maiden ferry group commit enters SS Aqua and applies maiden story state")
     EXPECT_EQ(JohtoTravel_GetPendingDestination(), JOHTO_TRAVEL_DESTINATION_NONE);
     ResetTasks();
 }
+#endif // ROM_WORLD == 1
 
 TEST("Normal ferry context targets Vermilion despite an unadvanced local maiden state")
 {
@@ -460,6 +471,7 @@ TEST("Cold session replay defers a responder offer and exposes its route context
     ScriptContext_Stop();
 }
 
+#if ROM_WORLD == 1
 TEST("Cold session replay stages a committed trip before the local warp")
 {
     ResetGroupTravelFixture();
@@ -486,6 +498,7 @@ TEST("Cold session replay stages a committed trip before the local warp")
     CoopGroupTravel_Poll();
     EXPECT_EQ(JohtoTravel_GetPendingDestination(), JOHTO_TRAVEL_DESTINATION_NONE);
 }
+#endif // ROM_WORLD == 1
 
 TEST("Cold committed replay resumes at the destination without rewarping")
 {
@@ -1488,6 +1501,104 @@ TEST("First Briney scripted save requires online checkpoint before local flash")
     ResetGroupTravelFixture();
 }
 
+/* A ready cloud session with the first Briney voyage's receipt pending, so
+ * the landing script's SaveGame needs a cloud checkpoint. */
+static void BeginBrineyCloudSave(void)
+{
+    struct CoopGroupTravelRecord marker = Record(
+        COOP_GROUP_TRAVEL_SERVER_SCENE_MARKER_ACCEPTED,
+        COOP_GROUP_TRAVEL_ROUTE_BRINEY_HOUSE_DEWFORD, 347, 10);
+    struct CoopBridgeMessage message;
+
+    ResetGroupTravelFixture();
+    CoopSave_InitializeCurrent();
+    CoopNetBridge_Init();
+    EXPECT(CoopBridgeMessage_Seal(&message, COOP_BRIDGE_MESSAGE_SESSION_READY, 1, 17, NULL, 0));
+    EXPECT(CoopNetBridge_EnqueueNetworkToGame(&message));
+    CoopNetBridge_Poll();
+    gCoopNetBridge.status_flags &= ~COOP_BRIDGE_STATUS_WORLD_NOT_READY;
+    while (CoopNetBridge_DequeueGameToNetwork(&message));
+    EXPECT(CoopNetBridge_IsCloudMode());
+    EXPECT_EQ(CoopNetBridge_GetCheckpointState(), COOP_CHECKPOINT_STATE_IDLE);
+
+    CoopGroupTravel_TestSeedSceneMarkerAccepted(&marker);
+    CoopGroupTravel_TestSetSceneStarted(TRUE);
+    MaterializeDeparture(MAP_DEWFORD_TOWN);
+    Special_CoopGroupTravelFirstBrineySceneComplete();
+    EXPECT(CoopGroupTravel_IsFirstBrineyReceiptPending());
+    while (CoopNetBridge_DequeueGameToNetwork(&message));
+    EXPECT(CoopBridgeQueue_IsEmpty(&gCoopNetBridge.network_to_game));
+    EXPECT_EQ(CoopNetBridge_GetCheckpointState(), COOP_CHECKPOINT_STATE_IDLE);
+}
+
+static void EndBrineyCloudSave(void)
+{
+    struct CoopBridgeMessage message;
+
+    CoopStartMenu_TestSetSaveDryRun(FALSE);
+    ResetTasks();
+    CoopNetBridge_Init();
+    while (CoopNetBridge_DequeueGameToNetwork(&message));
+    ResetGroupTravelFixture();
+}
+
+TEST("First Briney scripted save retries a busy bridge frame before its checkpoint")
+{
+    struct CoopBridgeMessage message;
+    u8 status[COOP_ONLINE_STATUS_SIZE] = {0};
+
+    BeginBrineyCloudSave();
+    /* Partner traffic handed over at VBlank, not yet consumed by Poll. */
+    status[0] = 99;
+    EXPECT(CoopBridgeMessage_Seal(&message, COOP_BRIDGE_MESSAGE_ONLINE_STATUS, 2, 17,
+                                  status, sizeof(status)));
+    EXPECT(CoopNetBridge_EnqueueNetworkToGame(&message));
+    EXPECT_EQ(CoopNetBridge_RequestCheckpoint(), COOP_CHECKPOINT_REQUEST_REJECTED);
+
+    CoopStartMenu_TestSetSaveDryRun(TRUE);
+    SaveGame();
+    EXPECT_EQ(CoopStartMenu_TestRunSaveSavingMessageCallback(), COOP_START_MENU_TEST_SAVE_IN_PROGRESS);
+    EXPECT_EQ(CoopStartMenu_TestRunSaveDoSaveCallback(), COOP_START_MENU_TEST_SAVE_IN_PROGRESS);
+    EXPECT(CoopStartMenu_TestIsSaveCheckpointRetrying());
+    EXPECT(CoopBridgeQueue_IsEmpty(&gCoopNetBridge.game_to_network));
+
+    CoopNetBridge_Poll();
+    gCoopNetBridge.status_flags &= ~COOP_BRIDGE_STATUS_WORLD_NOT_READY;
+    EXPECT_EQ(CoopStartMenu_TestRunCurrentSaveCallback(), COOP_START_MENU_TEST_SAVE_IN_PROGRESS);
+    EXPECT_EQ(CoopNetBridge_GetCheckpointState(), COOP_CHECKPOINT_STATE_WAITING_FOR_GRANT);
+    EXPECT(CoopNetBridge_DequeueGameToNetwork(&message));
+    EXPECT_EQ(message.type, COOP_BRIDGE_MESSAGE_CHECKPOINT_READY);
+    EXPECT(CoopBridgeQueue_IsEmpty(&gCoopNetBridge.game_to_network));
+
+    CoopNetBridge_NotifySaveResult(FALSE);
+    EndBrineyCloudSave();
+}
+
+TEST("First Briney scripted save is refused after the bounded retry window")
+{
+    struct CoopBridgeMessage message;
+    u32 attempts;
+
+    BeginBrineyCloudSave();
+    /* An outbound frame Lua never drains blocks every frame of the window. */
+    EXPECT(CoopNetBridge_EnqueueGameToNetwork(COOP_BRIDGE_MESSAGE_PLAYER_STATE, NULL, 0));
+    CoopStartMenu_TestSetSaveDryRun(TRUE);
+    SaveGame();
+    EXPECT_EQ(CoopStartMenu_TestRunSaveSavingMessageCallback(), COOP_START_MENU_TEST_SAVE_IN_PROGRESS);
+    EXPECT_EQ(CoopStartMenu_TestRunSaveDoSaveCallback(), COOP_START_MENU_TEST_SAVE_IN_PROGRESS);
+    for (attempts = 1; CoopStartMenu_TestIsSaveCheckpointRetrying() && attempts < 1000; attempts++)
+        EXPECT_EQ(CoopStartMenu_TestRunCurrentSaveCallback(), COOP_START_MENU_TEST_SAVE_IN_PROGRESS);
+    EXPECT_EQ(attempts, COOP_NET_BRIDGE_CHECKPOINT_REQUEST_FRAMES);
+    EXPECT(CoopStartMenu_TestIsSaveAborting());
+    EXPECT_EQ(CoopStartMenu_TestRunCurrentSaveCallback(), COOP_START_MENU_TEST_SAVE_CANCELED);
+    EXPECT_EQ(CoopNetBridge_GetCheckpointState(), COOP_CHECKPOINT_STATE_IDLE);
+    EXPECT(CoopNetBridge_DequeueGameToNetwork(&message));
+    EXPECT_EQ(message.type, COOP_BRIDGE_MESSAGE_PLAYER_STATE);
+    EXPECT(CoopBridgeQueue_IsEmpty(&gCoopNetBridge.game_to_network));
+    EXPECT(CoopGroupTravel_IsFirstBrineyReceiptPending());
+    EndBrineyCloudSave();
+}
+
 TEST("Dewford to Route 109 follows the Steven letter gate before Devon Goods delivery")
 {
     bool8 hadLetter = FlagGet(FLAG_DELIVERED_STEVEN_LETTER);
@@ -1600,6 +1711,7 @@ TEST("Reverse ferry requires the exact Kanto terminal and excludes maiden voyage
     EndDepartureScript();
 }
 
+#if ROM_WORLD == 1
 TEST("Reverse gate commit completes at the Kanto-context reception gate")
 {
     u8 route;
@@ -1629,6 +1741,7 @@ TEST("Reverse gate commit completes at the Kanto-context reception gate")
         EXPECT(CoopGroupTravel_TestState() == 8 || CoopGroupTravel_TestState() == 9);
     }
 }
+#endif // ROM_WORLD == 1
 
 TEST("Group Fly route IDs follow the vanilla Fly table across regions")
 {
@@ -1746,6 +1859,7 @@ TEST("Group Teleport uses the exact last heal point and waits for consent")
     CoopGroupTravel_Init();
 }
 
+#if ROM_WORLD == 1
 static struct CoopGroupTravelRecord EscapeRecord(u8 kind, u8 route, u32 request)
 {
     struct CoopGroupTravelRecord record = {0};
@@ -1876,6 +1990,7 @@ TEST("Group Escape Rope validates its source and exact arrival")
     record.era = 255;
     EXPECT(!CoopGroupTravelProtocol_ValidateServer(&record));
 }
+#endif // ROM_WORLD == 1
 
 TEST("Group travel refreshes offer countdown from server updates")
 {
@@ -2093,6 +2208,7 @@ TEST("Group travel complete cannot release a script-owned interaction boundary")
     EXPECT(!ArePlayerFieldControlsLocked());
 }
 
+#if ROM_WORLD == 1
 TEST("Group travel disconnected arrival locks before replay and rejects drift")
 {
     ResetGroupTravelFixture();
@@ -2145,6 +2261,7 @@ TEST("Group travel disconnected arrival locks before replay and rejects drift")
     UnlockPlayerFieldControls();
     CoopGroupTravel_Init();
 }
+#endif // ROM_WORLD == 1
 
 TEST("Group Fly arrival acknowledges without a Johto crossing")
 {
@@ -2189,6 +2306,7 @@ TEST("Seagallop arrival acknowledges without a Johto crossing")
     CoopGroupTravel_Init();
 }
 
+#if ROM_WORLD == 1
 TEST("Map script commit cannot consume a group-managed arrival")
 {
     ResetGroupTravelFixture();
@@ -2220,3 +2338,4 @@ TEST("Map script commit cannot consume a group-managed arrival")
     EXPECT(gSpecialVar_Result);
     EXPECT_EQ(JohtoTravel_GetPendingDestination(), JOHTO_TRAVEL_DESTINATION_NONE);
 }
+#endif // ROM_WORLD == 1
