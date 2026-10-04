@@ -1,4 +1,5 @@
 #include "global.h"
+#include "coop/arrival_proof.h"
 #include "coop/group_travel.h"
 #include "coop/net_bridge.h"
 #include "event_data.h"
@@ -174,6 +175,10 @@ static void EndDepartureScript(void)
 
 static void ResetGroupTravelFixture(void)
 {
+    /* These tests use the boot-initialized bridge without CoopNetBridge_Init,
+     * so do not inherit an arrival verifier left by an earlier test: it would
+     * refuse every GROUP_TRAVEL_CLIENT frame. */
+    CoopArrivalProof_Reset();
     ResetTasks();
     ScriptContext_Init();
     ScriptUnfreezeObjectEvents();

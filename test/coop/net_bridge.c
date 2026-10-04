@@ -1505,6 +1505,7 @@ TEST("Cloud Coop newer live same epoch SESSION_READY cuts over pending presence"
     MainCallback saved_callback1 = gMain.callback1;
     MainCallback saved_callback2 = gMain.callback2;
     bool8 saved_palette_fade_active = gPaletteFade.active;
+    bool8 saved_controls_locked = ArePlayerFieldControlsLocked();
     u32 i;
 
     if (saved_save_block1 != NULL)
@@ -1566,6 +1567,11 @@ TEST("Cloud Coop newer live same epoch SESSION_READY cuts over pending presence"
     gMain.callback1 = CB1_Overworld;
     gMain.callback2 = CB2_Overworld;
     gPaletteFade.active = FALSE;
+    /* Presence only applies frames in a controllable field. Earlier tests on
+     * the same runner (group travel replays) can leave the field locked, so
+     * set that precondition here like the rest of the overworld fixture. */
+    if (saved_controls_locked)
+        UnlockPlayerFieldControls();
 
     EXPECT(CoopPresence_EncodeSpawn(&spawn, spawn_bytes, sizeof(spawn_bytes)));
     EXPECT(CoopBridgeMessage_Seal(&message,
@@ -1623,6 +1629,8 @@ TEST("Cloud Coop newer live same epoch SESSION_READY cuts over pending presence"
     gMain.callback1 = saved_callback1;
     gMain.callback2 = saved_callback2;
     gPaletteFade.active = saved_palette_fade_active;
+    if (saved_controls_locked)
+        LockPlayerFieldControls();
 }
 #endif // ROM_WORLD == 1
 

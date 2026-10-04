@@ -55,6 +55,16 @@ static void ReadPatternFlash(u16 sector, u32 offset, u8 *destination, u32 size)
     }
 }
 
+/* Verifier mode is process-wide and outlives the test: while it is set the
+ * bridge refuses every outbound frame except ARRIVAL_PROOF. The test runner
+ * does not reset it, so a test that enters it must leave it, or later tests
+ * on the same runner (group travel, battle transport) see a mute bridge. */
+static void LeaveVerifierMode(void)
+{
+    CoopArrivalProof_Reset();
+    EXPECT(!CoopArrivalProof_IsVerifierMode());
+}
+
 static void QueueChallenge(const u8 nonce[COOP_ARRIVAL_CHALLENGE_NONCE_SIZE], u32 sequence)
 {
     struct CoopBridgeMessage message;
@@ -137,6 +147,7 @@ TEST("Coop arrival verifier hashes exactly one flash sector per frame and emits 
     EXPECT_EQ(CoopNetBridge_GetSessionEpoch(), 0);
     CoopArrivalProof_TestSetFlashReadCallback(NULL);
     gFlashMemoryPresent = flashMemoryPresent;
+    LeaveVerifierMode();
 }
 
 TEST("Coop arrival verifier rejects invalid Continue saves and never accepts SessionReady")
@@ -170,6 +181,7 @@ TEST("Coop arrival verifier rejects invalid Continue saves and never accepts Ses
     CoopNetBridge_Poll();
     EXPECT(CoopBridgeQueue_IsEmpty(&gCoopNetBridge.game_to_network));
     gFlashMemoryPresent = flashMemoryPresent;
+    LeaveVerifierMode();
 }
 
 TEST("Coop arrival challenge refuses zero nonce and field entry without Continue")
@@ -190,6 +202,7 @@ TEST("Coop arrival challenge refuses zero nonce and field entry without Continue
     EXPECT(CoopArrivalProof_IsVerifierMode());
     EXPECT(!CoopArrivalProof_IsProofReady());
     gFlashMemoryPresent = flashMemoryPresent;
+    LeaveVerifierMode();
 }
 
 TEST("Coop arrival challenge rejects nonzero frame padding without entering verifier mode")
