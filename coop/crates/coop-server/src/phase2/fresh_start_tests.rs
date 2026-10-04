@@ -4,64 +4,11 @@
 mod fresh_start_checkpoint {
     use super::*;
     use crate::phase2::fresh_start::{
-        self, Decision, FreshStartError, FreshStartOptions, decide, hex, parse_args, sha256,
-        transform,
+        self, Decision, FreshStartError, FreshStartOptions, ORIGIN_MAIN_STATE_KEYS,
+        TOMBSTONE_HEADROOM_BOUND, decide, hex, parse_args, sha256, transform,
     };
     use crate::phase2::persistent::{decode_state, encode};
     use ciborium::Value;
-
-    /// Top-level `State` keys persisted by origin/main's storage.rs.
-    const ORIGIN_MAIN_STATE_KEYS: [&str; 49] = [
-        "users_by_name",
-        "users_by_id",
-        "characters",
-        "invitations",
-        "invitation_issuers",
-        "invitation_expires_at",
-        "access",
-        "refresh",
-        "families",
-        "leases",
-        "acquire_history",
-        "prepared",
-        "prepare_ops",
-        "snapshots",
-        "snapshot_by_revision",
-        "finalize_ops",
-        "restore_ops",
-        "restore_staging",
-        "retired_snapshots",
-        "tickets",
-        "realtime_tickets",
-        "realtime_ticket_families",
-        "realtime_by_runtime",
-        "upload_objects",
-        "groups",
-        "active_group_by_member",
-        "group_end_notices",
-        "last_group_by_member",
-        "last_seen_at",
-        "group_invitations",
-        "group_pairing_codes",
-        "group_pairing_code_issuances",
-        "group_pairing_code_attempts",
-        "group_idempotency",
-        "group_travel_proposals",
-        "live_group_travel_by_group",
-        "live_group_travel_by_member",
-        "group_travel_proposal_idempotency",
-        "trade_offers",
-        "trade_offer_idempotency",
-        "trade_staging",
-        "trade_receipts",
-        "group_member_world_zones",
-        "group_progress_feeds",
-        "battle_reservations",
-        "active_battle_by_member",
-        "battle_idempotency",
-        "ledger_entries",
-        "ledger_open_by_character",
-    ];
 
     fn text(value: &str) -> Value {
         Value::Text(value.to_owned())
@@ -393,7 +340,7 @@ mod fresh_start_checkpoint {
         else {
             panic!("map")
         };
-        let outcome = transform(&fixture.bytes, false).expect("transform");
+        let outcome = transform(&fixture.bytes, false, false).expect("transform");
         let state = decode_state(&outcome.payload).expect("transformed payload decodes");
         let Value::Map(new_root) =
             ciborium::from_reader::<Value, _>(outcome.payload.as_slice()).unwrap()
@@ -509,7 +456,7 @@ mod fresh_start_checkpoint {
         );
 
         // Dropping sessions is explicit and only affects the token maps.
-        let dropped = transform(&fixture.bytes, true).expect("drop sessions");
+        let dropped = transform(&fixture.bytes, true, false).expect("drop sessions");
         let dropped = decode_state(&dropped.payload).expect("decodes");
         assert!(dropped.access.is_empty() && dropped.refresh.is_empty());
         assert!(dropped.families.is_empty());
@@ -543,7 +490,9 @@ mod fresh_start_checkpoint {
             decide(1, &oversized, &sha256(&oversized), false),
             Err(FreshStartError::TooLarge)
         );
-        let fresh = transform(&fixture.bytes, false).expect("transform").payload;
+        let fresh = transform(&fixture.bytes, false, false)
+            .expect("transform")
+            .payload;
         // Re-running with the original digest after a committed run.
         assert!(matches!(
             decide(1, &fresh, &legacy_sha, true),
@@ -554,18 +503,12 @@ mod fresh_start_checkpoint {
             decide(1, &fresh, &sha256(&fresh), false),
             Ok(Decision::AlreadyFresh(_))
         ));
-        // A transform of an already-fresh payload changes nothing material.
-        let again = transform(&fresh, false).expect("second transform");
-        let (first, second) = (
-            decode_state(&fresh).unwrap(),
-            decode_state(&again.payload).unwrap(),
-        );
+        // A checkpoint this build decodes is never transformed, not even an
+        // already-fresh one.
         assert_eq!(
-            encode(&first).unwrap().len(),
-            encode(&second).unwrap().len()
+            transform(&fresh, false, false).err(),
+            Some(FreshStartError::CurrentFormatWithLegacyCharacters(0))
         );
-        assert_eq!(again.report.retired_snapshots_added, 0);
-        assert_eq!(again.report.before, again.report.after);
         // An empty default checkpoint written by this build is already fresh.
         let empty = encode(&storage::State::default()).unwrap();
         assert!(matches!(
@@ -616,12 +559,22 @@ mod fresh_start_checkpoint {
             .world_heads
             .clear();
         assert_eq!(fresh_start::legacy_character_count(&state), 1);
+        // Decodable but not resumable: refused, never transformed.
+        let stuck = encode(&state).unwrap();
+        assert_eq!(
+            decide(1, &stuck, &sha256(&stuck), false),
+            Err(FreshStartError::CurrentFormatWithLegacyCharacters(1))
+        );
+        assert_eq!(
+            transform(&stuck, false, false).err(),
+            Some(FreshStartError::CurrentFormatWithLegacyCharacters(1))
+        );
     }
 
     #[test]
     fn transformed_checkpoint_serves_login_and_a_new_campaign() {
         let fixture = legacy_fixture();
-        let outcome = transform(&fixture.bytes, false).expect("transform");
+        let outcome = transform(&fixture.bytes, false, false).expect("transform");
         let app = fresh_app();
         load(&app, decode_state(&outcome.payload).unwrap());
         let login = app
@@ -692,7 +645,7 @@ mod fresh_start_checkpoint {
             .unwrap();
 
         // With --drop-sessions the password still works but old refresh does not.
-        let dropped = transform(&fixture.bytes, true).expect("drop sessions");
+        let dropped = transform(&fixture.bytes, true, false).expect("drop sessions");
         let app = fresh_app();
         load(&app, decode_state(&dropped.payload).unwrap());
         assert_eq!(
@@ -718,7 +671,17 @@ mod fresh_start_checkpoint {
                 expected_sha256: [0xab; 32],
                 drop_sessions: false,
                 dry_run: true,
+                allow_tombstone_overflow: false,
             }
+        );
+        assert!(
+            parse_args(&[
+                "--expect-sha256".to_owned(),
+                digest.clone(),
+                "--allow-tombstone-overflow".to_owned()
+            ])
+            .unwrap()
+            .allow_tombstone_overflow
         );
         assert!(
             parse_args(&[
@@ -768,9 +731,10 @@ mod fresh_start_checkpoint {
         ] {
             assert!(fresh_start::MIGRATION_SQL.contains(clause), "{clause}");
         }
-        assert!(
-            super::super::persistent::DECODE_FAILURE_GUIDANCE.contains("coop-server fresh-start")
-        );
+        let guidance = super::super::persistent::DECODE_FAILURE_GUIDANCE;
+        assert!(guidance.contains("pre-multi-world build, run `coop-server fresh-start`"));
+        assert!(guidance.contains("deploy/coop/FRESH_START.md"));
+        assert!(guidance.contains("otherwise restore from backup"));
     }
 
     // Runs only against a disposable database server; never production.
@@ -796,6 +760,7 @@ mod fresh_start_checkpoint {
                 expected_sha256,
                 drop_sessions: false,
                 dry_run,
+                allow_tombstone_overflow: false,
             };
             assert_eq!(
                 fresh_start::run(&url, &options(legacy_sha, false)),
@@ -889,4 +854,5 @@ mod fresh_start_checkpoint {
             std::panic::resume_unwind(panic);
         }
     }
+    include!("fresh_start_golden_tests.rs");
 }

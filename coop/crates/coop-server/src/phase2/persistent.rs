@@ -18,7 +18,7 @@ pub(super) const MAX_STATE_BYTES: usize = 32 * 1024 * 1024;
 pub(super) const ADVISORY_LOCK_SQL: &str = "SELECT pg_try_advisory_lock(1129271120, 1)";
 /// Operator guidance printed when the persisted checkpoint is not readable by
 /// this server build. The repository stays fenced: it never rewrites state.
-pub(super) const DECODE_FAILURE_GUIDANCE: &str = "co-op persistent repository: checkpoint decode failed: run `coop-server fresh-start` (see deploy/coop/FRESH_START.md)";
+pub(super) const DECODE_FAILURE_GUIDANCE: &str = "co-op persistent repository: checkpoint decode failed; if this checkpoint was written by a pre-multi-world build, run `coop-server fresh-start` (deploy/coop/FRESH_START.md); otherwise restore from backup";
 const IO_TIMEOUT: Duration = Duration::from_secs(35);
 const ADMISSION_TIMEOUT: Duration = Duration::from_secs(2);
 type Job<T> = Box<dyn FnOnce(&mut T) + Send>;
