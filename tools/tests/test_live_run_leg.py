@@ -42,12 +42,14 @@ class RunLegTests(unittest.TestCase):
         stack = ExitStack(); self.addCleanup(stack.close)
         m = {}
         for name, value in {"preflight": {}, "_paths": (Path("release"), Path("run")),
-                            "launch": {"a": 10, "b": 11}, "start_games": {"a": 20, "b": 21},
+                            "launch": {"a": 10, "b": 11},
                             "wait_arrival_games": {"a": 30, "b": 31}, "drive": {}, "continue_arrivals": None,
-                            "stop_runtime": None, "close_desktops": None, "checkpoint": None,
+                            "close_desktops": None, "checkpoint": None,
                             "discover_evidence": {"retained": True}, "verify_leg": {"passed": True},
                             }.items():
             m[name] = stack.enter_context(mock.patch.object(runner.harness, name, return_value=value))
+        for name, value in {"start_games": {"a": 20, "b": 21}, "stop_runtime": None}.items():
+            m[name] = stack.enter_context(mock.patch.object(runner.controls, name, return_value=value))
         for name, value in {"preceding_proof": proof(), "guard_heads": None, "bind_games": {}, "bind_loaded_sources": {}}.items():
             m[name] = stack.enter_context(mock.patch.object(runner, name, return_value=value))
         m["collect"] = stack.enter_context(mock.patch.object(runner.groups, "collect", return_value={"group": "group.json"}))

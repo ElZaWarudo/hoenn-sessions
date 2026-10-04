@@ -26,13 +26,16 @@ class SignedPresenceTests(unittest.TestCase):
         stack = ExitStack(); self.addCleanup(stack.close)
         mocks = {}
         returns = {"preflight": {}, "_paths": (Path("release"), Path("run")),
-                   "launch": {"a": 10, "b": 11}, "start_games": {"a": 20, "b": 21},
+                   "launch": {"a": 10, "b": 11},
                    "Win32Adapter": mock.sentinel.adapter, "capture_game": Path("image.png"),
                    "digest": "sha", "check_c_space": 3 * 1024**3}
         for name in (*returns, "tap", "require_presence_published", "checkpoint",
-                     "stop_runtime", "close_desktops"):
+                     "close_desktops"):
             mocks[name] = stack.enter_context(mock.patch.object(presence.harness, name,
                                                                 return_value=returns.get(name)))
+        mocks["start_games"] = stack.enter_context(mock.patch.object(presence.controls, "start_games",
+                                                                     return_value={"a": 20, "b": 21}))
+        mocks["stop_runtime"] = stack.enter_context(mock.patch.object(presence.controls, "stop_runtime"))
         mocks["alive"] = stack.enter_context(mock.patch.object(presence.harness.psutil, "pid_exists", return_value=True))
         mocks["bind"] = stack.enter_context(mock.patch.object(presence, "bind_games", return_value={"a": {}, "b": {}}))
         stack.enter_context(mock.patch.object(presence.time, "sleep"))

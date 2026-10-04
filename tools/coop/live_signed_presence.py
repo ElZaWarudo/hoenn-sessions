@@ -12,6 +12,7 @@ from pathlib import Path
 import sys
 import time
 
+import live_desktop_controls as controls
 import live_region_harness as harness
 
 
@@ -104,7 +105,7 @@ def check_presence(plan: dict, leg_name: str | None = None) -> dict:
     desktops = harness.launch(plan)
     boundary = "start-games"
     try:
-        pids = harness.start_games(plan, desktops)
+        pids = controls.start_games(plan, desktops)
         boundary = "bind-source-roms"
         bindings = bind_games(plan, leg, pids)
         harness.checkpoint(run_dir, "presence-roms-bound", bindings)
@@ -142,7 +143,7 @@ def check_presence(plan: dict, leg_name: str | None = None) -> dict:
     finally:
         original = sys.exc_info()[1]
         errors = []
-        for cleanup in (lambda: harness.stop_runtime(plan, desktops),
+        for cleanup in (lambda: controls.stop_runtime(plan, desktops),
                         lambda: harness.close_desktops(desktops)):
             try:
                 cleanup()

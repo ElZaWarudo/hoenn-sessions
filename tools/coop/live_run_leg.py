@@ -17,6 +17,7 @@ from pathlib import Path
 import sys
 import uuid
 
+import live_desktop_controls as controls
 import live_group_evidence as groups
 import live_region_harness as harness
 from live_harness_windows import KEYS
@@ -239,7 +240,7 @@ def run_leg(plan: dict, name: str) -> dict:
     desktops = harness.launch(plan)
     boundary = "selected-start"
     try:
-        pids = harness.start_games(plan, desktops)
+        pids = controls.start_games(plan, desktops)
         bindings = bind_games(plan, leg, pids)
         loaded = bind_loaded_sources(plan, pids, desktops, proof)
         harness.checkpoint(run_dir, "selected-sources-bound", {"leg": name, "roms": bindings, "saves": loaded})
@@ -256,7 +257,7 @@ def run_leg(plan: dict, name: str) -> dict:
         record = groups.group_record(plan, leg, group_id, before, after)
         harness.checkpoint(run_dir, "selected-group-proved", {"leg": name, "group_id": record["group_id"],
                            "region": record["world_zone"]["region"]})
-        harness.stop_runtime(plan, desktops)
+        controls.stop_runtime(plan, desktops)
         boundary = "selected-evidence"
         collected = groups.collect(plan, name, record, capture_directory(run_dir, name, "server-evidence"), lease_wait_seconds=15)
         evidence_plan = dict(plan, group_evidence=collected["group"], evidence_roots=[str(capture_directory(run_dir, name, "server-evidence")), *plan.get("evidence_roots", [])])
@@ -273,7 +274,7 @@ def run_leg(plan: dict, name: str) -> dict:
         raise
     finally:
         original, errors = sys.exc_info()[1], []
-        for cleanup in (lambda: harness.stop_runtime(plan, desktops), lambda: harness.close_desktops(desktops)):
+        for cleanup in (lambda: controls.stop_runtime(plan, desktops), lambda: harness.close_desktops(desktops)):
             try:
                 cleanup()
             except Exception as error:

@@ -146,7 +146,7 @@ class RoundtripTests(unittest.TestCase):
         self.assertFalse((self.root / "signed-plan.json").exists())
 
     def test_cleanup_records_liveness_and_preserves_first_error(self):
-        with mock.patch.object(rt.harness, "stop_runtime", side_effect=RuntimeError("stop")) as stop, \
+        with mock.patch.object(rt.controls, "stop_runtime", side_effect=RuntimeError("stop")) as stop, \
                 mock.patch.object(rt.harness, "close_desktops", side_effect=RuntimeError("close")) as close, \
                 mock.patch.object(rt.harness.psutil, "pid_exists", return_value=True):
             original = RuntimeError("input failure")
@@ -159,7 +159,7 @@ class RoundtripTests(unittest.TestCase):
             self.assertFalse(receipt["ok"]); self.assertEqual(receipt["alive_pids"], [10, 11])
 
     def test_cleanup_failure_prevents_success(self):
-        with mock.patch.object(rt.harness, "stop_runtime", side_effect=RuntimeError("stop")), \
+        with mock.patch.object(rt.controls, "stop_runtime", side_effect=RuntimeError("stop")), \
                 mock.patch.object(rt.harness, "close_desktops"), \
                 mock.patch.object(rt.harness.psutil, "pid_exists", return_value=False):
             with self.assertRaisesRegex(RuntimeError, "stop"):
@@ -420,7 +420,7 @@ class OutboundPairingTests(unittest.TestCase):
                 (rt.groups, "create_pairing_code", {"code": "ABC-234", "code_sha256": "c" * 64,
                                                     "expires_at_unix_ms": 1, "inviter_character_id": "a"}),
                 (rt.harness, "launch", {"a": 10, "b": 11}),
-                (rt.harness, "start_games", {"a": 20, "b": 21}),
+                (rt.controls, "start_games", {"a": 20, "b": 21}),
                 (rt, "bind_games", {}),
                 (rt.selected, "bind_loaded_sources", {}),
                 (rt.groups, "pair_desktops", {"players": {}, "checked_at_unix_ms": 1}),
@@ -430,7 +430,7 @@ class OutboundPairingTests(unittest.TestCase):
                 (rt.groups, "journal_group_id", "group"),
                 (rt.groups, "partner_proof", {"players": {}, "checked_at_unix_ms": 2}),
                 (rt.groups, "group_record", {"group_id": "group"}),
-                (rt.harness, "stop_runtime", None),
+                (rt.controls, "stop_runtime", None),
                 (rt.harness, "_paths", (Path("release"), self.root)),
                 (rt.groups, "collect", {"group": "group.json"}),
                 (rt.harness, "discover_evidence", {}),

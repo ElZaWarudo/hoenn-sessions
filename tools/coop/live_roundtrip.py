@@ -28,6 +28,7 @@ import live_custody_plan as publisher
 import live_seed_players as seeder
 import live_prepare_clients as prepare
 import live_attest_departure as departure
+import live_desktop_controls as controls
 import live_run_leg as selected
 import live_group_evidence as groups
 import live_region_harness as harness
@@ -282,7 +283,7 @@ def initial_heads(plan: dict, actors: dict) -> dict:
 
 def cleanup(plan: dict, desktops: dict, receipt: Path) -> None:
     original, failures = sys.exc_info()[1], []
-    for action in (lambda: harness.stop_runtime(plan, desktops), lambda: harness.close_desktops(desktops)):
+    for action in (lambda: controls.stop_runtime(plan, desktops), lambda: harness.close_desktops(desktops)):
         try: action()
         except Exception as error: failures.append(error)
     alive = [pid for pid in desktops.values() if harness.psutil.pid_exists(pid)]
@@ -316,7 +317,7 @@ def outbound(plan: dict, actors: dict, root: Path) -> dict:
               ("code_sha256", "expires_at_unix_ms", "inviter_character_id")}})
     desktops = harness.launch(plan)
     try:
-        pids = harness.start_games(plan, desktops)
+        pids = controls.start_games(plan, desktops)
         bind_games(plan, leg, pids)
         selected.bind_loaded_sources(plan, pids, desktops, {"players": heads})
         before = groups.pair_desktops(plan, desktops, code, presence_regions(plan, leg["source_world_id"]), "outbound")
@@ -329,7 +330,7 @@ def outbound(plan: dict, actors: dict, root: Path) -> dict:
         after = groups.partner_proof(plan, presence_regions(plan, leg["destination_world_id"]), "outbound post-arrival")
         record = groups.group_record(plan, leg, group_id, before, after)
         immutable(root / "outbound-group-proof.json", record)
-        harness.stop_runtime(plan, desktops)
+        controls.stop_runtime(plan, desktops)
         _, run_dir = harness._paths(plan)
         output = capture_directory(run_dir, leg["name"], "server-evidence")
         collected = groups.collect(plan, leg["name"], record, output, lease_wait_seconds=15)
