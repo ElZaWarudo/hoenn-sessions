@@ -47,7 +47,6 @@ class DaycareTests(unittest.TestCase):
         compact[:4] = bytes((5,)) + party[1:4]
         compact[4:204] = party[4:204]
         compact[204:504] = party[304:604]
-        struct.pack_into("<H", compact, 504 + 30, 25)
         compact[504 + 85] = 255
         self.after[0x0101] = bytes(compact)
         original = party[204:284]
@@ -91,12 +90,18 @@ class DaycareTests(unittest.TestCase):
         self.assertEqual(checked["custody_recipe"]["daycare"][0]["mon_name_hex"], "bdff520000000000000000")
         self.assertEqual((checked["total_steps"], checked["post_deposit_steps"]), (10, 6))
 
-    def test_native_empty_tail_is_not_all_zero(self):
+    def test_native_empty_tail_is_zero_apart_from_mail_none(self):
         self.check()
-        changed = bytearray(self.after[0x0101])
-        changed[504:] = bytes(100)
-        self.after[0x0101] = bytes(changed)
-        with self.assertRaises(OracleFailure): self.check()
+        self.assertEqual(self.after[0x0101][504:], bytes(85) + bytes((255,)) + bytes(14))
+        old = self.after[0x0101]
+        # Pre-9840305105 ZeroMonData left the previous occupant's maxHP (25)
+        # in box.hpLost; the fixed ROM never writes it, so it is rejected.
+        stale = bytearray(old); struct.pack_into("<H", stale, 504 + 30, 25)
+        no_mail = bytearray(old); no_mail[504 + 85] = 0
+        for changed in (stale, no_mail):
+            self.after[0x0101] = bytes(changed)
+            with self.assertRaises(OracleFailure): self.check()
+        self.after[0x0101] = old
 
     def test_compaction_other_records_and_tail_reject(self):
         old = self.after[0x0101]

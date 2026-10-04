@@ -541,7 +541,12 @@ separate test-only source attestation. It requires the five occupied Party
 slots and exact unused sixth-slot sentinel, permits only hpLost lowbyte534 to
 become0, pins each actual journal source, and preserves full Party/Bag/PC/Mail/
 Daycare witnesses. No save or production helper changes. Exact source→staged
-projection still allows no exceptions.
+projection still allows no exceptions. Since the ZeroMonData fix (9840305105)
+the ROM leaves the emptied sixth slot all zero apart from mail=255, so the
+Daycare oracle requires that clean tail and the attestation now requires it
+too, plus a byte-identical Party (recorded as offset 534, 0→0). The pre-fix
+hpLost leftover and its single-byte reset are rejected; the v7o paragraph
+above describes the old ROM.
 
 ```powershell
 python tools/coop/live_attest_departure.py --plan <original-seeded-plan.json> --leg main-to-cormoria --output <spare-volume-attested-plan.json>

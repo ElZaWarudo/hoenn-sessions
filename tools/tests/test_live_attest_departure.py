@@ -16,15 +16,14 @@ import live_attest_departure as attest
 
 
 def party():
-    value = bytearray(604); value[0] = 5; value[534] = 23; value[589] = 255
+    value = bytearray(604); value[0] = 5; value[589] = 255  # Fixed ZeroMonData tail.
     value[4] = 1  # Distinct occupied data must remain exact.
     return bytes(value)
 
 
 class DepartureTests(unittest.TestCase):
     def setUp(self):
-        self.before = party(); after = bytearray(self.before); after[534] = 0
-        self.after = bytes(after)
+        self.before = party(); self.after = self.before
         self.base = {"players": [], "legs": [{"name": "out", "source_world_id": 1,
                                                "destination_world_id": 2, "portal_id": 3}]}
         self.evidence = {"leg": "out", "players": {"a": {}, "b": {}}, "group": {"group_id": "group"}}
@@ -67,22 +66,25 @@ class DepartureTests(unittest.TestCase):
             m[name] = stack.enter_context(mock.patch.object(attest, name))
         return m
 
-    def test_exact_empty_tail_change(self):
+    def test_fixed_rom_clean_tail_requires_identical_party(self):
         result = attest.attest_party(self.before, self.after)
-        self.assertEqual((result["offset"], result["old"], result["new"]), (534, 23, 0))
+        self.assertEqual((result["offset"], result["old"], result["new"]), (534, 0, 0))
 
-    def test_occupied_slot_or_other_tail_change_rejected(self):
-        for offset in (4, 533, 535, 589, 590, 603):
+    def test_any_party_change_rejected(self):
+        for offset in (4, 504, 533, 534, 535, 589, 590, 603):
             value = bytearray(self.after); value[offset] ^= 1
             with self.subTest(offset=offset), self.assertRaises(attest.OracleFailure):
                 attest.attest_party(self.before, bytes(value))
 
-    def test_nonempty_or_malformed_tail_rejected(self):
-        for offset in (504, 588, 590, 534):
-            before = bytearray(self.before); before[offset] = 0 if offset == 534 else 1
-            after = bytearray(before); after[534] = 0
-            with self.subTest(offset=offset), self.assertRaises(attest.OracleFailure):
-                attest.attest_party(bytes(before), bytes(after))
+    def test_pre_fix_leftover_or_malformed_tail_rejected(self):
+        # 534: pre-9840305105 ZeroMonData left the previous maxHP in hpLost,
+        # which LoadPlayerParty then reset; the fixed ROM never writes it.
+        for offset, value in ((534, 23), (535, 1), (504, 1), (588, 1), (589, 0), (590, 1)):
+            before = bytearray(self.before); before[offset] = value
+            reset = bytearray(before); reset[534] = 0
+            for after in (bytes(before), bytes(reset)):
+                with self.subTest(offset=offset), self.assertRaises(attest.OracleFailure):
+                    attest.attest_party(bytes(before), after)
         with self.assertRaises(attest.OracleFailure):
             attest.attest_party(self.before[:-1], self.after)
 

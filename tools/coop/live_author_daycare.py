@@ -160,11 +160,11 @@ def validate_daycare(data: bytes, source, descriptor: bytes, recipe: dict, path:
     if (len(party) != 604 or party[:4] != bytes((5,)) + before[1:4]
             or party[4:204] != before[4:204] or party[204:504] != before[304:604]):
         raise OracleFailure("Daycare party compaction/surviving records differ")
-    # ZeroMonData clears HP before maxHP, writing old maxHP into box.hpLost.
-    # The empty tail is therefore not all-zero; mail becomes MAIL_NONE.
-    empty = bytearray(100)
-    struct.pack_into("<H", empty, 30, struct.unpack_from("<H", before, 504 + 88)[0] & 0x3FFF)
-    empty[85] = 255
+    # ZeroMonData (src/pokemon.c) clears every byte of the emptied sixth slot
+    # and sets Pokemon.mail (offset 85) to MAIL_NONE. Before 9840305105 it
+    # left the previous occupant's maxHP in box.hpLost; that trace is a fixed
+    # defect, so it is rejected here, as is every other nonzero byte.
+    empty = bytes(85) + b"\xff" + bytes(14)
     if party[504:] != empty:
         raise OracleFailure("Daycare compacted empty tail differs from native ZeroMonData")
     old_mail, mail = (logical_field(save, descriptor, 0x010B) for save in (source, saved))

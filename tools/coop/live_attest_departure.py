@@ -34,20 +34,21 @@ def _comparison_path(path: Path) -> Path:
 
 
 def attest_party(baseline: bytes, source: bytes) -> dict:
-    """Explicit hoenn-box80-v1 ABI; empty-tail normalization only, no padding waiver."""
+    """Explicit hoenn-box80-v1 ABI; empty-tail normalization only, no padding waiver.
+
+    The fixed ZeroMonData (9840305105) leaves the emptied sixth slot all zero
+    apart from mail=MAIL_NONE (offset 85). LoadPlayerParty then recomputes
+    box.hpLost (offset 534) as 0 - 0, so the Party must be byte-identical.
+    The pre-fix leftover (previous occupant's maxHP in hpLost) is rejected.
+    """
     if len(baseline) != 604 or len(source) != 604 or baseline[:4] != b"\x05\0\0\0":
         raise OracleFailure("departure requires Party604 with five occupied slots")
-    tail = baseline[504:604]
-    expected = bytearray(100)
-    expected[30] = tail[30]  # BoxPokemon.hpLost low byte (load_save.c LoadPlayerParty).
-    expected[85] = 255      # Empty Pokemon.mail sentinel.
-    if not tail[30] or tail != bytes(expected):
-        raise OracleFailure("departure sixth slot is not the exact empty hpLost/mail sentinel")
-    changes = [i for i, (old, new) in enumerate(zip(baseline, source)) if old != new]
-    if changes != [534] or source[534] != 0:
-        raise OracleFailure("departure Party differs beyond empty-tail hpLost normalization")
-    return {"field_id": 0x0101, "offset": 534, "old": baseline[534], "new": 0,
-            "reason": "LoadPlayerParty recomputes empty maxHP-hp as zero"}
+    if baseline[504:604] != bytes(85) + b"\xff" + bytes(14):
+        raise OracleFailure("departure sixth slot is not the exact empty ZeroMonData/mail sentinel")
+    if source != baseline:
+        raise OracleFailure("departure Party differs from the authored baseline")
+    return {"field_id": 0x0101, "offset": 534, "old": 0, "new": 0,
+            "reason": "empty sixth slot all zero (fixed ZeroMonData); LoadPlayerParty changed nothing"}
 
 
 def derive_plan(base: dict, leg_name: str, evidence: dict) -> dict:
