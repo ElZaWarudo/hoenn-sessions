@@ -12,7 +12,13 @@ use std::{
 
 use super::storage::{PostgresRepository, Repository, State, StorageError};
 
-const MAX_STATE_BYTES: usize = 32 * 1024 * 1024;
+pub(super) const MAX_STATE_BYTES: usize = 32 * 1024 * 1024;
+/// Session-level advisory lock owned by the single pilot server process and
+/// by the offline `fresh-start` maintenance command.
+pub(super) const ADVISORY_LOCK_SQL: &str = "SELECT pg_try_advisory_lock(1129271120, 1)";
+/// Operator guidance printed when the persisted checkpoint is not readable by
+/// this server build. The repository stays fenced: it never rewrites state.
+pub(super) const DECODE_FAILURE_GUIDANCE: &str = "co-op persistent repository: checkpoint decode failed: run `coop-server fresh-start` (see deploy/coop/FRESH_START.md)";
 const IO_TIMEOUT: Duration = Duration::from_secs(35);
 const ADMISSION_TIMEOUT: Duration = Duration::from_secs(2);
 type Job<T> = Box<dyn FnOnce(&mut T) + Send>;
@@ -147,13 +153,27 @@ pub(super) struct PostgresStateRepository {
     fenced: AtomicBool,
 }
 
-fn encode(state: &State) -> Result<Vec<u8>, StorageError> {
+pub(super) fn encode(state: &State) -> Result<Vec<u8>, StorageError> {
     let mut bytes = Vec::new();
     ciborium::into_writer(state, &mut bytes).map_err(|_| StorageError::Transaction)?;
     if bytes.len() > MAX_STATE_BYTES {
         return Err(StorageError::StateTooLarge);
     }
     Ok(bytes)
+}
+
+/// Decodes one complete checkpoint payload. Trailing bytes and oversized
+/// payloads are rejected so a partially understood checkpoint never loads.
+pub(super) fn decode_state(bytes: &[u8]) -> Result<State, StorageError> {
+    if bytes.len() > MAX_STATE_BYTES {
+        return Err(StorageError::Transaction);
+    }
+    let mut reader = bytes;
+    let state = ciborium::from_reader(&mut reader).map_err(|_| StorageError::Transaction)?;
+    if !reader.is_empty() {
+        return Err(StorageError::Transaction);
+    }
+    Ok(state)
 }
 
 impl PostgresStateRepository {
@@ -180,7 +200,7 @@ impl PostgresStateRepository {
             client.batch_execute("SET statement_timeout = '5s'; SET lock_timeout = '3s'; SET idle_in_transaction_session_timeout = '10s'")
                 .map_err(|_| StorageError::Transaction)?;
             let owned: bool = client
-                .query_one("SELECT pg_try_advisory_lock(1129271120, 1)", &[])
+                .query_one(ADVISORY_LOCK_SQL, &[])
                 .map_err(|_| StorageError::Transaction)?
                 .get(0);
             if !owned {
@@ -206,14 +226,9 @@ impl PostgresStateRepository {
             }
             Ok(row.get(1))
         })?;
-        if bytes.len() > MAX_STATE_BYTES {
-            return Err(StorageError::Transaction);
-        }
-        let mut reader = bytes.as_slice();
-        let state = ciborium::from_reader(&mut reader).map_err(|_| StorageError::Transaction)?;
-        if !reader.is_empty() {
-            return Err(StorageError::Transaction);
-        }
+        // Fail closed on an unreadable checkpoint, but name the explicit,
+        // archived maintenance path instead of leaving a bare startup error.
+        let state = decode_state(&bytes).inspect_err(|_| eprintln!("{DECODE_FAILURE_GUIDANCE}"))?;
         Ok(Self {
             io,
             state: Mutex::new(state),

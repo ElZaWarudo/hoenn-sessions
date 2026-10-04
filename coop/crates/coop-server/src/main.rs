@@ -1,7 +1,31 @@
 use std::{net::SocketAddr, path::PathBuf};
 
-#[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let arguments: Vec<String> = std::env::args().skip(1).collect();
+    if arguments.first().map(String::as_str) == Some("fresh-start") {
+        // Offline maintenance: no async runtime, no listener, no object store.
+        return fresh_start(&arguments[1..]);
+    }
+    tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()?
+        .block_on(serve())
+}
+
+fn fresh_start(arguments: &[String]) -> Result<(), Box<dyn std::error::Error>> {
+    match coop_server::phase2::fresh_start::run_cli(arguments) {
+        Ok(report) => {
+            println!("{}", serde_json::to_string_pretty(&report)?);
+            Ok(())
+        }
+        Err(error) => {
+            eprintln!("coop-server fresh-start: {error}");
+            std::process::exit(1);
+        }
+    }
+}
+
+async fn serve() -> Result<(), Box<dyn std::error::Error>> {
     let (mode, address, release_fixture_root) = runtime_config()?;
     match mode {
         ServerMode::Phase1 => {

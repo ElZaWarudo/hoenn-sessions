@@ -86,6 +86,7 @@ use thiserror::Error;
 pub mod auth;
 mod battles;
 mod firebase;
+pub mod fresh_start;
 mod group_handoff;
 pub(crate) mod group_travel;
 pub(crate) mod ledger;
@@ -2508,6 +2509,7 @@ mod tests {
     include!("phase2/recovery_tests.rs");
     include!("phase2/handoff_tests.rs");
     include!("phase2/group_handoff_tests.rs");
+    include!("phase2/fresh_start_tests.rs");
     use coop_cloud::{
         ArtifactIdentity, ClientInstanceId, IdempotencyKey, InvitationCode, LeaseFence,
         LoginRequest, LogoutRequest, LogoutResponse, Password, ReconnectLeaseRequest,
