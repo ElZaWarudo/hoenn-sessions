@@ -272,13 +272,15 @@ arrival save that fails validation, stops startup with a
 startup. The release workflow promotes it with `promote-server-catalog.sh`
 and `deploy-release.sh --catalog-path ... --catalog-sha256 ...` rewrites both
 values (and `COOP_IMAGE`) in `.env`, recreates the server and rolls back
-automatically when `/health/ready` does not answer; see
-[RELEASES.md](RELEASES.md).
+automatically when `/health/ready` does not answer (exit codes 0-5, run
+detached by `deploy-detached.sh`); see [RELEASES.md](RELEASES.md).
 
 Before any runtime build, the workflow streams `probe-release-status.sh` over
 the pinned SSH connection. `ABSENT` means no association or generation exists
 and permits a build. `PENDING` means the association and staging exist but the
 atomic move did not finish; `RELEASED` means the generation is already
 reusable. Both states reuse the recorded full image reference and skip rebuild,
-sign, and upload. A missing counterpart, malformed association, conflicting
-staging copy, or repository mismatch fails closed.
+sign, and upload. A staging upload without an association (`STALE`: the run
+died before promotion) is deleted by `--clean-stale-staging` and rebuilt. A
+release without an association, malformed association, conflicting staging
+copy, or repository mismatch fails closed.

@@ -13,22 +13,43 @@
 # Order: validate arguments and host catalog -> take the deploy lock -> pull
 # the image (failure leaves every file untouched) -> write .env.next that
 # preserves all other keys and lines -> validate it with the candidate
-# compose file -> timestamped backups of .env and compose.yaml -> rename both
-# into place -> `up -d` -> bounded /health/ready check. On a failed rollout,
-# an unexpected error or a signal after the rename, the backups are restored
-# byte-for-byte, the previous server is brought back up and health is checked
-# again.
+# compose file -> timestamped 0600 backups of .env and compose.yaml -> rename
+# both into place -> `up -d` -> bounded /health/ready check. On a failed
+# rollout, an unexpected error or a signal after the rename, the backups are
+# restored byte-for-byte (original modes kept), the previous server is brought
+# back up and health is checked again (or, with --rollback-to-stopped, the
+# server is left stopped).
 #
-# Exit status: 0 healthy; 1 refused before any change; 2 usage;
-#              3 rollout failed and the previous configuration is healthy again;
-#              4 rollout failed and the rollback did not become healthy.
+# The rollback must survive a dead caller: SIGPIPE is ignored, a lost SSH
+# channel or a cancelled workflow (HUP/INT/TERM) after the swap triggers the
+# restore, signals are ignored while restoring, errexit is off inside it, and
+# every rollback line and docker output goes to a log file (DEPLOY_LOG, else
+# <deploy-dir>/deploy-rollback.<stamp>.log) instead of stdout/stderr.
+# Production runs this script detached through deploy-detached.sh.
+#
+# Exit status: 0 healthy;
+#              1 refused before any change (lock held, pull failed, invalid
+#                candidate configuration, missing files, ...);
+#              2 usage;
+#              3 rollout failed, files restored and the previous server is
+#                healthy again;
+#              4 rollout failed and the rollback did not complete (files not
+#                restored, previous server not healthy, or it could not be
+#                stopped): PRODUCTION IS POSSIBLY DOWN, operator required;
+#              5 rollout failed, files restored and the server was left
+#                STOPPED as requested by --rollback-to-stopped.
 #
 # Usage: deploy-release.sh --image <immutable-ref> --catalog-path PATH
 #          --catalog-sha256 HEX [--deploy-dir DIR] [--env-file FILE]
-#          [--compose-file FILE] [--validate-only]
+#          [--compose-file FILE] [--rollback-to-stopped] [--validate-only]
 #
 #   --compose-file   version-controlled compose file to validate and install
 #                    into <deploy-dir>/compose.yaml as part of the rollout
+#   --rollback-to-stopped
+#                    on failure restore the files but leave the server stopped
+#                    instead of starting the previous image (first multi-world
+#                    rollout: the old image must never serve a fresh-started
+#                    database)
 #   --validate-only  check arguments, image reference, host catalog bytes and
 #                    the candidate .env/compose pair, then exit 0 without any
 #                    login, pull, file change or restart
@@ -39,9 +60,16 @@
 #   HOENN_DEPLOY_DIR  default deploy directory
 #   HEALTH_TIMEOUT    seconds to wait for /health/ready (default 180)
 #   HEALTH_INTERVAL   seconds between health probes (default 5)
+#   DEPLOY_LOG        file that receives rollback output (deploy-detached.sh
+#                     points it at the detached deploy log)
+#   DEPLOY_BACKUP_KEEP  newest .env.bak.* / compose.yaml.bak.* files of each
+#                     kind kept after a completed run (default 5)
 #   GHCR_USER/GHCR_TOKEN  optional read-only GHCR credentials; the token must
 #                     arrive via environment (piped stdin in CI)
 set -euo pipefail
+# A closed SSH channel must surface as a failed write, never kill the script
+# halfway through a rollout or a rollback.
+trap '' PIPE
 
 IMAGE=""
 CATALOG_PATH=""
@@ -50,9 +78,12 @@ DEPLOY_DIR="${HOENN_DEPLOY_DIR:-$(dirname -- "$0")}"
 ENV_FILE=""
 COMPOSE_FILE=""
 VALIDATE_ONLY=0
+ROLLBACK_TO_STOPPED=0
 HOENN_ROOT="${HOENN_ROOT:-/srv/hoenn}"
 HEALTH_TIMEOUT="${HEALTH_TIMEOUT:-180}"
 HEALTH_INTERVAL="${HEALTH_INTERVAL:-5}"
+DEPLOY_LOG="${DEPLOY_LOG:-}"
+DEPLOY_BACKUP_KEEP="${DEPLOY_BACKUP_KEEP:-5}"
 
 while [ "$#" -gt 0 ]; do
   case "$1" in
@@ -62,8 +93,9 @@ while [ "$#" -gt 0 ]; do
     --deploy-dir) DEPLOY_DIR="${2:?--deploy-dir needs a value}"; shift 2 ;;
     --env-file) ENV_FILE="${2:?--env-file needs a value}"; shift 2 ;;
     --compose-file) COMPOSE_FILE="${2:?--compose-file needs a value}"; shift 2 ;;
+    --rollback-to-stopped) ROLLBACK_TO_STOPPED=1; shift ;;
     --validate-only) VALIDATE_ONLY=1; shift ;;
-    -h | --help) sed -n '1,45p' -- "$0"; exit 0 ;;
+    -h | --help) sed -n '1,68p' -- "$0"; exit 0 ;;
     *) echo "error: unknown argument: $1" >&2; exit 2 ;;
   esac
 done
@@ -97,6 +129,9 @@ case "$IMAGE" in
     ;;
 esac
 
+case "$DEPLOY_BACKUP_KEEP" in
+  "" | *[!0-9]* | 0 ) echo "error: DEPLOY_BACKUP_KEEP must be a positive integer" >&2; exit 2 ;;
+esac
 case "$CATALOG_SHA256" in
   "" | *[!0-9a-f]* ) echo "error: --catalog-sha256 must be 64 lowercase hex chars" >&2; exit 2 ;;
 esac
@@ -185,6 +220,9 @@ SWAPPED=0
 FINISHED=0
 ENV_BACKUP=""
 COMPOSE_BACKUP=""
+ENV_MODE=600
+COMPOSE_MODE=644
+STAMP="$(date -u +%Y%m%dT%H%M%SZ).$$"
 
 wait_healthy() {
   local deadline=$((SECONDS + HEALTH_TIMEOUT))
@@ -197,25 +235,90 @@ wait_healthy() {
   done
 }
 
-restore_file() {
-  local backup="$1" target="$2"
-  cp -p -- "$backup" "$target.rollback.$$" && mv -f -- "$target.rollback.$$" "$target"
+file_mode() {
+  local mode
+  mode="$(stat -c %a -- "$1" 2>/dev/null)" || mode=""
+  case "$mode" in
+    [0-7][0-7][0-7] | [0-7][0-7][0-7][0-7]) printf '%s' "$mode" ;;
+    *) printf '%s' "$2" ;;
+  esac
 }
 
-# Restores the pre-rollout files and server. Never returns.
+# Restores the bytes and the recorded original mode (backups are 0600).
+restore_file() {
+  local backup="$1" target="$2" mode="$3"
+  cp -- "$backup" "$target.rollback.$$" && chmod "$mode" "$target.rollback.$$" \
+    && mv -f -- "$target.rollback.$$" "$target"
+}
+
+# Backups hold secrets: keep them 0600 and only the newest DEPLOY_BACKUP_KEEP
+# of each kind. The UTC stamp makes lexical (glob) order chronological.
+prune_backups() {
+  local prefix candidate count index
+  local -a backups
+  for prefix in "$ENV_FILE.bak." "$ACTIVE_COMPOSE.bak."; do
+    backups=()
+    for candidate in "$prefix"*; do
+      if [ -f "$candidate" ] && [ ! -L "$candidate" ]; then backups+=("$candidate"); fi
+    done
+    count="${#backups[@]}"
+    index=0
+    while [ "$index" -lt "$count" ]; do
+      if [ $((count - index)) -gt "$DEPLOY_BACKUP_KEEP" ]; then
+        rm -f -- "${backups[$index]}"
+      else
+        chmod 0600 -- "${backups[$index]}"
+      fi
+      index=$((index + 1))
+    done
+  done
+}
+
+# Best-effort line to the caller's original stderr (fd 7, saved before the
+# rollback redirected everything to its log). Never fails.
+notify() {
+  { printf '%s\n' "$*" >&7; } 2>/dev/null || true
+}
+
+# Restores the pre-rollout files and either restarts the previous server or,
+# with --rollback-to-stopped, stops it. Never returns.
 rollback() {
-  local reason="$1"
-  trap - EXIT INT TERM HUP
-  echo "error: rollout of $IMAGE failed ($reason); restoring previous configuration" >&2
-  compose_with "$ENV_FILE" "$ACTIVE_COMPOSE" ps server >&2 || true
-  compose_with "$ENV_FILE" "$ACTIVE_COMPOSE" logs --tail=50 server >&2 || true
-  if restore_file "$ENV_BACKUP" "$ENV_FILE" && restore_file "$COMPOSE_BACKUP" "$ACTIVE_COMPOSE" \
-      && compose_with "$ENV_FILE" "$ACTIVE_COMPOSE" up -d --no-build server && wait_healthy; then
-    echo "rolled back: previous server configuration is healthy again (backups $ENV_BACKUP, $COMPOSE_BACKUP)" >&2
-    cleanup
-    exit 3
+  local reason="$1" log
+  set +e
+  trap '' EXIT INT TERM HUP PIPE
+  if ! exec 7>&2 2>/dev/null; then exec 7>/dev/null; fi
+  log="${DEPLOY_LOG:-$DEPLOY_DIR/deploy-rollback.$STAMP.log}"
+  if ( umask 077; : >> "$log" ) 2>/dev/null; then
+    exec >>"$log" 2>&1
+  else
+    log=/dev/null
+    exec >/dev/null 2>&1
   fi
-  echo "error: ROLLBACK FAILED; inspect $ENV_BACKUP and $COMPOSE_BACKUP manually" >&2
+  notify "error: rollout of $IMAGE failed ($reason); restoring previous configuration (log: $log)"
+  echo "error: rollout of $IMAGE failed ($reason); restoring previous configuration"
+  compose_with "$ENV_FILE" "$ACTIVE_COMPOSE" ps server
+  compose_with "$ENV_FILE" "$ACTIVE_COMPOSE" logs --tail=50 server
+  if restore_file "$ENV_BACKUP" "$ENV_FILE" "$ENV_MODE" \
+      && restore_file "$COMPOSE_BACKUP" "$ACTIVE_COMPOSE" "$COMPOSE_MODE"; then
+    echo "restored $ENV_FILE and $ACTIVE_COMPOSE from $ENV_BACKUP and $COMPOSE_BACKUP"
+    if [ "$ROLLBACK_TO_STOPPED" -eq 1 ]; then
+      if compose_with "$ENV_FILE" "$ACTIVE_COMPOSE" stop server; then
+        echo "rolled back files; server left STOPPED (--rollback-to-stopped)"
+        notify "error: rollout failed; files restored and the server is STOPPED as requested (exit 5; log: $log)"
+        prune_backups
+        cleanup
+        exit 5
+      fi
+    elif compose_with "$ENV_FILE" "$ACTIVE_COMPOSE" up -d --no-build server && wait_healthy; then
+      echo "rolled back: previous server configuration is healthy again"
+      notify "rolled back: previous server configuration is healthy again (backups $ENV_BACKUP, $COMPOSE_BACKUP; log: $log)"
+      prune_backups
+      cleanup
+      exit 3
+    fi
+  fi
+  echo "error: ROLLBACK FAILED; production is possibly down; inspect $ENV_BACKUP and $COMPOSE_BACKUP manually"
+  notify "error: ROLLBACK FAILED; production is possibly down; inspect $ENV_BACKUP and $COMPOSE_BACKUP manually (log: $log)"
   cleanup
   exit 4
 }
@@ -234,6 +337,8 @@ on_exit() {
   cleanup
 }
 trap on_exit EXIT
+# Before the swap a signal just exits (nothing changed); after it, on_exit
+# restores. HUP is a lost SSH session, INT/TERM a cancelled workflow.
 trap 'exit 130' INT TERM HUP
 
 if [ "$VALIDATE_ONLY" -eq 1 ]; then
@@ -277,11 +382,12 @@ if [ -n "$COMPOSE_FILE" ]; then
   install -m 0644 -- "$COMPOSE_FILE" "$NEXT_COMPOSE"
 fi
 
-STAMP="$(date -u +%Y%m%dT%H%M%SZ).$$"
+ENV_MODE="$(file_mode "$ENV_FILE" 600)"
+COMPOSE_MODE="$(file_mode "$ACTIVE_COMPOSE" 644)"
 ENV_BACKUP="$ENV_FILE.bak.$STAMP"
 COMPOSE_BACKUP="$ACTIVE_COMPOSE.bak.$STAMP"
-cp -p -- "$ENV_FILE" "$ENV_BACKUP"
-cp -p -- "$ACTIVE_COMPOSE" "$COMPOSE_BACKUP"
+( umask 077 && cp -- "$ENV_FILE" "$ENV_BACKUP" && cp -- "$ACTIVE_COMPOSE" "$COMPOSE_BACKUP" )
+chmod 0600 -- "$ENV_BACKUP" "$COMPOSE_BACKUP"
 
 SWAPPED=1
 mv -f -- "$NEXT_ENV" "$ENV_FILE"
@@ -300,5 +406,6 @@ if ! wait_healthy; then
 fi
 
 FINISHED=1
-echo "server $IMAGE is healthy (/health/ready 200) with catalog $CATALOG_SHA256 (backups $ENV_BACKUP, $COMPOSE_BACKUP)"
+prune_backups || true
+echo "server $IMAGE is healthy (/health/ready 200) with catalog $CATALOG_SHA256 (backups $ENV_BACKUP, $COMPOSE_BACKUP)" || true
 compose_with "$ENV_FILE" "$ACTIVE_COMPOSE" ps server || true

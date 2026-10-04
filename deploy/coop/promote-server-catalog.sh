@@ -14,9 +14,11 @@
 #
 # Checks: lowercase 64-hex digest, catalog <= 64 KiB with that exact SHA-256,
 # schema 3, inventory exactly the catalog plus every template_sav_path (each
-# under worlds/<world_id>/), each save's size and pinned SHA-256, no symlinks.
-# Idempotent: an existing promoted directory is re-verified and an identical
-# staging upload is discarded.
+# under worlds/<world_id>/), no directory other than the parents of those
+# saves, each save's size and pinned SHA-256, no symlinks.
+# Idempotent: an existing promoted directory is re-verified, re-sealed and an
+# identical staging upload is discarded. server-catalog/ itself is made
+# traversable (a+rx) whatever the operator's umask.
 #
 # Usage: promote-server-catalog.sh <catalog-sha256>
 set -euo pipefail
@@ -80,13 +82,23 @@ try:
 except (KeyError, TypeError, ValueError):
     raise SystemExit("server catalog is not a schema-3 catalog with worlds/<id>/ arrival saves")
 found = set()
+found_dirs = set()
 for current, dirs, files in os.walk(root):
     base = pathlib.Path(current).relative_to(root)
     found.update((base / name).as_posix() for name in files)
+    found_dirs.update((base / name).as_posix() for name in dirs)
+expected_dirs = set()
+for relative in pinned:
+    parent = pathlib.PurePosixPath(relative).parent
+    while str(parent) != ".":
+        expected_dirs.add(parent.as_posix())
+        parent = parent.parent
 if found != {"server-build-catalog.json"} | set(pinned):
     missing = sorted(set(pinned) - found)
     extra = sorted(found - set(pinned) - {"server-build-catalog.json"})
     raise SystemExit(f"server catalog inventory mismatch (missing {missing}, unexpected {extra})")
+if found_dirs - expected_dirs:
+    raise SystemExit(f"server catalog contains unexpected directories {sorted(found_dirs - expected_dirs)}")
 for relative, digest in pinned.items():
     path = root / relative
     info = path.stat()
@@ -105,8 +117,10 @@ seal() {
 }
 
 mkdir -p "$TARGET_ROOT"
+chmod a+rx -- "$TARGET_ROOT"
 if [ -d "$TARGET" ]; then
   verify "$TARGET" || exit 1
+  seal "$TARGET"
   if [ -d "$STAGING" ]; then
     verify "$STAGING" || exit 1
     diff -qr -- "$STAGING" "$TARGET" >/dev/null || { echo "error: staged server catalog differs from the promoted copy" >&2; exit 1; }

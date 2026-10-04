@@ -33,6 +33,11 @@ staging="$HOENN_ROOT/game-staging/$RELEASE_ID"
 release="$root/$RELEASE_ID"
 marker="$root/current"
 mkdir -p "$root"
+chmod a+rx -- "$root"
+seal_release() {
+  chmod -R a+rX -- "$1"
+  find "$1" -type f -exec chmod a-w {} +
+}
 
 verify() {
   local dir="$1" expected_id="$2" freshness="${3:-fresh}"
@@ -144,10 +149,10 @@ if [ "$sequence" -lt "$current_sequence" ] || { [ "$sequence" -eq "$current_sequ
 fi
 if [ -d "$staging" ] && [ ! -d "$release" ]; then
   mv -- "$staging" "$release"
-  chmod -R a+rX -- "$release"
-  find "$release" -type f -exec chmod a-w {} +
-elif [ -d "$staging" ]; then
-  rm -rf -- "$staging"
+  seal_release "$release"
+else
+  if [ -d "$staging" ]; then rm -rf -- "$staging"; fi
+  seal_release "$release"
 fi
 if [ "$NO_FLIP" -eq 1 ]; then
   echo "promoted game $RELEASE_ID (sequence $sequence) without activation"

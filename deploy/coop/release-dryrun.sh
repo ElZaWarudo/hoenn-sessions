@@ -138,7 +138,14 @@ bash "$SCRIPT_DIR/promote-game.sh" "$RELEASE_ID" --no-flip
 bash "$SCRIPT_DIR/promote-release.sh" "$RELEASE_ID" --image-ref "ghcr.io/dryrun/hoenn-sessions-server@$FAKE_DIGEST" \
   --image-digest "$FAKE_DIGEST" --server-catalog-sha256 "$SERVER_CATALOG" --no-flip
 [ ! -e "$HOENN/current" ] && [ ! -e "$HOENN/game/current" ] || { echo "error: --no-flip changed a marker" >&2; exit 1; }
-bash "$SCRIPT_DIR/activate-release.sh" "$RELEASE_ID"
+# Activation compares the deployed .env with the release association; this
+# stands in for the .env a healthy deploy-release.sh run leaves behind.
+DEPLOYED_ENV="$WORK/deployed.env"
+printf 'COOP_IMAGE=ghcr.io/dryrun/hoenn-sessions-server@%s
+COOP_PHASE2_RELEASE_CATALOG_PATH=%s
+COOP_PHASE2_RELEASE_CATALOG_SHA256=%s
+'   "$FAKE_DIGEST" "$HOENN/server-catalog/$SERVER_CATALOG/server-build-catalog.json" "$SERVER_CATALOG" > "$DEPLOYED_ENV"
+bash "$SCRIPT_DIR/activate-release.sh" "$RELEASE_ID" --env-file "$DEPLOYED_ENV"
 [ "$(cat "$HOENN/current")" = "$RELEASE_ID" ] && [ "$(cat "$HOENN/game/current")" = "$RELEASE_ID" ]
 probe="$(bash "$SCRIPT_DIR/probe-release-status.sh" "$RELEASE_ID" ghcr.io/dryrun/hoenn-sessions-server)"
 printf '%s\n' "$probe"

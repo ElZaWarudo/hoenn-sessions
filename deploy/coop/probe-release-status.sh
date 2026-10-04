@@ -3,10 +3,28 @@
 # Output is a four-line key/value protocol intended for the workflow status
 # gate: state, image_ref, image_digest and server_catalog_sha256 (the server
 # catalog digest recorded by a schema-2 association; empty otherwise).
+#
+# States: ABSENT (nothing), PENDING (association + staging), RELEASED
+# (association + release), STALE (staging/<id> without an association or
+# release: an upload whose run died before promote-release.sh published the
+# association; nothing irreversible happened and nothing refers to it).
+#
+# --clean-stale-staging turns STALE into ABSENT by deleting the unassociated
+# staging/<id> and game-staging/<id> uploads (real directories only), so a
+# rerun can rebuild and re-upload. It never touches releases/, game/<id>,
+# release-metadata/ or anything with an association. The workflow runs under
+# a concurrency group, so no other upload for the same commit is in flight.
+#
+# Usage: probe-release-status.sh [--clean-stale-staging] RELEASE_ID IMAGE_BASE
 set -eu
 
+CLEAN_STALE=0
+if [ "${1:-}" = --clean-stale-staging ]; then
+  CLEAN_STALE=1
+  shift
+fi
 if [ "$#" -ne 2 ]; then
-  echo "usage: $0 RELEASE_ID IMAGE_BASE" >&2
+  echo "usage: $0 [--clean-stale-staging] RELEASE_ID IMAGE_BASE" >&2
   exit 2
 fi
 
@@ -26,6 +44,7 @@ esac
 
 RELEASE_DIR="$HOENN_ROOT/releases/$RELEASE_ID"
 STAGING_DIR="$HOENN_ROOT/staging/$RELEASE_ID"
+GAME_STAGING_DIR="$HOENN_ROOT/game-staging/$RELEASE_ID"
 IMAGE_METADATA_FILE="$HOENN_ROOT/release-metadata/$RELEASE_ID.json"
 
 present() {
@@ -123,9 +142,27 @@ fi
 # released generation exists. This prevents a stale metadata file from making
 # a fresh workflow reuse an image with no bytes available to promote.
 if [ "$has_metadata" -eq 0 ]; then
-  if [ "$has_release" -ne 0 ] || [ "$has_staging" -ne 0 ]; then
-    echo "error: release or staging exists without an image association" >&2
+  if [ "$has_release" -ne 0 ]; then
+    echo "error: release exists without an image association" >&2
     exit 1
+  fi
+  if [ "$has_staging" -ne 0 ]; then
+    if [ "$CLEAN_STALE" -ne 1 ]; then
+      printf 'state=STALE
+image_ref=
+image_digest=
+server_catalog_sha256=
+'
+      exit 0
+    fi
+    validate_directory_path "$GAME_STAGING_DIR" game-staging
+    chmod -R u+w -- "$STAGING_DIR"
+    rm -rf -- "$STAGING_DIR"
+    if [ -d "$GAME_STAGING_DIR" ]; then
+      chmod -R u+w -- "$GAME_STAGING_DIR"
+      rm -rf -- "$GAME_STAGING_DIR"
+    fi
+    echo "removed stale unassociated staging upload for $RELEASE_ID" >&2
   fi
   printf 'state=ABSENT\nimage_ref=\nimage_digest=\nserver_catalog_sha256=\n'
   exit 0

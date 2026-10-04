@@ -1,5 +1,6 @@
-# Build proof for every registered travel world. Short-lived artifacts support
-# emulator verification; promotion is separate.
+# Build proof for every registered travel world. ROMs never leave the runner:
+# only ROM-free manifests are retained as short-lived artifacts for review
+# (emulator verification builds the ROM locally); promotion is separate.
 name: Multiworld build validation
 
 on:
@@ -62,12 +63,11 @@ jobs:
       - name: Verify registered world builds
         run: python3 tools/coop/multiworld_build_ci.py verify
 
-      - name: Retain ROMs and manifests for emulator verification
+      - name: Retain ROM-free manifests for review
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
-          name: multiworld-emulator-candidate
+          name: multiworld-manifests
           path: |
-            dist/multiworld/*/game.gba
             dist/multiworld/*/bridge_manifest.json
             dist/multiworld/*/player_transfer_manifest.json
             dist/multiworld/*/experience_table_manifest.json

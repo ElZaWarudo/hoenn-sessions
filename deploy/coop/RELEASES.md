@@ -85,8 +85,8 @@ workflow arguments, logs, files, release directories, or GitHub artifacts.
 `current` is deliberately a regular bounded marker. The server reads it only
 after authentication, resolves `releases/<id>`, and serves the signed
 envelope or one fixed artifact. A legacy `current -> releases/<sha>` symlink
-is accepted by `promote-release.sh` only to migrate it atomically to the
-marker contract. Invalid markers, symlinks inside a generation, extra files,
+is accepted by `promote-release.sh` and `activate-release.sh` only to migrate
+it atomically to the marker contract. Invalid markers, symlinks inside a generation, extra files,
 missing artifacts, signature failures, and conflicting re-uploads fail closed.
 
 Compose sets `COOP_RELEASE_ROOT=/srv/hoenn` and mounts the release parent
@@ -148,9 +148,16 @@ Rollout order: `promote-server-catalog.sh <catalog-sha>`, `promote-game.sh
 `deploy-release.sh --image <ref> --catalog-path
 /srv/hoenn/server-catalog/<catalog-sha>/server-build-catalog.json
 --catalog-sha256 <catalog-sha>`, and only after a healthy server
-`activate-release.sh <sha>` flips `game/current`, `current` (recording
-`.previous-release`) and, when the release carries a newer APK,
+`activate-release.sh <sha> --deploy-dir <dir>` flips `game/current`, `current`
+(recording `.previous-release`) and, when the release carries a newer APK,
 `android/current`. Nothing is visible to players before activation.
+Activation preflights everything before the first rename: both generations
+are promoted, every marker (and its `.tmp` sibling) is absent or a regular
+file (a legacy `current` symlink is migrated), the Android decision is made,
+and `<dir>/.env` carries exactly one `COOP_IMAGE` and one
+`COOP_PHASE2_RELEASE_CATALOG_SHA256` equal to `release-metadata/<sha>.json`
+(`image_ref`, `server_catalog_sha256`). On any mismatch it flips nothing: the
+healthy server is not the release being activated.
 `probe-release-status.sh` prints a fourth line, `server_catalog_sha256=`, so a
 rerun of a `PENDING`/`RELEASED` commit redeploys the recorded catalog; a
 schema-1 association (pre multi-world) cannot be redeployed by this workflow.
@@ -158,12 +165,38 @@ schema-1 association (pre multi-world) cannot be redeployed by this workflow.
 `deploy-release.sh` validates the arguments and hashes the catalog on the host,
 takes a deploy lock, pulls the image (a pull failure changes nothing), writes
 `.env.next` preserving every other line, validates it with the candidate
-compose file, keeps timestamped `.env.bak.<ts>` and `compose.yaml.bak.<ts>`,
-renames both into place, runs `up -d` and waits for `/health/ready`. On failure
-or interruption it restores both files byte-for-byte, brings the previous
-server back and re-checks health: exit 3 means rolled back and healthy, exit 4
-means the rollback failed and needs an operator. There is no separate catalog
-preflight; startup validation plus the health check is the gate.
+compose file, keeps timestamped mode-0600 `.env.bak.<ts>` and
+`compose.yaml.bak.<ts>` (they contain secrets; only the newest
+`DEPLOY_BACKUP_KEEP`, default 5, of each are kept), renames both into place,
+runs `up -d` and waits for `/health/ready`. On failure or interruption (also
+SIGHUP/SIGINT/SIGTERM after the swap) it restores both files byte-for-byte
+with their original modes and brings the previous server back, or with
+`--rollback-to-stopped` leaves it stopped. The rollback ignores SIGPIPE and
+further signals, runs with errexit off and writes everything to a log
+(`DEPLOY_LOG`, else `<deploy-dir>/deploy-rollback.<ts>.log`), so a dead SSH
+channel cannot abort it. There is no separate catalog preflight; startup
+validation plus the health check is the gate.
+
+| Exit | Meaning | Production |
+|---|---|---|
+| 0 | new server healthy | new release serving; activation follows |
+| 1 | refused before any change (lock held, pull failed, invalid candidate config, missing file) | unchanged |
+| 2 | usage error | unchanged |
+| 3 | rollout failed; files restored; previous server healthy again | previous image serving |
+| 4 | rollout failed and the rollback did not complete | **possibly down**: operator now |
+| 5 | rollout failed; files restored; server left **stopped** (`--rollback-to-stopped`) | down by design |
+
+The workflow never runs `deploy-release.sh` on the SSH channel itself:
+`deploy-detached.sh start` launches it under `setsid nohup` (stdin
+`/dev/null`) with output in `/var/log/hoenn/deploy-<sha>-<run>-<attempt>.log`
+and the exit status written to the matching `.status` file, and the workflow
+polls `deploy-detached.sh wait` (bounded: 30 minutes, step timeout 35) while
+streaming the log. Lost connections are retried; a cancelled run or dropped
+SSH session leaves the rollout and any rollback running to completion. The
+step reports 1, 3, 4 (`PRODUCTION POSSIBLY DOWN`), 5 and "state unknown"
+(124, the deploy is still running detached) as distinct errors and never
+activates after a failure. `/var/log/hoenn` must exist and be writable by the
+SSH user (`sudo install -d -m 0750 -o <ssh-user> /var/log/hoenn`).
 
 ### Attested arrival saves and recertification
 
@@ -235,14 +268,104 @@ refuse. Adding or removing coverage, or reclassifying a field, changes what
 the digest means and requires bumping `FINGERPRINT_VERSION` in the assembler
 together with `object_catalog.version` in `data/rom_world_release.json`.
 
-### One-time fresh start (manual)
+### First multi-world rollout
 
-The first multi-world rollout starts existing players fresh. This is a
-manual, one-time operator step using the server's `fresh-start` admin
-subcommand (owned separately from this pipeline), run on the VPS only after
-explicit confirmation and a verified database backup, before activation makes
-the new release visible. The workflow contains only a comment marking where
-it belongs and never runs it.
+The first multi-world release starts existing players fresh. The data steps
+(backup, the server's `fresh-start` admin subcommand, its confirmation gates
+and its own rollback) live in [FRESH_START.md](FRESH_START.md); this is the
+surrounding release sequence. The workflow never runs the fresh start: a
+repository-variable hold stops it after promotion so the operator can do the
+maintenance window by hand, then a rerun deploys and activates.
+
+**Preflight** (all must hold before the push):
+
+1. The PR's `release-dryrun` job is green, i.e. CI reproduces the ROM hashes
+   attested in `data/release_arrivals.json`.
+2. The commit being released includes the fresh-start commit (its server
+   image carries the `fresh-start` subcommand).
+3. On the VPS `/srv/hoenn/current`, `/srv/hoenn/game/current` and
+   `/srv/hoenn/android/current` (when present) are regular files
+   (`stat -c %F`); a legacy `current` symlink is migrated by activation,
+   anything else stops it.
+4. `command -v flock setfacl python3 setsid` succeeds; the SSH user's `umask`
+   is `022`; `/var/log/hoenn` exists and is writable by that user.
+5. Record the old `COOP_IMAGE` digest from `<deploy-dir>/.env` and confirm it
+   is still in the local image cache (`docker image ls --digests`).
+6. `VPS_GHCR_USER`/`VPS_GHCR_TOKEN` are set (or the VPS is already logged in to
+   GHCR) so the new image can be pulled.
+7. A recent database backup exists and has been restore-drilled.
+8. **Freeze `main` and disable queued deploys** for the whole window: lock the
+   branch (branch protection "Lock branch" or restrict pushes), merge nothing
+   else, and cancel any other queued or running "Production release" run. The
+   concurrency group does not cancel queued runs, so a later push would
+   otherwise queue behind the held run and start as soon as it fails. Announce
+   the maintenance window to players.
+
+**Sequence:**
+
+1. Set the repository variables `HOENN_ROLLOUT_HOLD=true` and
+   `HOENN_ROLLBACK_MODE=stopped`.
+2. Push or merge the release commit. The run builds, uploads and promotes the
+   server catalog, game and runtime release with `--no-flip`, then fails at
+   "Rollout hold (production untouched)". There is no downtime and nothing is
+   visible to players. The annotation names the new image and catalog.
+3. Read `NEW` (`image_ref`) and `CAT` (`server_catalog_sha256`) from
+   `/srv/hoenn/release-metadata/<sha>.json` and compare them with the
+   annotation.
+4. Maintenance window, in `<deploy-dir>`:
+   1. `docker pull NEW`.
+   2. Stop the server (`docker compose stop server`).
+   3. Take the backup and copy it off-host (FRESH_START.md).
+   4. Run the fresh start exactly as FRESH_START.md describes, with explicit
+      environment overrides so Compose uses the new image and catalog
+      (shell environment wins over `.env`, which still names the old image):
+      `COOP_IMAGE=NEW COOP_PHASE2_RELEASE_CATALOG_PATH=/srv/hoenn/server-catalog/CAT/server-build-catalog.json COOP_PHASE2_RELEASE_CATALOG_SHA256=CAT`.
+   5. Smoke-start the new server with the same three overrides (commands in
+      FRESH_START.md), require `/health/ready` 200 and a test login through
+      HTTPS.
+5. `unset COOP_IMAGE COOP_PHASE2_RELEASE_CATALOG_PATH
+   COOP_PHASE2_RELEASE_CATALOG_SHA256` and set `HOENN_ROLLOUT_HOLD=false`
+   (keep `HOENN_ROLLBACK_MODE=stopped`).
+6. "Re-run failed jobs" on the same run. The probe reports `RELEASED`, nothing
+   is rebuilt, promotion is a no-op, `deploy-release.sh` writes `NEW`/`CAT`
+   into `.env` and its `up -d` finds the running container already matching,
+   so it is effectively a no-op (a changed `compose.yaml` recreates it once on
+   the same image); health passes and `activate-release.sh` checks `.env`
+   against the association and flips the markers. Installers follow.
+7. Verify `cat /srv/hoenn/current /srv/hoenn/game/current`, health, a client
+   login and download. Keep the backup, the deploy log
+   (`/var/log/hoenn/deploy-<sha>-<run>-<attempt>.log`), `.env.bak.*` and
+   `release-metadata/<sha>.json`. Set `HOENN_ROLLBACK_MODE` back to empty (or
+   `previous`) once the new release is confirmed, then unfreeze `main`.
+
+**If the rerun fails after the fresh start**, the old image must never serve
+the fresh-started database:
+
+- exit 5 (expected with `HOENN_ROLLBACK_MODE=stopped`): `.env` names the old
+  image again and the server is stopped. Do not `docker compose up` without
+  the overrides; fix the cause and re-run failed jobs, or smoke-start `NEW`
+  with the overrides again.
+- exit 3 (rollback mode was not `stopped`): the old image is running against
+  the fresh-started database. **Stop the server immediately**
+  (`docker compose stop server`), then proceed as for exit 5.
+- exit 4 or "state unknown": **stop the server immediately**, read the deploy
+  log and `.status` file, restore `.env` from the newest `.env.bak.*` if
+  needed, then proceed as for exit 5.
+- exit 1: nothing changed; the smoke-started `NEW` keeps running. Fix the cause
+  (lock, pull credentials, compose config) and re-run failed jobs.
+- activation refused: the deployed `.env` is not `NEW`/`CAT`; fix `.env` (or
+  re-run so `deploy-release.sh` writes it) and re-run failed jobs.
+
+**No-hold fallback** (the push ran without `HOENN_ROLLOUT_HOLD=true`): if
+"Roll the server" has not started yet, cancel the run, set both variables and
+re-run failed jobs; it stops at the hold. Once it has started, cancelling does
+not stop it (it runs detached); wait for the result. Exit 3 or 1: nothing
+visible changed, continue at step 3. Exit 5: the server is stopped on the old
+configuration, continue at step 4 (skip the stop). Exit 0: the new server is
+live on the un-fresh-started data and activation runs next: stop the server
+immediately, take the backup, run the fresh start and smoke-start with the
+overrides (steps 4.3 to 4.5), then verify (step 7); `.env` already names
+`NEW`/`CAT`, so no rerun is needed. Exit 4: stop the server and inspect first.
 
 ## Required protected configuration
 
@@ -260,7 +383,9 @@ it belongs and never runs it.
 | `VPS_HOST`, `VPS_USER`, `VPS_PORT` | SSH destination (host keys are pinned) |
 | `VPS_SSH_KEY`, `VPS_KNOWN_HOSTS` | SSH identity and exact known-hosts data |
 | `VPS_DEPLOY_DIR` | Absolute deployment directory on the VPS |
-| `VPS_GHCR_USER`, `VPS_GHCR_TOKEN` | Optional read-only GHCR credentials, passed over SSH stdin |
+| `VPS_GHCR_USER`, `VPS_GHCR_TOKEN` | Read-only GHCR credentials (`read:packages`), passed over SSH stdin. **Set both** for the private image package. If both are empty the run warns and the VPS must already be logged in to GHCR as the SSH user; otherwise the pull fails and `deploy-release.sh` exits 1 with nothing changed. Setting only one fails the run |
+| `HOENN_ROLLOUT_HOLD` (variable) | `true` stops the release job after `promote-release.sh --no-flip`, before the server is touched (first multi-world rollout) |
+| `HOENN_ROLLBACK_MODE` (variable) | empty or `previous`: a failed rollout restarts the previous image (exit 3); `stopped`: it restores the files and leaves the server stopped (exit 5); anything else fails the run |
 
 The workflow validates SSH grammars and uses `StrictHostKeyChecking yes`.
 Never replace pinned host keys with an in-run key scan.
@@ -325,6 +450,12 @@ pinned SSH connection. It classifies the requested commit as:
 | `ABSENT` | no release, staging directory, or association | build, sign, upload, then promote |
 | `PENDING` | association plus staging, no release | reuse the recorded image, skip rebuild/upload, promote |
 | `RELEASED` | association plus release directory | reuse the recorded image, skip rebuild/upload, re-promote/roll out |
+| `STALE` | staging directory without association or release | the workflow passes `--clean-stale-staging`: the unassociated `staging/<sha>` and `game-staging/<sha>` are deleted and the commit is treated as `ABSENT` |
+
+`STALE` is a run that uploaded staging and died (failure, cancellation) before
+`promote-release.sh` published the association. Nothing irreversible happened
+and nothing refers to the upload, so it is safe to discard; the concurrency
+group guarantees no other upload of the same commit is in flight.
 
 Missing counterparts, malformed metadata, conflicting release/staging bytes,
 and an image reference from another repository fail closed. For `ABSENT`, the
@@ -337,6 +468,22 @@ moves staging into `releases/<sha>` and atomically replaces `current`; an
 interrupted move can be retried against the recorded association. Production
 promotion uses `--no-flip`; `current` changes only in `activate-release.sh`
 after `deploy-release.sh` reports a healthy server (see "Multi-world releases").
+
+Manual cleanup when the probe still fails closed (operator, on the VPS,
+after reading `release-metadata/<sha>.json` if it exists):
+
+- Staging without association: `rm -rf /srv/hoenn/staging/<sha>
+  /srv/hoenn/game-staging/<sha>` (what `--clean-stale-staging` does).
+- Association without release or staging (staging was deleted by hand):
+  delete `/srv/hoenn/release-metadata/<sha>.json` only if
+  `/srv/hoenn/releases/<sha>` does not exist and that image was never deployed
+  (`grep COOP_IMAGE <deploy-dir>/.env*`); the rerun then builds a new image.
+- Leftover `server-catalog-staging/<catalog-sha>`: delete it; never delete a
+  promoted `server-catalog/<catalog-sha>` that any `release-metadata` file or
+  `.env` names.
+- A promoted `game/<sha>` from a failed run conflicts with a *new* run of the
+  same commit (new sequence): delete `game/<sha>` only if `game/current` does
+  not name it. "Re-run failed jobs" keeps the sequence and is idempotent.
 
 Run a private re-promotion manually after a failed rollout:
 

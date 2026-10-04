@@ -13,8 +13,11 @@
 # catalogs (refusing when a ROM no longer matches its attested arrival save),
 # sign and verify -> upload staging -> promote server catalog, game
 # (--no-flip) and runtime release (--no-flip, image association last) ->
-# deploy-release.sh (health check, auto-rollback) -> activate-release.sh
-# (game/current, current, android/current) -> installers.
+# [rollout hold when vars.HOENN_ROLLOUT_HOLD == 'true'] -> deploy-release.sh
+# run detached on the VPS (health check, auto-rollback; rollback-to-stopped
+# when vars.HOENN_ROLLBACK_MODE == 'stopped') -> activate-release.sh
+# (game/current, current, android/current; refuses unless the deployed .env
+# is this release) -> installers.
 #
 # Immutability notes:
 # - The server image is deployed by digest (name@sha256:<digest> captured
@@ -95,6 +98,7 @@ jobs:
           bash -n deploy/coop/activate-release.sh
           bash -n deploy/coop/probe-release-status.sh
           bash -n deploy/coop/deploy-release.sh
+          bash -n deploy/coop/deploy-detached.sh
 
       - name: Release catalog assembler tests
         run: python3 -m unittest tools.tests.test_assemble_release_catalog
@@ -590,7 +594,10 @@ jobs:
           case "$IMAGE_BASE" in
             "" | *[!A-Za-z0-9_./:-]* ) echo "error: IMAGE_BASE contains unsupported characters" >&2; exit 1 ;;
           esac
-          if ! probe="$(ssh hoenn-vps "HOENN_ROOT=/srv/hoenn bash -s -- '$RELEASE_SHA' '$IMAGE_BASE'" < deploy/coop/probe-release-status.sh)"; then
+          # --clean-stale-staging: an upload left without an association by a
+          # run that died before promotion is deleted and reported ABSENT, so
+          # a rerun rebuilds instead of failing closed forever.
+          if ! probe="$(ssh hoenn-vps "HOENN_ROOT=/srv/hoenn bash -s -- --clean-stale-staging '$RELEASE_SHA' '$IMAGE_BASE'" < deploy/coop/probe-release-status.sh)"; then
             echo "error: remote release status probe failed" >&2
             exit 1
           fi
@@ -965,9 +972,10 @@ jobs:
       - name: Upload deploy scripts
         run: |
           scp deploy/coop/promote-release.sh deploy/coop/promote-game.sh deploy/coop/promote-server-catalog.sh \
-            deploy/coop/activate-release.sh deploy/coop/deploy-release.sh target/release/coop-release-tool hoenn-vps:/tmp/
+            deploy/coop/activate-release.sh deploy/coop/deploy-release.sh deploy/coop/deploy-detached.sh \
+            target/release/coop-release-tool hoenn-vps:/tmp/
           scp deploy/coop/compose.yaml hoenn-vps:/tmp/hoenn-compose.yaml
-          ssh hoenn-vps 'chmod 755 /tmp/promote-release.sh /tmp/promote-game.sh /tmp/promote-server-catalog.sh /tmp/activate-release.sh /tmp/deploy-release.sh /tmp/coop-release-tool'
+          ssh hoenn-vps 'chmod 755 /tmp/promote-release.sh /tmp/promote-game.sh /tmp/promote-server-catalog.sh /tmp/activate-release.sh /tmp/deploy-release.sh /tmp/deploy-detached.sh /tmp/coop-release-tool'
 
       - name: Ensure VPS ACL support for private APK
         if: steps.status.outputs.state == 'ABSENT' && steps.android-change.outputs.build == 'true'
@@ -1051,16 +1059,20 @@ jobs:
           RELEASE_KEY_ID: ${{ vars.RELEASE_TRUST_KEY_ID }}
           RELEASE_PUBLIC_KEY_HEX: ${{ vars.RELEASE_TRUST_PUBLIC_KEY_HEX }}
         run: |
+          # Embedded single-quoted in the remote command: refuse quote-active
+          # characters exactly like the runtime promotion step.
+          case "$RELEASE_KEY_ID" in
+            "" | *[!A-Za-z0-9_.-]* ) echo "error: release key id is unsafe" >&2; exit 1 ;;
+          esac
+          case "$RELEASE_PUBLIC_KEY_HEX" in
+            "" | *[!0-9A-Fa-f]* ) echo "error: release public key is unsafe" >&2; exit 1 ;;
+          esac
+          [ "${#RELEASE_PUBLIC_KEY_HEX}" -eq 64 ] || { echo "error: release public key must be 32-byte hex" >&2; exit 1; }
           ssh hoenn-vps "HOENN_ROOT=/srv/hoenn COOP_RELEASE_KEY_ID='$RELEASE_KEY_ID' COOP_RELEASE_PUBLIC_KEY_HEX='$RELEASE_PUBLIC_KEY_HEX' COOP_RELEASE_TOOL=/tmp/coop-release-tool bash /tmp/promote-game.sh '${{ github.sha }}' --no-flip"
 
-      # FRESH-START HOOK (manual, one time, never automated): before the first
-      # multi-world rollout reaches players, an operator runs the server's
-      # `fresh-start` admin subcommand on the VPS by hand, after explicit
-      # confirmation, following deploy/coop/RELEASES.md ("One-time fresh
-      # start"). This workflow never invokes it.
-      - name: Promote release and roll the server
+      - name: Select release image and server catalog
+        id: rollout
         env:
-          RELEASE_SHA: ${{ github.sha }}
           IMAGE_BASE: ${{ steps.image.outputs.base }}
           FRESH_DIGEST: ${{ steps.server-image.outputs.digest }}
           RELEASE_STATE: ${{ steps.status.outputs.state }}
@@ -1068,11 +1080,6 @@ jobs:
           RELEASED_IMAGE: ${{ steps.status.outputs.released_image }}
           FRESH_SERVER_CATALOG: ${{ steps.assembly.outputs.server_catalog_sha256 }}
           RELEASED_SERVER_CATALOG: ${{ steps.status.outputs.released_server_catalog }}
-          GHCR_USER: ${{ secrets.VPS_GHCR_USER }}
-          GHCR_TOKEN: ${{ secrets.VPS_GHCR_TOKEN }}
-          VPS_DEPLOY_DIR: ${{ secrets.VPS_DEPLOY_DIR }}
-          RELEASE_KEY_ID: ${{ vars.RELEASE_TRUST_KEY_ID }}
-          RELEASE_PUBLIC_KEY_HEX: ${{ vars.RELEASE_TRUST_PUBLIC_KEY_HEX }}
         run: |
           case "$RELEASE_STATE" in
             PENDING|RELEASED)
@@ -1101,11 +1108,83 @@ jobs:
               echo "error: unsafe image reference: $IMAGE_REF" >&2; exit 1 ;;
           esac
           case "$IMAGE_REF" in *@$DIGEST) ;; *) echo "error: image association mismatch" >&2; exit 1 ;; esac
+          [[ "$SERVER_CATALOG" =~ ^[0-9a-f]{64}$ ]] || { echo "error: server catalog digest is missing or malformed" >&2; exit 1; }
+          {
+            echo "digest=$DIGEST"
+            echo "image_ref=$IMAGE_REF"
+            echo "server_catalog=$SERVER_CATALOG"
+          } >> "$GITHUB_OUTPUT"
+
+      # Promotion places bytes without flipping any marker; the image and
+      # server catalog association is the last promotion written. Production
+      # is untouched by everything up to and including this step.
+      - name: Promote release without activation
+        env:
+          RELEASE_SHA: ${{ github.sha }}
+          DIGEST: ${{ steps.rollout.outputs.digest }}
+          IMAGE_REF: ${{ steps.rollout.outputs.image_ref }}
+          SERVER_CATALOG: ${{ steps.rollout.outputs.server_catalog }}
+          RELEASE_KEY_ID: ${{ vars.RELEASE_TRUST_KEY_ID }}
+          RELEASE_PUBLIC_KEY_HEX: ${{ vars.RELEASE_TRUST_PUBLIC_KEY_HEX }}
+        run: |
+          case "$RELEASE_KEY_ID" in
+            "" | *[!A-Za-z0-9_.-]* ) echo "error: release key id is unsafe" >&2; exit 1 ;;
+          esac
+          case "$RELEASE_PUBLIC_KEY_HEX" in
+            "" | *[!0-9A-Fa-f]* ) echo "error: release public key is unsafe" >&2; exit 1 ;;
+          esac
+          [ "${#RELEASE_PUBLIC_KEY_HEX}" -eq 64 ] || { echo "error: release public key must be 32-byte hex" >&2; exit 1; }
+          case "$IMAGE_REF" in "" | *[!A-Za-z0-9_./:@-]* ) echo "error: unsafe image reference" >&2; exit 1 ;; esac
+          [[ "$DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]] || { echo "error: malformed digest" >&2; exit 1; }
+          [[ "$SERVER_CATALOG" =~ ^[0-9a-f]{64}$ ]] || { echo "error: malformed server catalog digest" >&2; exit 1; }
+          ssh hoenn-vps "HOENN_ROOT=/srv/hoenn COOP_RELEASE_KEY_ID='$RELEASE_KEY_ID' COOP_RELEASE_PUBLIC_KEY_HEX='$RELEASE_PUBLIC_KEY_HEX' COOP_RELEASE_TOOL=/tmp/coop-release-tool bash /tmp/promote-release.sh '$RELEASE_SHA' --image-ref '$IMAGE_REF' --image-digest '$DIGEST' --server-catalog-sha256 '$SERVER_CATALOG' --no-flip"
+
+      # FRESH-START HOOK (manual, one time, never automated): the first
+      # multi-world rollout runs with the repository variable
+      # HOENN_ROLLOUT_HOLD=true, which stops this job here with everything
+      # promoted and production untouched. The operator then performs the
+      # maintenance window by hand (server `fresh-start` admin subcommand
+      # after explicit confirmation; deploy/coop/RELEASES.md "First
+      # multi-world rollout" and deploy/coop/FRESH_START.md), sets the
+      # variable to false and re-runs the failed jobs. This workflow never
+      # invokes the fresh-start itself.
+      - name: Rollout hold (production untouched)
+        if: vars.HOENN_ROLLOUT_HOLD == 'true'
+        env:
+          RELEASE_SHA: ${{ github.sha }}
+          IMAGE_REF: ${{ steps.rollout.outputs.image_ref }}
+          SERVER_CATALOG: ${{ steps.rollout.outputs.server_catalog }}
+        run: |
+          echo "::error title=Rollout hold::HOENN_ROLLOUT_HOLD=true. Release $RELEASE_SHA is promoted WITHOUT activation and the production server was NOT touched. Image: $IMAGE_REF Server catalog: $SERVER_CATALOG. Follow deploy/coop/RELEASES.md 'First multi-world rollout', then set HOENN_ROLLOUT_HOLD=false and re-run failed jobs."
+          exit 1
+
+      # deploy-release.sh runs detached on the VPS (deploy-detached.sh:
+      # setsid/nohup, log + exit-status file under /var/log/hoenn), so a lost
+      # SSH connection or a cancelled run can never interrupt the rollout or
+      # its automatic rollback. This step starts it, then polls with a bounded
+      # total timeout. Exit statuses: 0 healthy; 1 refused, nothing changed;
+      # 3 rolled back, previous server healthy; 4 ROLLBACK FAILED, production
+      # possibly down; 5 rolled back, server left stopped
+      # (HOENN_ROLLBACK_MODE=stopped). Any failure stops before activation, so
+      # players keep the previous release markers.
+      - name: Roll the server (detached, automatic rollback)
+        timeout-minutes: 35
+        env:
+          RELEASE_SHA: ${{ github.sha }}
+          IMAGE_REF: ${{ steps.rollout.outputs.image_ref }}
+          SERVER_CATALOG: ${{ steps.rollout.outputs.server_catalog }}
+          GHCR_USER: ${{ secrets.VPS_GHCR_USER }}
+          GHCR_TOKEN: ${{ secrets.VPS_GHCR_TOKEN }}
+          VPS_DEPLOY_DIR: ${{ secrets.VPS_DEPLOY_DIR }}
+          ROLLBACK_MODE: ${{ vars.HOENN_ROLLBACK_MODE }}
+        run: |
+          case "$IMAGE_REF" in "" | *[!A-Za-z0-9_./:@-]* ) echo "error: unsafe image reference" >&2; exit 1 ;; esac
+          [[ "$SERVER_CATALOG" =~ ^[0-9a-f]{64}$ ]] || { echo "error: malformed server catalog digest" >&2; exit 1; }
           # The remote command below embeds these values single-quoted, so
           # quote-active characters are refused up front (defence in depth:
           # secrets arrive via `env:`, never via expression interpolation).
           case "$GHCR_USER" in
-            "" | *[!A-Za-z0-9_.-]* )
+            *[!A-Za-z0-9_.-]* )
               echo "error: VPS_GHCR_USER must be empty or match [A-Za-z0-9_.-]" >&2
               exit 1
               ;;
@@ -1121,44 +1200,70 @@ jobs:
             echo "error: VPS_GHCR_USER and VPS_GHCR_TOKEN must be set together or not at all" >&2
             exit 1
           fi
-          case "$RELEASE_KEY_ID" in
-            "" | *[!A-Za-z0-9_.-]* ) echo "error: release key id is unsafe" >&2; exit 1 ;;
+          if [ -z "$GHCR_USER" ]; then
+            echo "::warning::VPS_GHCR_USER/VPS_GHCR_TOKEN are not set; the VPS must already be able to pull $IMAGE_REF (a pull failure changes nothing)"
+          fi
+          case "$ROLLBACK_MODE" in
+            "" | previous) ROLLBACK_FLAG="" ;;
+            stopped) ROLLBACK_FLAG="--rollback-to-stopped" ;;
+            *) echo "error: HOENN_ROLLBACK_MODE must be empty, 'previous' or 'stopped'" >&2; exit 1 ;;
           esac
-          case "$RELEASE_PUBLIC_KEY_HEX" in
-            "" | *[!0-9A-Fa-f]* ) echo "error: release public key is unsafe" >&2; exit 1 ;;
-          esac
-          [ "${#RELEASE_PUBLIC_KEY_HEX}" -eq 64 ] || { echo "error: release public key must be 32-byte hex" >&2; exit 1; }
-          [[ "$SERVER_CATALOG" =~ ^[0-9a-f]{64}$ ]] || { echo "error: server catalog digest is missing or malformed" >&2; exit 1; }
           CATALOG_PATH="/srv/hoenn/server-catalog/$SERVER_CATALOG/server-build-catalog.json"
-          # Promotion places bytes without flipping any marker; the image and
-          # server catalog association is the last promotion written.
-          REMOTE="HOENN_ROOT=/srv/hoenn COOP_RELEASE_KEY_ID='$RELEASE_KEY_ID' COOP_RELEASE_PUBLIC_KEY_HEX='$RELEASE_PUBLIC_KEY_HEX' COOP_RELEASE_TOOL=/tmp/coop-release-tool bash /tmp/promote-release.sh '$RELEASE_SHA' --image-ref '$IMAGE_REF' --image-digest '$DIGEST' --server-catalog-sha256 '$SERVER_CATALOG' --no-flip"
-          # deploy-release.sh exits 3 after an automatic, healthy rollback and
-          # 4 when the rollback itself failed; either fails this job before
-          # activation, so players keep the previous release.
-          REMOTE="$REMOTE && HOENN_ROOT=/srv/hoenn bash /tmp/deploy-release.sh --image '$IMAGE_REF' --catalog-path '$CATALOG_PATH' --catalog-sha256 '$SERVER_CATALOG' --deploy-dir '$VPS_DEPLOY_DIR' --compose-file /tmp/hoenn-compose.yaml"
+          KEY="$RELEASE_SHA-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
+          START="HOENN_ROOT=/srv/hoenn bash /tmp/deploy-detached.sh start --key '$KEY' -- --image '$IMAGE_REF' --catalog-path '$CATALOG_PATH' --catalog-sha256 '$SERVER_CATALOG' --deploy-dir '$VPS_DEPLOY_DIR' --compose-file /tmp/hoenn-compose.yaml $ROLLBACK_FLAG"
           if [ -n "$GHCR_TOKEN" ]; then
             # The token travels over the encrypted channel on stdin and is
             # read by the remote shell into GHCR_TOKEN; it never appears in
             # the remote command line, logs, or process lists. Statement
-            # form (not an env-prefix) is required: a `VAR=x cmd1 && cmd2`
-            # prefix would leave cmd2 — the deploy step that needs the
-            # token — without it.
+            # form (not an env-prefix) exports it to the detached deploy.
             printf '%s' "$GHCR_TOKEN" | ssh hoenn-vps \
-              "GHCR_USER='$GHCR_USER'; GHCR_TOKEN=\"\$(cat)\"; export GHCR_USER GHCR_TOKEN; $REMOTE"
+              "GHCR_USER='$GHCR_USER'; GHCR_TOKEN=\"\$(cat)\"; export GHCR_USER GHCR_TOKEN; $START"
           else
-            ssh hoenn-vps "$REMOTE"
+            ssh hoenn-vps "$START"
           fi
+          # Poll with a bounded total budget; a dropped connection (ssh 255)
+          # is retried, the detached deploy keeps running either way.
+          deadline=$((SECONDS + 1800))
+          while :; do
+            set +e
+            ssh -o ServerAliveInterval=15 -o ServerAliveCountMax=4 hoenn-vps \
+              "bash /tmp/deploy-detached.sh wait --key '$KEY' --timeout 600"
+            rc=$?
+            set -e
+            if [ "$rc" -eq 255 ] && [ "$SECONDS" -lt "$deadline" ]; then
+              echo "::warning::lost the SSH connection while waiting; the detached deploy continues, reconnecting"
+              sleep 10
+              continue
+            fi
+            if [ "$rc" -eq 124 ] && [ "$SECONDS" -lt "$deadline" ]; then
+              continue
+            fi
+            break
+          done
+          case "$rc" in
+            0) echo "server $IMAGE_REF is healthy" ;;
+            1) echo "::error title=Deploy refused::deploy-release.sh refused before any change (lock held, pull failed or invalid candidate configuration); production unchanged." ;;
+            3) echo "::error title=Deploy rolled back::the new server was not healthy; files restored and the PREVIOUS server is healthy again. If the fresh-start already ran, stop the server now (deploy/coop/RELEASES.md)." ;;
+            4) echo "::error title=PRODUCTION POSSIBLY DOWN::deploy-release.sh exit 4: the rollback did not complete. Operator action required now: log /var/log/hoenn/deploy-$KEY.log, backups $VPS_DEPLOY_DIR/.env.bak.* (deploy/coop/RELEASES.md)." ;;
+            5) echo "::error title=Server stopped::the new server was not healthy; files restored and the server was left STOPPED (HOENN_ROLLBACK_MODE=stopped). Players are offline until an operator acts (deploy/coop/RELEASES.md)." ;;
+            124|255) echo "::error title=PRODUCTION STATE UNKNOWN::no deploy result within the time budget; the deploy may still be running detached. Inspect /var/log/hoenn/deploy-$KEY.log and its .status file before re-running." ;;
+            *) echo "::error title=Deploy failed::deploy-release.sh exit $rc." ;;
+          esac
+          exit "$rc"
 
       # Activation happens only after deploy-release.sh reported a healthy
       # server: game/current, current (+ .previous-release) and, when this
-      # release carries a newer APK, android/current. Idempotent on reruns.
+      # release carries a newer APK, android/current. It refuses unless the
+      # deployed .env carries this release's image and server catalog.
+      # Idempotent on reruns.
       - name: Activate release markers after a healthy deploy
         env:
           RELEASE_SHA: ${{ github.sha }}
+          VPS_DEPLOY_DIR: ${{ secrets.VPS_DEPLOY_DIR }}
         run: |
           case "$RELEASE_SHA" in *[!0-9a-f]* | "") exit 1 ;; esac
-          ssh hoenn-vps "HOENN_ROOT=/srv/hoenn bash /tmp/activate-release.sh '$RELEASE_SHA'"
+          case "$VPS_DEPLOY_DIR" in "" | *"'"* ) echo "error: VPS_DEPLOY_DIR must be set and contain no single quotes" >&2; exit 1 ;; esac
+          ssh hoenn-vps "HOENN_ROOT=/srv/hoenn bash /tmp/activate-release.sh '$RELEASE_SHA' --deploy-dir '$VPS_DEPLOY_DIR'"
 
       # A manual run can reuse a release signed by an earlier run for this
       # commit. The installer floor must use that signed sequence, not today's

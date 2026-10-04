@@ -475,10 +475,18 @@ flip_current() {
   echo "promoted $RELEASE_ID ($IMAGE_DIGEST)"
 }
 
+# Served generations stay world-readable and read-only whatever the umask.
+seal_release() {
+  chmod -R a+rX -- "$1"
+  find "$1" -type f -exec chmod a-w {} +
+}
+
 mkdir -p "$HOENN_ROOT/releases"
+chmod a+rx -- "$HOENN_ROOT/releases"
 
 if [ -d "$RELEASE_DIR" ]; then
   verify_envelope_and_hashes "$RELEASE_DIR" || exit 1
+  seal_release "$RELEASE_DIR"
   if [ -d "$STAGING_DIR" ]; then
     verify_envelope_and_hashes "$STAGING_DIR" || exit 1
     if ! diff -qr -- "$STAGING_DIR" "$RELEASE_DIR" >/dev/null; then
@@ -511,6 +519,5 @@ if [ "${COOP_RELEASE_TEST_FAIL_MOVE:-0}" = "1" ]; then
   exit 1
 fi
 mv -- "$STAGING_DIR" "$RELEASE_DIR"
-chmod -R a+rX -- "$RELEASE_DIR"
-find "$RELEASE_DIR" -type f -exec chmod a-w {} +
+seal_release "$RELEASE_DIR"
 flip_current

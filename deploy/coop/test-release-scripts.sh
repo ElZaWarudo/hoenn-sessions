@@ -203,6 +203,25 @@ out="$(probe_status "$FULL_B" "$IMAGE_BASE" 2>&1)"; status=$?
 report $? "probe rejects conflicting release and staging generations" "$out"
 rm -rf "$ROOT/staging/$FULL_B"
 
+# A staging upload left without an association (the run died before
+# promote-release.sh) is STALE; --clean-stale-staging removes only those
+# unassociated uploads and reports ABSENT so a rerun can rebuild.
+make_staging "$ROOT" "$FULL_C" 3 "$((NOW + 3600))"
+mkdir -p "$ROOT/game-staging/$FULL_C"
+printf 'stale\n' > "$ROOT/game-staging/$FULL_C/game.gba"
+out="$(probe_status "$FULL_C" "$IMAGE_BASE" 2>&1)"; status=$?
+[ "$status" -eq 0 ] && printf '%s\n' "$out" | grep -q '^state=STALE$' && [ "$(printf '%s\n' "$out" | wc -l)" -eq 4 ] && \
+  [ -d "$ROOT/staging/$FULL_C" ]
+report $? "probe classifies unassociated staging as STALE without deleting it" "$out"
+out="$(HOENN_ROOT="$ROOT" PYTHON_BIN="$PYTHON_BIN" bash "$PROBE" --clean-stale-staging "$FULL_C" "$IMAGE_BASE" 2>/dev/null)"; status=$?
+[ "$status" -eq 0 ] && printf '%s\n' "$out" | grep -q '^state=ABSENT$' && [ "$(printf '%s\n' "$out" | wc -l)" -eq 4 ] && \
+  [ ! -e "$ROOT/staging/$FULL_C" ] && [ ! -e "$ROOT/game-staging/$FULL_C" ] && \
+  [ -d "$ROOT/releases/$FULL_A" ] && [ -f "$ROOT/release-metadata/$FULL_A.json" ]
+report $? "probe --clean-stale-staging removes the stale upload and reports ABSENT" "$out"
+out="$(HOENN_ROOT="$ROOT" PYTHON_BIN="$PYTHON_BIN" bash "$PROBE" --clean-stale-staging "$FULL_B" "$IMAGE_BASE" 2>&1)"; status=$?
+[ "$status" -eq 0 ] && printf '%s\n' "$out" | grep -q '^state=RELEASED$' && [ -d "$ROOT/releases/$FULL_B" ]
+report $? "probe --clean-stale-staging leaves associated generations alone" "$out"
+
 # Exercise each inconsistent metadata/path combination before the normal
 # artifact rejection cases below.
 mkdir -p "$ROOT/releases/$FULL_C"
@@ -470,6 +489,8 @@ for relative, data in saves.items():
     (stage / relative).write_bytes(data)
 if mode == "extra":
     (stage / "worlds/2/notes.txt").write_text("unexpected\n")
+if mode == "extradir":
+    (stage / "worlds/3").mkdir(parents=True, exist_ok=True)
 print(digest)
 PY
 }
@@ -511,6 +532,27 @@ out="$(bash "$PROMOTE_CATALOG" "$bad" 2>&1)"; status=$?
 [ "$status" -ne 0 ] && printf '%s' "$out" | grep -q 'unexpected' && [ ! -d "$ROOT/server-catalog/$bad" ]
 report $? "server catalog with an extra file is rejected" "$out"
 rm -rf "$ROOT/server-catalog-staging/$bad"
+bad="$(make_server_catalog_staging "$ROOT" extradir)"
+out="$(bash "$PROMOTE_CATALOG" "$bad" 2>&1)"; status=$?
+[ "$status" -ne 0 ] && printf '%s' "$out" | grep -q 'unexpected directories' && [ ! -d "$ROOT/server-catalog/$bad" ]
+report $? "server catalog with an extra empty directory is rejected" "$out"
+rm -rf "$ROOT/server-catalog-staging/$bad"
+chmod u+w "$ROOT/server-catalog/$CATALOG_OK/worlds/1/arrival.sav"
+out="$(bash "$PROMOTE_CATALOG" "$CATALOG_OK" 2>&1)"; status=$?
+[ "$status" -eq 0 ] && [ ! -w "$ROOT/server-catalog/$CATALOG_OK/worlds/1/arrival.sav" ]
+report $? "server catalog rerun re-applies the read-only seal" "$out"
+if [ "$(uname -o 2>/dev/null)" != Msys ]; then
+  UMASK_ROOT="$ROOT/umask-root"
+  mkdir -p "$UMASK_ROOT"
+  umask_catalog="$(make_server_catalog_staging "$UMASK_ROOT")"
+  out="$( (umask 077; HOENN_ROOT="$UMASK_ROOT" bash "$PROMOTE_CATALOG" "$umask_catalog") 2>&1)"; status=$?
+  mode_root="$(stat -c %A "$UMASK_ROOT/server-catalog")"
+  mode_dir="$(stat -c %A "$UMASK_ROOT/server-catalog/$umask_catalog/worlds/1")"
+  [ "$status" -eq 0 ] && [ "${mode_root:7:3}" = r-x ] && [ "${mode_dir:7:3}" = r-x ]
+  report $? "server catalog stays traversable by uid 10001 under umask 077" "$out $mode_root $mode_dir"
+else
+  report 0 "server catalog umask traversal (platform skipped)"
+fi
 
 # Multi-world Windows releases.
 current_before="$(cat "$ROOT/current")"
@@ -592,8 +634,17 @@ out="$(bash "$PROMOTE_GAME" "$FULL_F" --no-flip 2>&1)"; status=$?
 report $? "game region catalog mismatch is rejected" "$out"
 rm -rf "$ROOT/game-staging/$FULL_F"
 
-# Activation flips all markers only after promotion, and is idempotent.
-out="$(bash "$ACTIVATE" "$FULL_F" 2>&1)"; status=$?
+# Activation flips all markers only after promotion, and is idempotent. It
+# refuses unless the deployed .env is the release being activated.
+write_deployed_env() {
+  printf '# deployed\nCOOP_DOMAIN=coop.example.com\nCOOP_IMAGE=%s\nCOOP_PHASE2_RELEASE_CATALOG_PATH=%s\nCOOP_PHASE2_RELEASE_CATALOG_SHA256=%s\n%s' \
+    "$1" "$ROOT/server-catalog/$2/server-build-catalog.json" "$2" "${3:-}" > "$ROOT/deployed.env"
+}
+write_deployed_env "$IMAGE_E" "$CATALOG_OK"
+out="$(bash "$ACTIVATE" "$FULL_E" 2>&1)"; status=$?
+[ "$status" -eq 2 ] && [ "$(cat "$ROOT/game/current")" = "$game_before" ]
+report $? "activation requires the deployed env file" "$out"
+out="$(bash "$ACTIVATE" "$FULL_F" --env-file "$ROOT/deployed.env" 2>&1)"; status=$?
 [ "$status" -ne 0 ] && [ "$(cat "$ROOT/current")" = "$current_before" ] && [ "$(cat "$ROOT/game/current")" = "$game_before" ]
 report $? "activation refuses a release that is not promoted" "$out"
 mkdir -p "$ROOT/android/$FULL_E"
@@ -604,11 +655,53 @@ d = pathlib.Path(sys.argv[1]); apk = (d / "app-release.apk").read_bytes()
 (d / "metadata.json").write_text(json.dumps({"release_id": sys.argv[2], "version_code": 7,
     "size": len(apk), "sha256": hashlib.sha256(apk).hexdigest()}))
 PY
-out="$(COOP_ACTIVATE_SKIP_ACL=1 bash "$ACTIVATE" "$FULL_E" 2>&1)"; status=$?
-[ "$status" -eq 0 ] && [ "$(cat "$ROOT/current")" = "$FULL_E" ] && [ "$(cat "$ROOT/game/current")" = "$FULL_E" ] && \
+activation_unchanged() {
+  [ "$(cat "$ROOT/game/current")" = "$game_before" ] && [ ! -e "$ROOT/android/current" ] && \
+    [ "$(cat "$ROOT/current" 2>/dev/null || readlink "$ROOT/current")" != "$FULL_E" ]
+}
+write_deployed_env "$IMAGE_D" "$CATALOG_OK"
+out="$(COOP_ACTIVATE_SKIP_ACL=1 bash "$ACTIVATE" "$FULL_E" --env-file "$ROOT/deployed.env" 2>&1)"; status=$?
+[ "$status" -ne 0 ] && printf '%s' "$out" | grep -q 'is not the release image' && activation_unchanged
+report $? "activation refuses when the deployed COOP_IMAGE is another image" "$out"
+write_deployed_env "$IMAGE_E" "$DIGEST_A"
+out="$(COOP_ACTIVATE_SKIP_ACL=1 bash "$ACTIVATE" "$FULL_E" --env-file "$ROOT/deployed.env" 2>&1)"; status=$?
+[ "$status" -ne 0 ] && printf '%s' "$out" | grep -q 'is not the release catalog' && activation_unchanged
+report $? "activation refuses when the deployed catalog digest differs" "$out"
+write_deployed_env "$IMAGE_E" "$CATALOG_OK" "COOP_IMAGE=$IMAGE_D
+"
+out="$(COOP_ACTIVATE_SKIP_ACL=1 bash "$ACTIVATE" "$FULL_E" --env-file "$ROOT/deployed.env" 2>&1)"; status=$?
+[ "$status" -ne 0 ] && printf '%s' "$out" | grep -q 'exactly once' && activation_unchanged
+report $? "activation refuses an ambiguous deployed env file" "$out"
+write_deployed_env "$IMAGE_E" "$CATALOG_OK"
+mkdir -p "$ROOT/deploy-activate"
+cp "$ROOT/deployed.env" "$ROOT/deploy-activate/.env"
+# Preflight: a marker that cannot be replaced fails before any flip.
+mv "$ROOT/.previous-release" "$ROOT/previous-release.aside"
+mkdir "$ROOT/.previous-release"
+out="$(COOP_ACTIVATE_SKIP_ACL=1 bash "$ACTIVATE" "$FULL_E" --deploy-dir "$ROOT/deploy-activate" 2>&1)"; status=$?
+[ "$status" -ne 0 ] && printf '%s' "$out" | grep -q 'nothing was activated' && activation_unchanged
+report $? "activation preflight refuses a blocked marker before flipping anything" "$out"
+rmdir "$ROOT/.previous-release"
+mv "$ROOT/previous-release.aside" "$ROOT/.previous-release"
+# The legacy current -> releases/<id> symlink is migrated, not refused.
+legacy_symlink=0
+rm -f "$ROOT/current"
+if ln -s "releases/$current_before" "$ROOT/current" 2>/dev/null && [ -L "$ROOT/current" ]; then
+  legacy_symlink=1
+else
+  rm -rf "$ROOT/current"
+  printf '%s\n' "$current_before" > "$ROOT/current"
+fi
+out="$(COOP_ACTIVATE_SKIP_ACL=1 bash "$ACTIVATE" "$FULL_E" --deploy-dir "$ROOT/deploy-activate" 2>&1)"; status=$?
+[ "$status" -eq 0 ] && [ ! -L "$ROOT/current" ] && [ "$(cat "$ROOT/current")" = "$FULL_E" ] && [ "$(cat "$ROOT/game/current")" = "$FULL_E" ] && \
   [ "$(cat "$ROOT/.previous-release")" = "$current_before" ] && [ "$(cat "$ROOT/android/current")" = "$FULL_E" ]
 report $? "activation flips game, runtime and Android markers" "$out"
-out="$(COOP_ACTIVATE_SKIP_ACL=1 bash "$ACTIVATE" "$FULL_E" 2>&1)"; status=$?
+if [ "$legacy_symlink" -eq 1 ]; then
+  report 0 "activation migrates a legacy current symlink"
+else
+  report 0 "activation legacy current symlink migration (platform skipped)"
+fi
+out="$(COOP_ACTIVATE_SKIP_ACL=1 bash "$ACTIVATE" "$FULL_E" --deploy-dir "$ROOT/deploy-activate" 2>&1)"; status=$?
 [ "$status" -eq 0 ] && [ "$(cat "$ROOT/.previous-release")" = "$current_before" ] && ! printf '%s' "$out" | grep -q 'activated'
 report $? "activation rerun is an idempotent no-op" "$out"
 
@@ -617,6 +710,9 @@ FAKEBIN="$ROOT/fakebin"
 mkdir -p "$FAKEBIN"
 cat > "$FAKEBIN/docker" <<'SH'
 #!/usr/bin/env bash
+# Hermetic docker stand-in. FAKE_HEALTHY_IMAGE is a space-separated list of
+# images whose /health/ready succeeds; the other knobs inject failures, delays
+# and output to a possibly closed stdout/stderr.
 envf=""
 prev=""
 for arg in "$@"; do
@@ -631,8 +727,28 @@ case "$1" in
   login) cat >/dev/null; exit 0 ;;
   compose)
     case " $* " in
-      *" exec "*) [ -n "$image" ] && [ "$image" = "${FAKE_HEALTHY_IMAGE:-}" ] && exit 0; exit 1 ;;
-      *) exit 0 ;;
+      *" config "*) [ "${FAKE_CONFIG_FAIL:-0}" = 1 ] && exit 1; exit 0 ;;
+      *" exec "*)
+        if [ -n "${FAKE_HEALTHY_AFTER:-}" ]; then
+          count=$(( $(cat "$FAKE_DOCKER_LOG.count" 2>/dev/null || echo 0) + 1 ))
+          echo "$count" > "$FAKE_DOCKER_LOG.count"
+          [ "$count" -ge "$FAKE_HEALTHY_AFTER" ] || exit 1
+        fi
+        [ -n "$image" ] || exit 1
+        case " ${FAKE_HEALTHY_IMAGE:-} " in *" $image "*) exit 0 ;; esac
+        exit 1 ;;
+      *" up "*)
+        echo "fake: recreating server"
+        if [ -n "$image" ] && [ "$image" = "${FAKE_SLOW_IMAGE:-}" ]; then
+          [ -z "${FAKE_UP_MARK:-}" ] || : > "$FAKE_UP_MARK"
+          sleep "${FAKE_UP_SLEEP:-1}"
+          echo "fake: server recreated"
+          echo "fake: progress on stderr" >&2
+        fi
+        [ -n "$image" ] && [ "$image" = "${FAKE_UP_FAIL_IMAGE:-}" ] && exit 1
+        exit 0 ;;
+      *" stop "*) [ "${FAKE_STOP_FAIL:-0}" = 1 ] && exit 1; exit 0 ;;
+      *) echo "fake: compose output"; exit 0 ;;
     esac ;;
 esac
 exit 0
@@ -647,14 +763,17 @@ CATALOG_PATH_T="$ROOT/server-catalog/$CATALOG_OK/server-build-catalog.json"
 reset_deploy_dir() {
   printf '# production settings\nCOOP_DOMAIN=coop.example.com\nCOOP_IMAGE=%s\nCOOP_PHASE2_RELEASE_CATALOG_PATH=/srv/hoenn/old/server-build-catalog.json\nCOOP_PHASE2_RELEASE_CATALOG_SHA256=%s\nCOOP_FIREBASE_BUCKET=bucket\n' "$OLD_IMAGE" "$DIGEST_D" > "$DEPLOY_DIR_T/.env"
   chmod 0640 "$DEPLOY_DIR_T/.env"
-  rm -f "$DEPLOY_DIR_T"/.env.bak.* "$DEPLOY_DIR_T"/compose.yaml.bak.* "$DEPLOY_DIR_T/.env.next"
+  rm -f "$DEPLOY_DIR_T"/.env.bak.* "$DEPLOY_DIR_T"/compose.yaml.bak.* "$DEPLOY_DIR_T/.env.next" \
+    "$DEPLOY_DIR_T"/deploy-rollback.*.log "$ROOT/docker.log.count"
+  rm -rf "$DEPLOY_DIR_T/.deploy-release.lock.d"
   cp compose.yaml "$DEPLOY_DIR_T/compose.yaml"
   cp "$DEPLOY_DIR_T/.env" "$ROOT/env.before"
   cp "$DEPLOY_DIR_T/compose.yaml" "$ROOT/compose.before"
   : > "$ROOT/docker.log"
 }
 run_deploy() {
-  PATH="$FAKEBIN:$PATH" FAKE_DOCKER_LOG="$ROOT/docker.log" HOENN_ROOT="$ROOT" HEALTH_TIMEOUT=0 HEALTH_INTERVAL=0 \
+  PATH="$FAKEBIN:$PATH" FAKE_DOCKER_LOG="$ROOT/docker.log" HOENN_ROOT="$ROOT" \
+    HEALTH_TIMEOUT="${T_HEALTH_TIMEOUT:-0}" HEALTH_INTERVAL=0 \
     bash "$DEPLOY" --deploy-dir "$DEPLOY_DIR_T" "$@"
 }
 cp compose.yaml "$ROOT/candidate-compose.yaml"
@@ -714,20 +833,209 @@ out="$(run_deploy --validate-only --image "$NEW_IMAGE" --catalog-path "$CATALOG_
   grep -q 'config --quiet' "$ROOT/docker.log" && ! ls "$DEPLOY_DIR_T"/.env.validate.* >/dev/null 2>&1
 report $? "deploy-release --validate-only checks the candidate without changes" "$out"
 
+DEPLOY_ARGS=(--image "$NEW_IMAGE" --catalog-path "$CATALOG_PATH_T" --catalog-sha256 "$CATALOG_OK")
+last_up_image() { grep ' up -d --no-build server ' "$ROOT/docker.log" | tail -n 1 | sed 's/.*image=//'; }
+is_msys() { [ "$(uname -o 2>/dev/null)" = Msys ]; }
+
+if ! is_msys; then
+  reset_deploy_dir
+  out="$(FAKE_HEALTHY_IMAGE="$OLD_IMAGE" run_deploy "${DEPLOY_ARGS[@]}" 2>&1)"; status=$?
+  [ "$status" -eq 3 ] && [ "$(stat -c %a "$DEPLOY_DIR_T/.env")" = 640 ] && \
+    [ "$(stat -c %a "$(ls "$DEPLOY_DIR_T"/.env.bak.* | tail -n 1)")" = 600 ]
+  report $? "rollback restores the original .env mode while backups stay 0600" "$out"
+else
+  report 0 "rollback .env mode restoration (platform skipped)"
+fi
+
+# Rollout and rollback survive a closed stdout/stderr (dead SSH channel)
+# while a slow docker step is still running.
+reset_deploy_dir
+( FAKE_SLOW_IMAGE="$NEW_IMAGE" FAKE_UP_SLEEP=1 FAKE_HEALTHY_IMAGE="$OLD_IMAGE" run_deploy "${DEPLOY_ARGS[@]}"
+  echo "$?" > "$ROOT/pipe.status" ) 2>&1 | true
+status="$(cat "$ROOT/pipe.status" 2>/dev/null)"
+[ "$status" = 3 ] && cmp -s "$DEPLOY_DIR_T/.env" "$ROOT/env.before" && [ "$(last_up_image)" = "$OLD_IMAGE" ] && \
+  grep -q 'healthy again' "$DEPLOY_DIR_T"/deploy-rollback.*.log
+report $? "rollback completes with a closed stdout/stderr pipe" "status=$status"
+
+# A signal after the swap (cancelled workflow, lost session) restores.
+for signal in TERM HUP; do
+  reset_deploy_dir
+  rm -f "$ROOT/up.mark"
+  PATH="$FAKEBIN:$PATH" FAKE_DOCKER_LOG="$ROOT/docker.log" HOENN_ROOT="$ROOT" HEALTH_TIMEOUT=0 HEALTH_INTERVAL=0 \
+    FAKE_SLOW_IMAGE="$NEW_IMAGE" FAKE_UP_SLEEP=2 FAKE_UP_MARK="$ROOT/up.mark" \
+    FAKE_HEALTHY_IMAGE="$OLD_IMAGE $NEW_IMAGE" \
+    bash "$DEPLOY" --deploy-dir "$DEPLOY_DIR_T" "${DEPLOY_ARGS[@]}" > "$ROOT/signal.out" 2>&1 &
+  deploy_pid=$!
+  for _ in $(seq 100); do [ -e "$ROOT/up.mark" ] && break; sleep 0.1; done
+  kill "-$signal" "$deploy_pid" 2>/dev/null
+  wait "$deploy_pid"; status=$?
+  [ "$status" -eq 3 ] && cmp -s "$DEPLOY_DIR_T/.env" "$ROOT/env.before" && [ "$(last_up_image)" = "$OLD_IMAGE" ] && \
+    grep -q 'unexpected exit status 130' "$DEPLOY_DIR_T"/deploy-rollback.*.log
+  report $? "SIG$signal after the swap restores the previous server" "status=$status $(cat "$ROOT/signal.out")"
+done
+
+reset_deploy_dir
+out="$(FAKE_UP_FAIL_IMAGE="$NEW_IMAGE" FAKE_HEALTHY_IMAGE="$OLD_IMAGE $NEW_IMAGE" run_deploy "${DEPLOY_ARGS[@]}" 2>&1)"; status=$?
+[ "$status" -eq 3 ] && cmp -s "$DEPLOY_DIR_T/.env" "$ROOT/env.before" && [ "$(last_up_image)" = "$OLD_IMAGE" ] && \
+  grep -q 'compose up failed' "$DEPLOY_DIR_T"/deploy-rollback.*.log
+report $? "compose up failure rolls back to the previous server" "$out"
+
+reset_deploy_dir
+if command -v flock >/dev/null 2>&1; then
+  exec 8>"$DEPLOY_DIR_T/.deploy-release.lock"
+  flock -n 8
+else
+  mkdir "$DEPLOY_DIR_T/.deploy-release.lock.d"
+fi
+out="$(FAKE_HEALTHY_IMAGE="$NEW_IMAGE" run_deploy "${DEPLOY_ARGS[@]}" 2>&1)"; status=$?
+[ "$status" -eq 1 ] && printf '%s' "$out" | grep -q 'holds the deploy lock' && [ ! -s "$ROOT/docker.log" ] && \
+  cmp -s "$DEPLOY_DIR_T/.env" "$ROOT/env.before" && \
+  { command -v flock >/dev/null 2>&1 || [ -d "$DEPLOY_DIR_T/.deploy-release.lock.d" ]; }
+report $? "deploy lock contention refuses before any docker call" "$out"
+if command -v flock >/dev/null 2>&1; then exec 8>&-; else rmdir "$DEPLOY_DIR_T/.deploy-release.lock.d"; fi
+
+reset_deploy_dir
+out="$(FAKE_CONFIG_FAIL=1 FAKE_HEALTHY_IMAGE="$NEW_IMAGE" run_deploy "${DEPLOY_ARGS[@]}" --compose-file "$ROOT/candidate-compose.yaml" 2>&1)"; status=$?
+[ "$status" -eq 1 ] && printf '%s' "$out" | grep -q 'configuration is invalid' && cmp -s "$DEPLOY_DIR_T/.env" "$ROOT/env.before" && \
+  cmp -s "$DEPLOY_DIR_T/compose.yaml" "$ROOT/compose.before" && ! grep -q ' up ' "$ROOT/docker.log" && \
+  ! ls "$DEPLOY_DIR_T"/.env.bak.* >/dev/null 2>&1 && [ ! -e "$DEPLOY_DIR_T/.env.next" ]
+report $? "invalid candidate configuration changes nothing" "$out"
+
+reset_deploy_dir
+out="$(T_HEALTH_TIMEOUT=30 FAKE_HEALTHY_AFTER=3 FAKE_HEALTHY_IMAGE="$NEW_IMAGE" run_deploy "${DEPLOY_ARGS[@]}" 2>&1)"; status=$?
+[ "$status" -eq 0 ] && [ "$(cat "$ROOT/docker.log.count")" -ge 3 ] && grep -qx "COOP_IMAGE=$NEW_IMAGE" "$DEPLOY_DIR_T/.env" && \
+  [ "$(grep -c ' up -d --no-build server ' "$ROOT/docker.log")" -eq 1 ]
+report $? "HEALTH_TIMEOUT>0 waits for a late-healthy container" "$out"
+
+# --rollback-to-stopped restores files but leaves the server stopped (5);
+# a failed stop is a failed rollback (4).
+reset_deploy_dir
+out="$(FAKE_HEALTHY_IMAGE="$OLD_IMAGE" run_deploy "${DEPLOY_ARGS[@]}" --rollback-to-stopped 2>&1)"; status=$?
+[ "$status" -eq 5 ] && cmp -s "$DEPLOY_DIR_T/.env" "$ROOT/env.before" && grep -q ' stop server ' "$ROOT/docker.log" && \
+  [ "$(grep -c ' up -d --no-build server ' "$ROOT/docker.log")" -eq 1 ] && [ "$(last_up_image)" = "$NEW_IMAGE" ] && \
+  printf '%s' "$out" | grep -q 'STOPPED'
+report $? "--rollback-to-stopped restores files and leaves the server stopped (exit 5)" "$out"
+reset_deploy_dir
+out="$(FAKE_STOP_FAIL=1 FAKE_HEALTHY_IMAGE="$OLD_IMAGE" run_deploy "${DEPLOY_ARGS[@]}" --rollback-to-stopped 2>&1)"; status=$?
+[ "$status" -eq 4 ] && printf '%s' "$out" | grep -q 'ROLLBACK FAILED'
+report $? "--rollback-to-stopped with a failed stop exits 4" "$out"
+
+# Backups are pruned to the newest DEPLOY_BACKUP_KEEP and kept 0600.
+reset_deploy_dir
+for n in 0 1 2 3 4 5 6; do
+  printf 'old %s\n' "$n" > "$DEPLOY_DIR_T/.env.bak.20200101T00000${n}Z.1"
+  printf 'old %s\n' "$n" > "$DEPLOY_DIR_T/compose.yaml.bak.20200101T00000${n}Z.1"
+  chmod 0644 "$DEPLOY_DIR_T/.env.bak.20200101T00000${n}Z.1"
+done
+out="$(DEPLOY_BACKUP_KEEP=3 FAKE_HEALTHY_IMAGE="$NEW_IMAGE" run_deploy "${DEPLOY_ARGS[@]}" 2>&1)"; status=$?
+env_backups="$(ls "$DEPLOY_DIR_T"/.env.bak.* | wc -l)"
+compose_backups="$(ls "$DEPLOY_DIR_T"/compose.yaml.bak.* | wc -l)"
+[ "$status" -eq 0 ] && [ "$env_backups" -eq 3 ] && [ "$compose_backups" -eq 3 ] && \
+  [ ! -e "$DEPLOY_DIR_T/.env.bak.20200101T000000Z.1" ] && [ -e "$DEPLOY_DIR_T/.env.bak.20200101T000006Z.1" ] && \
+  cmp -s "$(ls "$DEPLOY_DIR_T"/.env.bak.* | tail -n 1)" "$ROOT/env.before" && \
+  { is_msys || [ "$(stat -c %a "$DEPLOY_DIR_T/.env.bak.20200101T000006Z.1")" = 600 ]; }
+report $? "deploy prunes .env/compose backups to the newest N with mode 0600" "$out env=$env_backups compose=$compose_backups"
+
+# deploy-detached.sh: the rollout runs detached from the caller, records its
+# exit status, and `wait` streams the log and returns that status.
+DETACHED=./deploy-detached.sh
+LOGS_T="$ROOT/deploy-logs"
+run_detached() {
+  PATH="$FAKEBIN:$PATH" FAKE_DOCKER_LOG="$ROOT/docker.log" HOENN_ROOT="$ROOT" HEALTH_TIMEOUT=0 HEALTH_INTERVAL=0 \
+    bash "$DETACHED" "$@"
+}
+reset_deploy_dir
+out="$(FAKE_SLOW_IMAGE="$NEW_IMAGE" FAKE_UP_SLEEP=2 FAKE_HEALTHY_IMAGE="$OLD_IMAGE" \
+  run_detached start --key k1 --log-dir "$LOGS_T" -- --deploy-dir "$DEPLOY_DIR_T" "${DEPLOY_ARGS[@]}" 2>&1)"; status=$?
+started_status=$status
+[ ! -e "$LOGS_T/deploy-k1.status" ]; detached_running=$?
+out2="$(run_detached start --key k1 --log-dir "$LOGS_T" -- --deploy-dir "$DEPLOY_DIR_T" "${DEPLOY_ARGS[@]}" 2>&1)"; dup_status=$?
+wait_out="$(run_detached wait --key k1 --log-dir "$LOGS_T" --timeout 60 --poll 1 2>&1)"; status=$?
+[ "$started_status" -eq 0 ] && [ "$detached_running" -eq 0 ] && [ "$dup_status" -eq 1 ] && [ "$status" -eq 3 ] && \
+  [ "$(cat "$LOGS_T/deploy-k1.status")" = 3 ] && printf '%s' "$wait_out" | grep -q 'healthy again' && \
+  grep -q 'restoring previous configuration' "$LOGS_T/deploy-k1.log" && cmp -s "$DEPLOY_DIR_T/.env" "$ROOT/env.before" && \
+  ! ls "$DEPLOY_DIR_T"/deploy-rollback.*.log >/dev/null 2>&1
+report $? "detached deploy returns at once, refuses a duplicate key and wait returns the rollback status" "$out | $out2 | $wait_out"
+reset_deploy_dir
+FAKE_SLOW_IMAGE="$NEW_IMAGE" FAKE_UP_SLEEP=3 FAKE_HEALTHY_IMAGE="$NEW_IMAGE" \
+  run_detached start --key k3 --log-dir "$LOGS_T" -- --deploy-dir "$DEPLOY_DIR_T" "${DEPLOY_ARGS[@]}" >/dev/null 2>&1
+timeout_out="$(run_detached wait --key k3 --log-dir "$LOGS_T" --timeout 0 --poll 1 2>&1)"; timeout_status=$?
+final_out="$(run_detached wait --key k3 --log-dir "$LOGS_T" --timeout 60 --poll 1 2>&1)"; final_status=$?
+[ "$timeout_status" -eq 124 ] && printf '%s' "$timeout_out" | grep -q 'continues detached' && \
+  [ "$final_status" -eq 0 ] && printf '%s' "$final_out" | grep -q 'is healthy' && grep -qx "COOP_IMAGE=$NEW_IMAGE" "$DEPLOY_DIR_T/.env"
+report $? "detached wait times out with 124 without stopping the deploy, then reports success" \
+  "timeout=$timeout_status final=$final_status $timeout_out | $final_out"
+out="$(run_detached wait --key nope --log-dir "$LOGS_T" --timeout 0 2>&1)"; status=$?
+[ "$status" -eq 1 ]
+report $? "detached wait refuses an unknown key" "$out"
+
 # Workflow ordering and private-artifact boundary for the multi-world rollout.
 line_of() { grep -n -- "$1" "$WORKFLOW" | head -n 1 | cut -d: -f1; }
 l_catalog="$(line_of 'bash /tmp/promote-server-catalog.sh ')"
 l_game="$(line_of 'bash /tmp/promote-game.sh .* --no-flip')"
 l_release="$(line_of 'bash /tmp/promote-release.sh .*--no-flip')"
-l_deploy="$(line_of 'bash /tmp/deploy-release.sh --image')"
+l_hold="$(line_of "if: vars.HOENN_ROLLOUT_HOLD == 'true'")"
+l_deploy="$(line_of 'bash /tmp/deploy-detached.sh start --key')"
 l_activate="$(line_of 'bash /tmp/activate-release.sh')"
-if [ -n "$l_catalog" ] && [ -n "$l_game" ] && [ -n "$l_release" ] && [ -n "$l_deploy" ] && [ -n "$l_activate" ] && \
-   [ "$l_catalog" -lt "$l_game" ] && [ "$l_game" -lt "$l_release" ] && [ "$l_release" -lt "$l_deploy" ] && \
-   [ "$l_deploy" -lt "$l_activate" ]; then
-  report 0 "workflow promotes catalog, game, release, then deploys, then activates"
+if [ -n "$l_catalog" ] && [ -n "$l_game" ] && [ -n "$l_release" ] && [ -n "$l_hold" ] && [ -n "$l_deploy" ] && [ -n "$l_activate" ] && \
+   [ "$l_catalog" -lt "$l_game" ] && [ "$l_game" -lt "$l_release" ] && [ "$l_release" -lt "$l_hold" ] && \
+   [ "$l_hold" -lt "$l_deploy" ] && [ "$l_deploy" -lt "$l_activate" ]; then
+  report 0 "workflow promotes catalog, game, release, holds, then deploys, then activates"
 else
-  report 1 "workflow promotes catalog, game, release, then deploys, then activates" \
-    "catalog=$l_catalog game=$l_game release=$l_release deploy=$l_deploy activate=$l_activate"
+  report 1 "workflow promotes catalog, game, release, holds, then deploys, then activates" \
+    "catalog=$l_catalog game=$l_game release=$l_release hold=$l_hold deploy=$l_deploy activate=$l_activate"
+fi
+# Prints one step of the release job by its exact name (CRLF tolerant).
+step_block() {
+  awk -v n="      - name: $1" 'index($0, n) == 1 { f = 1; print; next }
+    f && /^      - (name|uses):/ { exit }
+    f && /^  [A-Za-z0-9_-]+:/ { exit }
+    f { print }' "$WORKFLOW"
+}
+unsafe=""
+for step in 'Promote release without activation' 'Rollout hold (production untouched)' \
+  'Roll the server (detached, automatic rollback)' 'Activate release markers after a healthy deploy'; do
+  block="$(step_block "$step")"
+  [ -n "$block" ] || { unsafe="$unsafe missing:$step"; continue; }
+  if printf '%s\n' "$block" | grep -Eq 'continue-on-error|if:.*(always|failure|cancelled)[(][)]'; then
+    unsafe="$unsafe $step"
+  fi
+done
+release_job="$(awk '/^  release:/ { f = 1; next } f && /^  [A-Za-z0-9_-]+:/ { exit } f' "$WORKFLOW")"
+installer_job="$(awk '/^  installer:/ { f = 1; print; next } f && /^  [A-Za-z0-9_-]+:/ { exit } f' "$WORKFLOW")"
+publish_job="$(awk '/^  publish-installer:/ { f = 1; print; next } f && /^  [A-Za-z0-9_-]+:/ { exit } f' "$WORKFLOW")"
+if [ -z "$unsafe" ] && ! printf '%s\n' "$release_job" | grep -q 'continue-on-error' && \
+   printf '%s\n' "$installer_job" | grep -q 'needs: \[validate, release-key-gate, release\]' && \
+   ! printf '%s\n' "$installer_job" | sed -n '1,4p' | grep -Eq '(always|failure|cancelled)[(][)]' && \
+   printf '%s\n' "$publish_job" | grep -q "if: needs.installer.result == 'success'" && \
+   printf '%s\n' "$(step_block 'Rollout hold (production untouched)')" | grep -q 'exit 1'; then
+  report 0 "deploy/activate steps cannot run after a failure and installers need a successful release"
+else
+  report 1 "deploy/activate steps cannot run after a failure and installers need a successful release" "unsafe:$unsafe"
+fi
+deploy_step="$(step_block 'Roll the server (detached, automatic rollback)')"
+if printf '%s\n' "$deploy_step" | grep -q 'stopped) ROLLBACK_FLAG="--rollback-to-stopped"' && \
+   printf '%s\n' "$deploy_step" | grep -q 'ROLLBACK_MODE: ${{ vars.HOENN_ROLLBACK_MODE }}' && \
+   printf '%s\n' "$deploy_step" | grep -q 'deploy-detached.sh wait --key' && \
+   printf '%s\n' "$deploy_step" | grep -q 'timeout-minutes:' && \
+   printf '%s\n' "$deploy_step" | grep -q '4) echo "::error title=PRODUCTION POSSIBLY DOWN::' && \
+   printf '%s\n' "$deploy_step" | grep -q '5) echo "::error title=Server stopped::' && \
+   ! printf '%s\n' "$deploy_step" | grep -q 'bash /tmp/deploy-release.sh' && \
+   grep -q -- "--deploy-dir '\$VPS_DEPLOY_DIR'\"" "$WORKFLOW" && \
+   grep -q 'probe-release-status.sh' "$WORKFLOW" && grep -q -- '--clean-stale-staging' "$WORKFLOW" && \
+   printf '%s\n' "$(step_block 'Promote independent game release without activation')" | grep -q 'release public key must be 32-byte hex'; then
+  report 0 "workflow detaches the rollout, maps rollback mode and exit codes, and validates every remote argument"
+else
+  report 1 "workflow detaches the rollout, maps rollback mode and exit codes, and validates every remote argument"
+fi
+# No workflow in the repository may upload a ROM, save or release bundle.
+rom_uploads="$(for wf in ../../.github/workflows/*.yml; do
+  awk -v wf="$wf" '/uses: actions\/upload-artifact/ { f = 1; next } f && /^ *- / { f = 0 } f { print wf ": " $0 }' "$wf"
+done | grep -E '\.gba|\.sav|release-bundle|game-bundle|release-assembly|server-catalog')"
+if [ -z "$rom_uploads" ] && grep -q 'upload-artifact' ../../.github/workflows/multiworld-build.yml; then
+  report 0 "no workflow uploads ROMs, saves or release bundles as artifacts"
+else
+  report 1 "no workflow uploads ROMs, saves or release bundles as artifacts" "$rom_uploads"
 fi
 MULTIWORLD_WORKFLOW=../../.github/workflows/multiworld-build.yml
 if grep -q 'multiworld_build_ci.py build' "$WORKFLOW" && grep -q 'assemble_release_catalog.py assemble' "$WORKFLOW" && \
@@ -746,7 +1054,7 @@ if grep -q 'fresh-start' "$WORKFLOW" && ! grep -q 'coop-server fresh-start' "$WO
 else
   report 1 "workflow documents the manual fresh-start hook without running it"
 fi
-for script in "$PROMOTE_CATALOG" "$ACTIVATE" "$DEPLOY" "$PROMOTE" "$PROBE"; do
+for script in "$PROMOTE_CATALOG" "$ACTIVATE" "$DEPLOY" "$PROMOTE" "$PROBE" ./deploy-detached.sh; do
   bash -n "$script" && grep -q "bash -n deploy/coop/${script#./}" "$WORKFLOW"
   report $? "workflow syntax checks ${script#./}"
 done
