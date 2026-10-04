@@ -115,6 +115,11 @@ presence to survive. Stable signing keys preserve the identity clients trust.
 Do not run two replicas, including during upgrades. A second database owner must
 fail startup instead of accepting concurrent ephemeral sessions.
 
+A checkpoint written before multi-world travel cannot be decoded by the current
+server; startup refuses and points to `coop-server fresh-start`. That one-time,
+manually confirmed step keeps accounts and resets characters; follow
+[FRESH_START.md](FRESH_START.md).
+
 ## Backups and restore drill
 
 The backup container makes a custom-format `pg_dump` immediately and every 24
