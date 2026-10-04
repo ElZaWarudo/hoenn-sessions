@@ -207,7 +207,12 @@ built ROM differs from the attested hash the assembler stops with
 `recertify arrival saves` (exit 3) and nothing is signed. To recertify:
 
 1. Build the exact release ROMs (the PR job `release-dryrun` prints the CI
-   hashes and fails when they differ from the attestations).
+   hashes and fails when they differ from the attestations). Build from a
+   clean clone with `python3 tools/coop/multiworld_build_ci.py build`. The
+   Makefile sorts source lists bytewise, so the link order no longer follows
+   the builder's locale. Before that fix, an `en_US.UTF-8` WSL shell linked
+   `pokemon_animation.o` before `pokemon.o` and produced different ROM hashes
+   from CI (`C.UTF-8`), even with identical sources and toolchain.
 2. For each changed world run, on Windows with the pinned mGBA build:
 
    ```sh

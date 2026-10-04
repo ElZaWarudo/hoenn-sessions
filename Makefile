@@ -332,25 +332,30 @@ ifeq ($(SETUP_PREREQS),1)
 endif
 
 # Collect sources
-C_SRCS_IN := $(wildcard $(C_SUBDIR)/*.c $(C_SUBDIR)/*/*.c $(C_SUBDIR)/*/*/*.c)
+# Source lists become the link order. GNU make 4.3 returns $(wildcard) matches
+# in the builder's LC_COLLATE order (en_US.UTF-8 puts pokemon_animation.c
+# before pokemon.c, C.UTF-8 does not), which moved ROM/EWRAM layout between
+# machines. Sort each pattern bytewise so every locale links like CI does.
+sorted_wildcard = $(foreach pattern,$(1),$(sort $(wildcard $(pattern))))
+C_SRCS_IN := $(call sorted_wildcard,$(C_SUBDIR)/*.c $(C_SUBDIR)/*/*.c $(C_SUBDIR)/*/*/*.c)
 C_SRCS := $(foreach src,$(C_SRCS_IN),$(if $(findstring .inc.c,$(src)),,$(src)))
 C_OBJS := $(patsubst $(C_SUBDIR)/%.c,$(C_BUILDDIR)/%.o,$(C_SRCS))
 
-TEST_SRCS_IN := $(wildcard $(TEST_SUBDIR)/*.c $(TEST_SUBDIR)/*/*.c $(TEST_SUBDIR)/*/*/*.c)
+TEST_SRCS_IN := $(call sorted_wildcard,$(TEST_SUBDIR)/*.c $(TEST_SUBDIR)/*/*.c $(TEST_SUBDIR)/*/*/*.c)
 TEST_SRCS := $(foreach src,$(TEST_SRCS_IN),$(if $(findstring .inc.c,$(src)),,$(src)))
 TEST_OBJS := $(patsubst $(TEST_SUBDIR)/%.c,$(TEST_BUILDDIR)/%.o,$(TEST_SRCS))
 TEST_OBJS_REL := $(patsubst $(OBJ_DIR)/%,%,$(TEST_OBJS))
 
-C_ASM_SRCS := $(wildcard $(C_SUBDIR)/*.s $(C_SUBDIR)/*/*.s $(C_SUBDIR)/*/*/*.s)
+C_ASM_SRCS := $(call sorted_wildcard,$(C_SUBDIR)/*.s $(C_SUBDIR)/*/*.s $(C_SUBDIR)/*/*/*.s)
 C_ASM_OBJS := $(patsubst $(C_SUBDIR)/%.s,$(C_BUILDDIR)/%.o,$(C_ASM_SRCS))
 
-ASM_SRCS := $(wildcard $(ASM_SUBDIR)/*.s)
+ASM_SRCS := $(call sorted_wildcard,$(ASM_SUBDIR)/*.s)
 ASM_OBJS := $(patsubst $(ASM_SUBDIR)/%.s,$(ASM_BUILDDIR)/%.o,$(ASM_SRCS))
 
-DATA_ASM_SRCS := $(wildcard $(DATA_ASM_SUBDIR)/*.s)
+DATA_ASM_SRCS := $(call sorted_wildcard,$(DATA_ASM_SUBDIR)/*.s)
 DATA_ASM_OBJS := $(patsubst $(DATA_ASM_SUBDIR)/%.s,$(DATA_ASM_BUILDDIR)/%.o,$(DATA_ASM_SRCS))
 
-MID_SRCS := $(wildcard $(MID_SUBDIR)/*.mid)
+MID_SRCS := $(call sorted_wildcard,$(MID_SUBDIR)/*.mid)
 ifneq ($(ROM_WORLD),2)
 MID_SRCS := $(filter-out $(MID_SUBDIR)/mus_hgss_casino.mid $(MID_SUBDIR)/mus_casino_plus_1.mid,$(MID_SRCS))
 endif
