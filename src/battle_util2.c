@@ -8,6 +8,8 @@
 #include "trainer_tower.h"
 #include "party_menu.h"
 #include "event_data.h"
+#include "coop/battle_runtime.h"
+#include "coop/friendly_battle.h"
 #include "constants/abilities.h"
 #include "random.h"
 #include "battle_scripts.h"
@@ -45,8 +47,17 @@ void AllocateBattleResources(void)
 
     if (gBattleTypeFlags & BATTLE_TYPE_SECRET_BASE)
     {
-        u16 currSecretBaseId = VarGet(VAR_CURRENT_SECRET_BASE);
-        CreateSecretBaseEnemyParty(&gSaveBlock1Ptr->secretBases[currSecretBaseId]);
+        /* A friendly co-op battle stages the partner's team itself and only
+         * borrows the secret-base opponent's display (name, class, picture). */
+        if (CoopBattleRuntime_IsFriendlyEngine())
+        {
+            CoopFriendly_FillOpponentDisplay(gBattleResources->secretBase);
+        }
+        else
+        {
+            u16 currSecretBaseId = VarGet(VAR_CURRENT_SECRET_BASE);
+            CreateSecretBaseEnemyParty(&gSaveBlock1Ptr->secretBases[currSecretBaseId]);
+        }
     }
 }
 

@@ -2,7 +2,10 @@
 """Test-only guarded execution of one pending leg after a verified crossing.
 
 Checks parked-world proof and current leased server heads before starting any
-signed desktop. Never prepares profiles, seeds accounts, or replays prior legs.
+signed desktop. The preceding session's group ended when its members left
+(Stop), so this session forms a fresh group the way main does: a's pairing code
+is issued before launch and b types it into its live signed desktop's Join box.
+Never prepares profiles, seeds accounts, or replays prior legs.
 """
 from __future__ import annotations
 
@@ -172,13 +175,9 @@ def guard_heads(plan: dict, leg: dict, proof: dict) -> dict:
             groups._expect(status, body, 200, name + " head raw save")
             if hashlib.sha256(body).hexdigest() != expected["sha256"]:
                 raise harness.HarnessFailure(f"{name}: downloaded current save differs")
-            status, body = groups._call(server, "GET", "/v1/groups/" + proof["group"]["group_id"], token=token, lease=lease)
-            group = harness._sanitize_group_evidence(json.loads(groups._expect(status, body, 200, name + " head group")))
-            if group != proof["group"]:
-                raise harness.HarnessFailure(f"{name}: current group differs")
             checked[name] = {"character_id": character, "revision": expected["revision"],
                              "snapshot_id": expected["snapshot_id"], "world_id": leg["source_world_id"],
-                             "sha256": expected["sha256"], "group_id": group["group_id"]}
+                             "sha256": expected["sha256"]}
         finally:
             original = sys.exc_info()[1]
             try:
@@ -218,6 +217,12 @@ def bind_loaded_sources(plan: dict, pids: dict, desktops: dict, proof: dict) -> 
     return result
 
 
+def presence_regions(plan: dict, world_id: int) -> list:
+    release, _ = harness._paths(plan)
+    catalog = harness._read_json(release / "release_catalog.json", "selected group catalog")
+    return next(w for w in catalog["worlds"] if w["world_id"] == world_id)["presence_regions"]
+
+
 def run_leg(plan: dict, name: str) -> dict:
     leg = validate_inputs(plan, name)
     harness.preflight(plan)
@@ -225,6 +230,12 @@ def run_leg(plan: dict, name: str) -> dict:
     heads = guard_heads(plan, leg, proof)
     _, run_dir = harness._paths(plan)
     harness.checkpoint(run_dir, "selected-heads-guarded", {"leg": name, "players": heads})
+    # Neither actor may still be grouped: the preceding group must have ended
+    # with its session, so the group proved below is fresh for this session.
+    ungrouped = groups.require_ungrouped(plan, name + " pre-pairing")
+    code = groups.create_pairing_code(plan, name)
+    harness.checkpoint(run_dir, "selected-pairing-code-issued", {"leg": name, "ungrouped": ungrouped,
+                       **{k: code[k] for k in ("code_sha256", "expires_at_unix_ms", "inviter_character_id")}})
     desktops = harness.launch(plan)
     boundary = "selected-start"
     try:
@@ -232,21 +243,22 @@ def run_leg(plan: dict, name: str) -> dict:
         bindings = bind_games(plan, leg, pids)
         loaded = bind_loaded_sources(plan, pids, desktops, proof)
         harness.checkpoint(run_dir, "selected-sources-bound", {"leg": name, "roms": bindings, "saves": loaded})
+        boundary = "selected-pairing"
+        before = groups.pair_desktops(plan, desktops, code, presence_regions(plan, leg["source_world_id"]), name)
         boundary = "selected-drive"
         harness.drive(plan, name, pids)
         arrived = harness.wait_arrival_games(plan, leg, pids)
         harness.continue_arrivals(plan, leg, arrived)
-        group_ids = set()
-        for player in plan["players"]:
-            journals = harness._journal_candidates(Path(player["profile_localappdata"]), leg, player["character_id"])
-            if not journals:
-                raise harness.HarnessFailure("selected leg lacks fresh committed journal")
-            group_ids.add(journals[0][2]["intent"]["request"]["group_id"])
-        if group_ids != {proof["group"]["group_id"]}:
-            raise harness.HarnessFailure("selected travel changed group identity")
+        group_id = groups.journal_group_id(plan, leg)
+        if group_id == str(proof["group"]["group_id"]):
+            raise harness.HarnessFailure("selected travel reused the preceding session's group; a fresh group is required")
+        after = groups.partner_proof(plan, presence_regions(plan, leg["destination_world_id"]), name + " post-arrival")
+        record = groups.group_record(plan, leg, group_id, before, after)
+        harness.checkpoint(run_dir, "selected-group-proved", {"leg": name, "group_id": record["group_id"],
+                           "region": record["world_zone"]["region"]})
         harness.stop_runtime(plan, desktops)
         boundary = "selected-evidence"
-        collected = groups.collect(plan, name, next(iter(group_ids)), capture_directory(run_dir, name, "server-evidence"), lease_wait_seconds=15)
+        collected = groups.collect(plan, name, record, capture_directory(run_dir, name, "server-evidence"), lease_wait_seconds=15)
         evidence_plan = dict(plan, group_evidence=collected["group"], evidence_roots=[str(capture_directory(run_dir, name, "server-evidence")), *plan.get("evidence_roots", [])])
         evidence_plan["legs"] = [dict(l, group_evidence=collected["group"]) if l["name"] == name else l for l in plan["legs"]]
         evidence = harness.discover_evidence(evidence_plan, name)

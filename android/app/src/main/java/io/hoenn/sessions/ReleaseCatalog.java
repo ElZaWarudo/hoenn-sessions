@@ -163,7 +163,7 @@ final class ReleaseCatalog {
         JSONObject manifest=new JSONObject(new String(bytes,StandardCharsets.UTF_8));
         if(manifest.getInt("schema_version")!=4 || !romHash.equals(manifest.getJSONObject("game_build").getString("rom_sha256"))
             || manifest.getJSONObject("net_bridge").getInt("abi_version")!=1
-            || manifest.getJSONObject("net_bridge").getInt("game_protocol_version")!=1)
+            || manifest.getJSONObject("net_bridge").getInt("game_protocol_version")!=BridgeFrame.PROTOCOL_VERSION)
             throw new SecurityException("ROM y manifiesto incompatibles");
         return manifest;
     }

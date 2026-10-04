@@ -139,3 +139,23 @@ fn bootstrap_lock_is_single_instance_and_recovers_after_drop() {
     drop(second);
     assert!(roots.lock_path().exists());
 }
+
+#[test]
+fn join_link_records_only_a_normalized_code() {
+    let local = TempDir::new().unwrap();
+    let roots = InstallRoots::from_local_app_data(local.path()).unwrap();
+    assert!(!launch::record_join_link(&roots, "not a link"));
+    assert!(!launch::record_join_link(
+        &roots,
+        "hoenn-sessions://join/ABC-234/../../x"
+    ));
+    assert!(!roots.join_inbox_path().exists());
+    assert!(launch::record_join_link(
+        &roots,
+        "hoenn-sessions://join/abc-234/"
+    ));
+    assert_eq!(
+        std::fs::read_to_string(roots.join_inbox_path()).unwrap(),
+        "ABC-234"
+    );
+}

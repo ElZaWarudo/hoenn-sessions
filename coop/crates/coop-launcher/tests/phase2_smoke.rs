@@ -393,7 +393,7 @@ fn compatibility() -> BuildCompatibility {
             "size": 9244,
             "magic": 1_347_111_759,
             "abi_version": 1,
-            "game_protocol_version": 1,
+            "game_protocol_version": 5,
             "byte_order": "little",
             "checksum": {"algorithm": "CRC-32/IEEE", "covered_bytes": [0, 139], "stored_offset": 140},
             "offsets": {"magic": 0, "abi_version": 4, "game_protocol_version": 6, "game_build_id": 8, "status_flags": 12, "last_sidecar_heartbeat": 16, "game_to_network": 20, "network_to_game": 4632},
@@ -408,8 +408,13 @@ fn compatibility() -> BuildCompatibility {
             "crc_offset": 668,
             "schema_version": 2,
             "struct_size": 672,
-            "registry_version": 2,
-            "registry_digest": "45db54b5ddccf640bcf8c633b4510f4d"
+            // The character save above carries the generated registry
+            // contract; the manifest must name that same contract.
+            "registry_version": coop_protocol::IDENTITY_REGISTRY_VERSION,
+            "registry_digest": coop_protocol::IDENTITY_REGISTRY_DIGEST
+                .iter()
+                .map(|byte| format!("{byte:02x}"))
+                .collect::<String>()
         }
     }))
     .expect("bridge manifest");
@@ -610,16 +615,26 @@ async fn phase2_launcher_sidecar_checkpoint_smoke() -> TestResult<()> {
     assert_eq!(initial_ready.message_type(), MessageType::SessionReady);
     assert_eq!(initial_ready.session_epoch(), SESSION_EPOCH);
 
+    // The ROM's boot READY (epoch zero) may arrive after the authentication
+    // SESSION_READY; the sidecar repeats that exact frame. The ROM then
+    // answers SESSION_READY with its active READY, which completes admission
+    // without another reply (`src/coop/net_bridge.c`). Any extra sidecar frame
+    // would fail the CHECKPOINT_GRANTED assertion below.
     let rom_ready_deadline = std::time::Instant::now() + IO_TIMEOUT;
+    send_rom_frame(
+        &mut bridge,
+        &BridgeFrame::new(MessageType::RomReady, 1, 0, &[])?,
+        rom_ready_deadline,
+    )
+    .await?;
+    let repeated_ready = read_sidecar_frame(&mut bridge, rom_ready_deadline).await?;
+    assert_eq!(repeated_ready, initial_ready);
     send_rom_frame(
         &mut bridge,
         &BridgeFrame::new(MessageType::RomReady, 1, SESSION_EPOCH, &[])?,
         rom_ready_deadline,
     )
     .await?;
-    let rom_ready_ack = read_sidecar_frame(&mut bridge, rom_ready_deadline).await?;
-    assert_eq!(rom_ready_ack.message_type(), MessageType::SessionReady);
-    assert_eq!(rom_ready_ack.session_epoch(), SESSION_EPOCH);
 
     let checkpoint_ready_deadline = std::time::Instant::now() + IO_TIMEOUT;
     send_rom_frame(

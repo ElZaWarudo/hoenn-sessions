@@ -17,6 +17,26 @@ OUTPUT = Path("src/data/items_cormoria.h")
 ENTRY = re.compile(r"^    \[(ITEM_[A-Z0-9_]+)\]\s*=\s*\{.*?^    \},",
                    re.MULTILINE | re.DOTALL)
 ICON = re.compile(r"\bgItemIcon(?:Palette)?_[A-Za-z0-9_]+\b")
+# Reviewed description fixes. Each donor line must fit the 102 px FONT_NORMAL
+# bag/shop box (test/text.c). Patterns keep the donor's own line breaks (LF or
+# CRLF) and must match exactly once, so any donor drift fails closed.
+DESCRIPTION_FIXES = {
+    # Donor middle line "gem that symbolizes" is 104 px; rewrap only.
+    "ITEM_DIAMOND": (
+        r'"A lustrous gleaming\\n"(\r?\n)            "gem that symbolizes\\n"'
+        r'(\r?\n)            "virtue\."',
+        r'"A lustrous gleaming\\n"\1            "gem that\\n"'
+        r'\2            "symbolizes virtue."',
+    ),
+    # Donor first line "A bottle of mystical" is 105 px and no three-line
+    # rewrap of the same words fits, so "mystical" becomes "mystic".
+    "ITEM_TIME_WATER": (
+        r'"A bottle of mystical\\n"(\r?\n)            "glowing water\. What\\n"'
+        r'(\r?\n)            "is it used for\?"',
+        r'"A bottle of mystic\\n"\1            "glowing water. What\\n"'
+        r'\2            "is it used for?"',
+    ),
+}
 
 
 class ItemImportError(ValueError):
@@ -44,6 +64,11 @@ def render(donor: Path, root: Path = ROOT) -> bytes:
             if '.name = ITEM_NAME("HM01")' not in block:
                 raise ItemImportError("donor Splash HM name drifted")
             block = block.replace('ITEM_NAME("HM01")', 'ITEM_NAME("HM10")')
+        if row["symbol"] in DESCRIPTION_FIXES:
+            pattern, replacement = DESCRIPTION_FIXES[row["symbol"]]
+            block, count = re.subn(pattern, replacement, block)
+            if count != 1:
+                raise ItemImportError(f"donor {row['symbol']} description drifted")
         blocks.append(block)
     result = ("/* Cormoria ItemInfo data from pinned Dreamstone Mysteries revision\n"
               " * f7997186345885bfa23a170e5f573851fc034b9b. Shared item IDs are\n"

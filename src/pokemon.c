@@ -963,8 +963,7 @@ void CreateBoxMon(struct BoxPokemon *boxMon, enum Species species, u8 level, u32
     SetBoxMonData(boxMon, MON_DATA_SPECIES, &species);
     SetBoxMonData(boxMon, MON_DATA_EXP, &gExperienceTables[gSpeciesInfo[species].growthRate][level]);
     SetBoxMonData(boxMon, MON_DATA_FRIENDSHIP, &gSpeciesInfo[species].friendship);
-    value = GetCurrentRegionMapSectionId();
-    SetBoxMonData(boxMon, MON_DATA_MET_LOCATION, &value);
+    SetBoxMonMetLocation(boxMon, GetCurrentRegionMapSectionId());
     SetBoxMonData(boxMon, MON_DATA_MET_LEVEL, &level);
     SetBoxMonData(boxMon, MON_DATA_MET_GAME, &gGameVersion);
     value = ITEM_POKE_BALL;
@@ -2123,6 +2122,77 @@ bool32 SetBoxMonMetLocationV2(struct BoxPokemon *boxMon, u16 location)
     EncryptBoxMon(&updated);
     *boxMon = updated;
     return TRUE;
+}
+
+// Map sections and met locations share one value space; the legacy special
+// bytes keep their reserved logical values in the V2 codec.
+STATIC_ASSERT(MAPSEC_NONE == MET_LOCATION_V2_NONE, MetLocationV2NoneIsMapsecNone);
+STATIC_ASSERT(METLOC_SPECIAL_EGG == 0xFD, MetLocationSpecialEggByte);
+STATIC_ASSERT(METLOC_IN_GAME_TRADE == 0xFE, MetLocationInGameTradeByte);
+STATIC_ASSERT(METLOC_FATEFUL_ENCOUNTER == 0xFF, MetLocationFatefulEncounterByte);
+
+bool32 IsMetLocationV2FormatActive(void)
+{
+    u32 status;
+
+    // Raw Pokemon bytes cannot prove the V2 marker format, so it is only used
+    // for a save that was created met-location-normalized and is not a
+    // migration-ambiguous legacy save.
+    if (gSaveBlock3Ptr == NULL)
+        return FALSE;
+    status = gSaveBlock3Ptr->coop.status_flags;
+    return (status & COOP_SAVE_STATUS_MET_LOCATION_NORMALIZED) != 0
+        && (status & COOP_SAVE_STATUS_MIGRATION_AMBIGUOUS) == 0;
+}
+
+u16 MetLocationFromLegacyByte(u8 legacyByte)
+{
+    u16 location = MET_LOCATION_V2_NONE;
+
+    (void)DecodeBoxMonMetLocationV2(MET_LOCATION_V2_MARKER_NONE, legacyByte, &location);
+    return location;
+}
+
+u8 MetLocationToLegacyByte(u16 location)
+{
+    u16 marker;
+    u8 legacyByte;
+
+    if (!EncodeBoxMonMetLocationV2(location, &marker, &legacyByte)
+     || marker != MET_LOCATION_V2_MARKER_NONE)
+        return 250; // Legacy "none": never alias another section.
+    return legacyByte;
+}
+
+u16 GetBoxMonMetLocation(struct BoxPokemon *boxMon)
+{
+    u16 location;
+
+    if (IsMetLocationV2FormatActive() && GetBoxMonMetLocationV2(boxMon, &location))
+        return location;
+    return MetLocationFromLegacyByte(GetBoxMonData(boxMon, MON_DATA_MET_LOCATION));
+}
+
+u16 GetMonMetLocation(struct Pokemon *mon)
+{
+    return GetBoxMonMetLocation(&mon->box);
+}
+
+void SetBoxMonMetLocation(struct BoxPokemon *boxMon, u16 location)
+{
+    u8 legacyByte;
+
+    if (IsMetLocationV2FormatActive() && SetBoxMonMetLocationV2(boxMon, location))
+        return;
+    // Legacy save, empty/corrupt Pokemon or an undecodable marker: keep the
+    // legacy byte write (identical bytes for every legacy-encodable value).
+    legacyByte = MetLocationToLegacyByte(location);
+    SetBoxMonData(boxMon, MON_DATA_MET_LOCATION, &legacyByte);
+}
+
+void SetMonMetLocation(struct Pokemon *mon, u16 location)
+{
+    SetBoxMonMetLocation(&mon->box, location);
 }
 
 static bool32 IsBadEgg(struct BoxPokemon *boxMon)
@@ -5105,7 +5175,7 @@ s32 CalculateFriendshipBonuses(struct Pokemon *mon, s32 modifier, enum HoldEffec
     if (GetMonData(mon, MON_DATA_POKEBALL) == ITEM_LUXURY_BALL)
         bonus += ITEM_FRIENDSHIP_LUXURY_BONUS;
 
-    if (GetMonData(mon, MON_DATA_MET_LOCATION) == GetCurrentRegionMapSectionId())
+    if (GetMonMetLocation(mon) == GetCurrentRegionMapSectionId())
         bonus += ITEM_FRIENDSHIP_MAPSEC_BONUS;
 
     return bonus;

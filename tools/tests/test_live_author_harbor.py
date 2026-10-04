@@ -254,8 +254,6 @@ class HarborTests(unittest.TestCase):
                        if canvas.getpixel((x, y)) == (252, 160, 173)]
             for point in outline:
                 canvas.putpixel(point, (252, 255, 255))
-            # Any phase of the arrow is irrelevant to the untouched name field.
-            canvas.paste((12, 34, 56), (87, 52, 95, 60))
             canvas.save(path)
             self.assertTrue(author.matches_intro(path, templates, ("name-field", "name-keyboard")))
             valid = canvas.copy()
@@ -268,6 +266,119 @@ class HarborTests(unittest.TestCase):
                 canvas.putpixel((x + 12, y), (252, 255, 255))  # Selected B.
             canvas.save(path)
             self.assertFalse(author.matches_intro(path, templates, ("name-field", "name-keyboard")))
+
+
+# Independent drawing of the naming_screen.c sprites as they appear in the
+# blank name field (dark 57, shade 115, blank 255), in ROI coordinates.
+ARROW = ("###", "####", "#####", "######", "#####+", "####+", "###+", "+++")
+UNDERSCORE = ("######", "++++++")
+SHADES = {"#": (57, 57, 57), "+": (115, 115, 115)}
+LIVE_PHASE = Path(__file__).with_name("fixtures") / "harbor-name-field-live-x2-0-y2-1.png"
+# ROI crop of the merged-ROM intro-name-ready.png (2026-10-03 v8 run 8cd9725a,
+# author/intro-name-ready.png) that failed the old eight-column mask.
+LIVE_PHASE_SHA256 = "622173cf3c130ea37ea9d61df5ab696ed09290d73aa69d0f88db6e024b9d5b42"
+
+
+class NameFieldPhaseTests(unittest.TestCase):
+    def setUp(self):
+        self.templates = author.load_templates()
+        self.folder = tempfile.TemporaryDirectory()
+        self.addCleanup(self.folder.cleanup)
+
+    def field(self, arrow_x2, underscore_y2, arrow=True, underscore=True):
+        field = self.templates["name-field"].copy()
+        field.paste((255, 255, 255), (0, 18, 10, 26))
+        field.paste((255, 255, 255), (11, 29, 17, 33))
+        if arrow:
+            for row, line in enumerate(ARROW):
+                for col, shade in enumerate(line):
+                    x = 3 + arrow_x2 + col
+                    if shade in SHADES and 0 <= x < field.size[0]:
+                        field.putpixel((x, 18 + row), SHADES[shade])
+        if underscore:
+            for row, line in enumerate(UNDERSCORE):
+                for col, shade in enumerate(line):
+                    field.putpixel((11 + col, 28 + underscore_y2 + row), SHADES[shade])
+        return field
+
+    def check(self, field, keyboard=True):
+        canvas = Image.new("RGB", (240, 160), "magenta")
+        canvas.paste(field, author.TEMPLATES["name-field"][0][:2])
+        if keyboard:
+            canvas.paste(self.templates["name-keyboard"], author.TEMPLATES["name-keyboard"][0][:2])
+        path = Path(self.folder.name) / "name.png"
+        canvas.save(path)
+        return author.matches_intro(path, self.templates, ("name-field", "name-keyboard"))
+
+    def test_independent_drawing_reproduces_pinned_template_phase(self):
+        self.assertEqual(self.field(-2, 2).tobytes(), self.templates["name-field"].tobytes())
+
+    def test_every_reviewed_arrow_and_underscore_phase_is_accepted(self):
+        for x2 in (0, -4, -2, -1):
+            for y2 in (1, 2, 3):
+                with self.subTest(x2=x2, y2=y2):
+                    self.assertTrue(self.check(self.field(x2, y2)))
+        self.assertEqual(sorted(author.name_field_variants(self.templates["name-field"])),
+                         sorted((x2, y2) for x2 in (0, -4, -2, -1) for y2 in (1, 2, 3)))
+
+    def test_live_merged_rom_phase_is_accepted(self):
+        self.assertEqual(hashlib.sha256(LIVE_PHASE.read_bytes()).hexdigest(), LIVE_PHASE_SHA256)
+        with Image.open(LIVE_PHASE) as image:
+            live = image.convert("RGB")
+        self.assertEqual(live.tobytes(), self.field(0, 1).tobytes())
+        self.assertTrue(self.check(live))
+
+    def test_off_phase_missing_or_extra_sprites_are_rejected(self):
+        cases = {
+            "arrow-x2-1": self.field(1, 2), "arrow-x2-3": self.field(-3, 2),
+            "arrow-x2-5": self.field(-5, 2), "underscore-y2-0": self.field(-2, 0),
+            "underscore-y2-4": self.field(-2, 4), "no-arrow": self.field(0, 1, arrow=False),
+            "no-underscore": self.field(0, 1, underscore=False),
+        }
+        stray = self.field(0, 3)
+        stray.putpixel((1, 25), (57, 57, 57))  # Pixel left behind inside the envelope.
+        cases["stray-envelope-pixel"] = stray
+        for label, field in cases.items():
+            with self.subTest(label):
+                self.assertFalse(self.check(field))
+
+    def test_non_blank_name_wrong_screen_and_wrong_selection_are_rejected_in_every_phase(self):
+        for x2 in (0, -4, -2, -1):
+            for y2 in (1, 2, 3):
+                with self.subTest(x2=x2, y2=y2):
+                    typed = self.field(x2, y2)
+                    for x, y in ((12, 22), (13, 21), (14, 20), (13, 23)):  # Glyph in slot 1.
+                        typed.putpixel((x, y), (57, 57, 57))
+                    self.assertFalse(self.check(typed))
+                    second = self.field(x2, y2)
+                    second.paste((255, 255, 255), (11, 28 + y2, 17, 30 + y2))
+                    for row, line in enumerate(UNDERSCORE):  # Cursor on slot 2.
+                        for col, shade in enumerate(line):
+                            second.putpixel((19 + col, 28 + y2 + row), SHADES[shade])
+                    self.assertFalse(self.check(second))
+                    self.assertFalse(self.check(Image.new("RGB", (77, 35), "magenta")))
+                    self.assertFalse(self.check(self.field(x2, y2), keyboard=False))
+                    canvas = Image.new("RGB", (240, 160), "magenta")
+                    canvas.paste(self.field(x2, y2), author.TEMPLATES["name-field"][0][:2])
+                    keyboard = self.templates["name-keyboard"].copy()
+                    for x, y in [(x, y) for y in range(3, 19) for x in range(8, 20)
+                                 if keyboard.getpixel((x, y)) == (252, 160, 173)]:
+                        keyboard.putpixel((x, y), (123, 173, 198))
+                        keyboard.putpixel((x + 12, y), (252, 160, 173))  # Selected B.
+                    canvas.paste(keyboard, author.TEMPLATES["name-keyboard"][0][:2])
+                    path = Path(self.folder.name) / "selection.png"
+                    canvas.save(path)
+                    self.assertFalse(author.matches_intro(path, self.templates, ("name-field", "name-keyboard")))
+
+    def test_template_with_content_in_animation_envelope_fails_closed(self):
+        tampered = self.templates["name-field"].copy()
+        tampered.putpixel((9, 20), (57, 57, 57))
+        with self.assertRaises(OracleFailure):
+            author.name_field_variants(tampered)
+        tampered = self.templates["name-field"].copy()
+        tampered.putpixel((14, 32), (57, 57, 57))
+        with self.assertRaises(OracleFailure):
+            author.name_field_variants(tampered)
 
 
 if __name__ == "__main__":

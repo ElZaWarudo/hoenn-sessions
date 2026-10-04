@@ -13,7 +13,8 @@ use std::{
 };
 
 use coop_cloud::{
-    CharacterId, ClientInstanceId, LeaseFence, Revision, SessionEpoch, SessionId, Sha256Digest,
+    AcquireWorldLeaseResponse, CharacterId, ClientInstanceId, LeaseFence, Revision, SessionEpoch,
+    SessionId, Sha256Digest,
 };
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -363,9 +364,10 @@ fn recovery_material_present(path: &Path, name: &str) -> Result<bool, RecoveryEr
     }
 }
 
-/// High-level restart reconciler.  It always discovers before acquiring a
-/// lease, then acquires a fresh lease and lets `SessionLifecycle` verify the
-/// signed current head and perform any fenced idempotent mutation.
+/// High-level restart reconciler.  The caller discovers before acquiring a
+/// fresh world-bound lease; the reconciler rediscovers under that lease and
+/// lets `SessionLifecycle` verify the signed current head and perform any
+/// fenced idempotent mutation.
 pub struct RecoveryReconciler;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -393,27 +395,52 @@ impl RecoveryReconciler {
         RecoveryOutcome::AuthorizationMissing
     }
 
-    /// Reconciles at most one candidate and preserves it on every uncertainty.
-    pub async fn reconcile<A: CloudApi>(
+    /// Reconciles at most one candidate under a lease the caller acquired
+    /// through the world-aware route and preserves the candidate on every
+    /// uncertainty.
+    ///
+    /// A catalog-bound server binds a lease to a ROM world only through
+    /// `POST /v1/sessions/acquire-world`; it rejects resume and snapshot
+    /// operations for an unbound legacy lease. Recovery therefore never
+    /// acquires a lease itself. The caller persists the acquire request
+    /// before sending it (in a store separate from the play intent), uses the
+    /// marker's prior client instance for a v2 candidate, and builds `config`
+    /// for `response.active_world_id` from its trusted ROM catalog.
+    ///
+    /// A world, character, or client-instance mismatch releases the
+    /// pre-acquired lease before any session state is materialized and leaves
+    /// the local evidence untouched.
+    pub async fn reconcile_world_lease<A: CloudApi>(
         api: &A,
-        auth: AuthSession,
+        mut auth: AuthSession,
         config: SessionConfig,
-        keychain: Option<Arc<dyn RefreshTokenStore>>,
+        keychain: Arc<dyn RefreshTokenStore>,
+        response: AcquireWorldLeaseResponse,
     ) -> Result<RecoverySession, RecoveryError> {
-        let discovery = RecoveryDiscovery::discover(&config.workspace_parent)?;
-        let Some(candidate) = discovery.candidate() else {
-            return Ok(RecoverySession {
-                outcome: RecoveryOutcome::NoEvidence,
-                auth,
-            });
+        let candidate = match Self::world_lease_candidate(&auth, &config, &response) {
+            Ok(Some(candidate)) => candidate,
+            Ok(None) => {
+                SessionLifecycle::release_preacquired_world_lease(
+                    api, &mut auth, response, &keychain,
+                )
+                .await?;
+                return Ok(RecoverySession {
+                    outcome: RecoveryOutcome::NoEvidence,
+                    auth,
+                });
+            }
+            Err(error) => {
+                SessionLifecycle::release_preacquired_world_lease(
+                    api, &mut auth, response, &keychain,
+                )
+                .await?;
+                return Err(error);
+            }
         };
         let marker = candidate.marker().clone();
-        let mut lifecycle = match keychain {
-            Some(keychain) => {
-                SessionLifecycle::acquire_with_keychain(api, auth, config, keychain).await?
-            }
-            None => SessionLifecycle::acquire(api, auth, config).await?,
-        };
+        let mut lifecycle =
+            SessionLifecycle::from_world_lease_with_keychain(api, auth, config, keychain, response)
+                .await?;
         let outcome = Self::reconcile_candidate(api, &mut lifecycle, candidate, marker).await;
         let release = lifecycle.release_lease_keep_credentials(api).await;
         match (outcome, release) {
@@ -424,6 +451,34 @@ impl RecoveryReconciler {
             (Err(error), _) => Err(error),
             (Ok(_), Err(error)) => Err(RecoveryError::Session(error)),
         }
+    }
+
+    /// Checks the pre-acquired lease against the caller's world selection
+    /// and rediscovers the evidence. No cloud or filesystem mutation happens
+    /// here; every error leads to an explicit lease release.
+    fn world_lease_candidate(
+        auth: &AuthSession,
+        config: &SessionConfig,
+        response: &AcquireWorldLeaseResponse,
+    ) -> Result<Option<RecoveryCandidate>, RecoveryError> {
+        if response.active_world_id != config.rom_world_id
+            || response.lease.client_instance_id != config.client_instance_id
+            || response.lease.character_id != auth.character_id
+        {
+            return Err(RecoveryError::Blocked);
+        }
+        let candidate = match RecoveryDiscovery::discover(&config.workspace_parent) {
+            Ok(discovery) => discovery.candidate(),
+            Err(RecoveryError::NoEvidence) => None,
+            Err(error) => return Err(error),
+        };
+        if let Some(RecoveryMarker::V2(marker)) = candidate.as_ref().map(RecoveryCandidate::marker)
+            && (marker.character_id != auth.character_id
+                || marker.prior_client_instance_id != response.lease.client_instance_id)
+        {
+            return Err(RecoveryError::Blocked);
+        }
+        Ok(candidate)
     }
 
     async fn reconcile_candidate<A: CloudApi>(

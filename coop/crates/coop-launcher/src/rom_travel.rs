@@ -2271,19 +2271,130 @@ mod tests {
         assert!(matches!(journal.read(), Err(RomTravelError::Corrupt)));
     }
 
+    fn rewrite_record(path: &std::path::Path, record: &TravelRecord) {
+        fs::write(path, serde_json::to_vec(record).unwrap()).unwrap();
+    }
+
+    /// The journal is unauthenticated: an `Aborted` record written after
+    /// `AbortPending` is byte-identical to a legitimately reconciled abort,
+    /// so a local rewrite cannot be told apart from server confirmation.
+    /// What the validator does enforce is that an abort keeps the exact
+    /// staged handoff identity it settles.
     #[test]
-    fn forged_abort_without_server_confirmation_fails_on_read() {
+    fn aborted_record_must_preserve_staged_handoff_identity() {
         let (root, journal) = fixture();
         journal.initialize(world(1)).unwrap();
         begin(&journal, world(1), world(3), "third_gate", 1);
         stage(&journal, 1);
         let pending = journal.abort_to_source(1).unwrap();
         assert_eq!(pending.phase, TravelPhase::AbortPending);
-        let path = root.path().join(format!("{:020}.json", pending.sequence));
-        let mut value: serde_json::Value =
-            serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
-        value["phase"] = serde_json::json!("aborted");
-        fs::write(&path, serde_json::to_vec(&value).unwrap()).unwrap();
-        assert!(matches!(journal.read(), Err(RomTravelError::Corrupt)));
+        let aborted = journal.confirm_server_abort(1, stage_id(1)).unwrap();
+        assert_eq!(aborted.phase, TravelPhase::Aborted);
+        assert_eq!(aborted.sequence, pending.sequence + 1);
+        let mut phase_only = pending.clone();
+        phase_only.sequence = aborted.sequence;
+        phase_only.phase = TravelPhase::Aborted;
+        assert_eq!(phase_only, aborted);
+        let path = root.path().join(format!("{:020}.json", aborted.sequence));
+        let original = fs::read(&path).unwrap();
+        assert_eq!(journal.read().unwrap(), Some(aborted.clone()));
+
+        let source_snapshot_id = aborted.source_snapshot_id;
+        assert!(source_snapshot_id.is_some());
+        let mutations: Vec<(&str, Box<dyn Fn(&mut TravelRecord)>)> = vec![
+            (
+                "server_stage_snapshot_id",
+                Box::new(|record| record.server_stage_snapshot_id = Some(stage_id(2))),
+            ),
+            (
+                "server_stage_snapshot_id=source_snapshot_id",
+                Box::new(move |record| record.server_stage_snapshot_id = source_snapshot_id),
+            ),
+            (
+                "server_stage_snapshot_id=None",
+                Box::new(|record| record.server_stage_snapshot_id = None),
+            ),
+            (
+                "arrival_nonce",
+                Box::new(|record| record.arrival_nonce = Some([9; 16])),
+            ),
+            (
+                "destination_save_sha256",
+                Box::new(|record| record.destination_save_sha256 = Some(digest(9))),
+            ),
+            (
+                "source_save_sha256",
+                Box::new(|record| record.source_save_sha256 = Some(digest(9))),
+            ),
+            (
+                "prepare_idempotency_key",
+                Box::new(|record| record.prepare_idempotency_key = Some(idempotency_key(9))),
+            ),
+            (
+                "source_revision",
+                Box::new(|record| record.source_revision = Some(Revision::new(9))),
+            ),
+            (
+                "active_world=destination",
+                Box::new(|record| record.active_world = world(3)),
+            ),
+        ];
+        for (field, mutate) in &mutations {
+            let mut forged = aborted.clone();
+            mutate(&mut forged);
+            assert_ne!(forged, aborted, "{field}");
+            rewrite_record(&path, &forged);
+            assert!(
+                matches!(journal.read(), Err(RomTravelError::Corrupt)),
+                "{field}"
+            );
+            fs::write(&path, &original).unwrap();
+            assert_eq!(journal.read().unwrap(), Some(aborted.clone()), "{field}");
+        }
+    }
+
+    /// An abort directly after `PrepareIntent` settles a server stage that
+    /// the journal never recorded. The validator requires that stage ID to be
+    /// present (the shape `reconcile_aborted_prepare` writes) and distinct
+    /// from the source snapshot.
+    #[test]
+    fn aborted_prepare_intent_requires_a_distinct_server_stage() {
+        let (root, journal) = fixture();
+        journal.initialize(world(1)).unwrap();
+        let intent = journal
+            .prepare_intent(world(1), "to_next", 1, digest(7), preparation(1))
+            .unwrap();
+        assert_eq!(intent.server_stage_snapshot_id, None);
+        let mut forged = intent.clone();
+        forged.sequence = intent.sequence + 1;
+        forged.phase = TravelPhase::Aborted;
+        let path = root.path().join(format!("{:020}.json", forged.sequence));
+
+        for stage in [None, intent.source_snapshot_id] {
+            forged.server_stage_snapshot_id = stage;
+            rewrite_record(&path, &forged);
+            assert!(
+                matches!(journal.read(), Err(RomTravelError::Corrupt)),
+                "{stage:?}"
+            );
+        }
+
+        fs::remove_file(&path).unwrap();
+        assert_eq!(journal.read().unwrap(), Some(intent));
+        let reconciled = journal
+            .reconcile_aborted_prepare(
+                1,
+                &RomHandoffRecoveryStatus::Aborted {
+                    stage_id: stage_id(1),
+                    source_snapshot_id: snapshot(1),
+                    source_world_id: world(1),
+                    expected_revision: Revision::new(1),
+                    idempotency_key: idempotency_key(1),
+                },
+            )
+            .unwrap();
+        forged.server_stage_snapshot_id = Some(stage_id(1));
+        assert_eq!(reconciled, forged);
+        assert_eq!(journal.read().unwrap(), Some(reconciled));
     }
 }

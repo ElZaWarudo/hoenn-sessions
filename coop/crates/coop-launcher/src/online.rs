@@ -5,9 +5,13 @@ use coop_cloud::{
     AccessToken, ApiVersion, IdempotencyKey, LeaseFence, OnlineAction as CloudAction,
     OnlineActionRequest, OnlineActionResponse, OnlineSnapshotRequest, OnlineSnapshotResponse,
 };
-use coop_protocol::{OnlineAction, OnlineRequest, OnlineResult, OnlineStatus};
+use coop_protocol::{
+    OnlineAction, OnlineRequest, OnlineResult, OnlineStatus, PairingAction, PairingRequest,
+    PairingResult, PairingStatus,
+};
 use reqwest::StatusCode;
 use thiserror::Error;
+use tokio::time::Instant;
 
 use crate::{CloudApi, HttpClientError, ReqwestCloudApi, SessionError};
 
@@ -25,6 +29,132 @@ pub enum OnlineError {
 
 pub type OnlineFuture<'a, T> = Pin<Box<dyn Future<Output = Result<T, OnlineError>> + Send + 'a>>;
 
+pub(crate) struct PairingCompletion {
+    request_id: u32,
+    fence: LeaseFence,
+    generation: u32,
+    result: Result<PairingStatus, OnlineError>,
+}
+
+#[derive(Default)]
+pub(crate) struct PairingOwner<'a> {
+    pending: Option<Pin<Box<dyn Future<Output = PairingCompletion> + Send + 'a>>>,
+}
+
+impl<'a> PairingOwner<'a> {
+    pub(crate) fn is_pending(&self) -> bool {
+        self.pending.is_some()
+    }
+
+    pub(crate) fn invalidate(&mut self) {
+        self.pending = None;
+    }
+    pub(crate) fn start<A: CloudApi>(
+        &mut self,
+        api: &'a A,
+        token: AccessToken,
+        fence: LeaseFence,
+        generation: u32,
+        request: PairingRequest,
+    ) -> Option<PairingStatus> {
+        let request_id = request.request_id;
+        if request.encode().is_err() {
+            return Some(PairingStatus {
+                request_id,
+                result: PairingResult::Invalid,
+                code: String::new(),
+            });
+        }
+        if self.pending.is_some() {
+            return Some(PairingStatus {
+                request_id,
+                result: PairingResult::Unavailable,
+                code: String::new(),
+            });
+        }
+        self.pending = Some(Box::pin(async move {
+            let result = tokio::time::timeout(Duration::from_secs(5), async {
+                match request.action {
+                    PairingAction::Create => {
+                        let response = api
+                            .pairing_create(token, coop_cloud::CreatePairingCodeRequest::new(fence))
+                            .await?;
+                        if response.api_version != ApiVersion::V1 {
+                            return Err(OnlineError::InvalidResponse);
+                        }
+                        Ok(PairingStatus {
+                            request_id,
+                            result: PairingResult::Created,
+                            code: response.code.as_str().to_owned(),
+                        })
+                    }
+                    PairingAction::Redeem => {
+                        let code = coop_cloud::PairingCode::new(request.code)
+                            .map_err(|_| OnlineError::InvalidResponse)?;
+                        let response = api
+                            .pairing_redeem(
+                                token,
+                                coop_cloud::RedeemPairingCodeRequest::new(fence, code),
+                            )
+                            .await?;
+                        if response.api_version != ApiVersion::V1 {
+                            return Err(OnlineError::InvalidResponse);
+                        }
+                        Ok(PairingStatus {
+                            request_id,
+                            result: PairingResult::Joined,
+                            code: String::new(),
+                        })
+                    }
+                }
+            })
+            .await
+            .unwrap_or(Err(OnlineError::Unavailable));
+            PairingCompletion {
+                request_id,
+                fence,
+                generation,
+                result,
+            }
+        }));
+        None
+    }
+    pub(crate) async fn next(&mut self) -> PairingCompletion {
+        match &mut self.pending {
+            Some(future) => future.await,
+            None => std::future::pending().await,
+        }
+    }
+    pub(crate) fn finish(
+        &mut self,
+        completion: PairingCompletion,
+        fence: LeaseFence,
+        generation: u32,
+    ) -> Result<Option<PairingStatus>, SessionError> {
+        self.pending = None;
+        if completion.fence != fence || completion.generation != generation {
+            return Ok(None);
+        }
+        let status = match completion.result {
+            Ok(status) => status,
+            Err(OnlineError::Unauthorized) => return Err(SessionError::Unauthorized),
+            Err(OnlineError::InvalidResponse) => return Err(SessionError::Realtime),
+            Err(OnlineError::Stale) => PairingStatus {
+                request_id: completion.request_id,
+                result: PairingResult::Invalid,
+                code: String::new(),
+            },
+            Err(OnlineError::Unavailable) => PairingStatus {
+                request_id: completion.request_id,
+                result: PairingResult::Unavailable,
+                code: String::new(),
+            },
+        };
+        status.encode().map_err(|_| SessionError::Realtime)?;
+        Ok(Some(status))
+    }
+}
+
 #[expect(
     clippy::needless_pass_by_value,
     reason = "map_err consumes the HTTP error"
@@ -37,13 +167,66 @@ fn map_http_error(error: HttpClientError) -> OnlineError {
         HttpClientError::Status(
             StatusCode::CONFLICT | StatusCode::NOT_FOUND | StatusCode::GONE | StatusCode::FORBIDDEN,
         ) => OnlineError::Stale,
-        HttpClientError::Transport(_) => OnlineError::Unavailable,
+        HttpClientError::Status(StatusCode::TOO_MANY_REQUESTS) | HttpClientError::Transport(_) => {
+            OnlineError::Unavailable
+        }
         HttpClientError::Status(status) if status.is_server_error() => OnlineError::Unavailable,
         _ => OnlineError::InvalidResponse,
     }
 }
 
 impl ReqwestCloudApi {
+    pub(crate) fn pairing_create_http(
+        &self,
+        token: AccessToken,
+        request: coop_cloud::CreatePairingCodeRequest,
+    ) -> OnlineFuture<'_, coop_cloud::CreatePairingCodeResponse> {
+        Box::pin(async move {
+            let url = self
+                .url("v1/groups/pairing-codes")
+                .map_err(map_http_error)?;
+            self.send_online(
+                self.client
+                    .post(url)
+                    .bearer_auth(token.expose_secret())
+                    .json(&request),
+                2048,
+            )
+            .await
+        })
+    }
+    pub(crate) fn pairing_redeem_http(
+        &self,
+        token: AccessToken,
+        request: coop_cloud::RedeemPairingCodeRequest,
+    ) -> OnlineFuture<'_, coop_cloud::RedeemPairingCodeResponse> {
+        Box::pin(async move {
+            let url = self
+                .url("v1/groups/pairing-codes/redeem")
+                .map_err(map_http_error)?;
+            self.send_online(
+                self.client
+                    .post(url)
+                    .bearer_auth(token.expose_secret())
+                    .json(&request),
+                4096,
+            )
+            .await
+        })
+    }
+    pub(crate) fn partner_status_http(
+        &self,
+        token: AccessToken,
+    ) -> OnlineFuture<'_, coop_cloud::PartnerStatusResponse> {
+        Box::pin(async move {
+            let url = self.url("v1/group/partner").map_err(map_http_error)?;
+            self.send_online(
+                self.client.get(url).bearer_auth(token.expose_secret()),
+                4096,
+            )
+            .await
+        })
+    }
     async fn send_online<T: serde::de::DeserializeOwned>(
         &self,
         request: reqwest::RequestBuilder,
@@ -83,6 +266,7 @@ impl ReqwestCloudApi {
                 self.client
                     .post(url)
                     .bearer_auth(token.expose_secret())
+                    .header("x-coop-online-remote-join", "1")
                     .json(&request),
                 16 * 1024,
             )
@@ -131,6 +315,10 @@ pub(crate) struct OnlineOwner<'a> {
 }
 
 impl<'a> OnlineOwner<'a> {
+    pub(crate) fn is_pending(&self) -> bool {
+        self.pending.is_some()
+    }
+
     pub(crate) fn invalidate(&mut self) {
         self.view = None;
         // A mutation already received by the server may still finish. Drop
@@ -138,6 +326,15 @@ impl<'a> OnlineOwner<'a> {
         // the next snapshot discovers the authoritative result.
         self.pending = None;
         self.latest_request = 0;
+    }
+
+    pub(crate) fn invalidate_for_group_change(&mut self) -> Option<OnlineStatus> {
+        self.view = None;
+        if self.pending.take().is_some() {
+            Some(empty_status(self.latest_request, OnlineResult::Unavailable))
+        } else {
+            None
+        }
     }
 
     pub(crate) fn start<A: CloudApi>(
@@ -240,9 +437,24 @@ impl<'a> OnlineOwner<'a> {
                     .invitation
                     .invitation_id,
             },
+            OnlineAction::Cancel => CloudAction::Cancel {
+                invitation_id: view
+                    .snapshot
+                    .outgoing
+                    .get(page)
+                    .ok_or(())?
+                    .invitation
+                    .invitation_id,
+            },
             OnlineAction::Leave => CloudAction::Leave {
                 group_id: view.snapshot.group.as_ref().ok_or(())?.group.group_id,
             },
+            OnlineAction::InviteLastPartner => {
+                if view.snapshot.group.is_some() || view.snapshot.last_partner.is_none() {
+                    return Err(());
+                }
+                CloudAction::InviteLastPartner
+            }
             OnlineAction::Refresh => unreachable!(),
         }))
     }
@@ -282,7 +494,12 @@ impl<'a> OnlineOwner<'a> {
         };
         match completion.result {
             Ok(snapshot) => {
-                let status = snapshot_status(completion.request, &snapshot, result);
+                let status = snapshot_status(
+                    completion.request,
+                    &snapshot,
+                    result,
+                    completion.fence.character_id,
+                );
                 status.encode().map_err(|_| SessionError::Realtime)?;
                 self.view = Some(View {
                     id: completion.request.request_id,
@@ -300,6 +517,135 @@ impl<'a> OnlineOwner<'a> {
                 completion.request.request_id,
                 OnlineResult::Unavailable,
             ))),
+        }
+    }
+}
+
+/// Polls the authoritative invitation list without disturbing an open menu
+/// view. IDs remain in the launcher; the ROM receives only a notification.
+pub(crate) enum InviteWatcherEvent {
+    GroupStateChanged {
+        grouped: bool,
+        remote_join_possible: bool,
+    },
+    InviteReceived(String),
+}
+
+pub(crate) struct InviteWatcher<'a> {
+    pending: Option<
+        Pin<Box<dyn Future<Output = Result<OnlineSnapshotResponse, OnlineError>> + Send + 'a>>,
+    >,
+    next_poll: Instant,
+    seen: Vec<(coop_cloud::GroupInvitationId, u64)>,
+    announcements: std::collections::VecDeque<String>,
+    membership_pending: Option<(bool, bool)>,
+}
+
+impl<'a> Default for InviteWatcher<'a> {
+    fn default() -> Self {
+        Self {
+            pending: None,
+            next_poll: Instant::now(),
+            seen: Vec::new(),
+            announcements: std::collections::VecDeque::new(),
+            membership_pending: None,
+        }
+    }
+}
+
+impl<'a> InviteWatcher<'a> {
+    pub(crate) fn invalidate(&mut self) {
+        self.pending = None;
+        self.next_poll = Instant::now();
+        self.seen.clear();
+        self.announcements.clear();
+        self.membership_pending = None;
+    }
+
+    /// Cancel a snapshot started before an Online menu request. A later poll
+    /// may then report membership only after the menu action has completed.
+    pub(crate) fn invalidate_poll(&mut self) {
+        self.pending = None;
+        self.membership_pending = None;
+        self.next_poll = Instant::now();
+    }
+
+    pub(crate) fn next_poll(&self) -> Instant {
+        self.next_poll
+    }
+    pub(crate) fn is_idle(&self) -> bool {
+        self.pending.is_none() && self.announcements.is_empty() && self.membership_pending.is_none()
+    }
+
+    pub(crate) fn prepare<A: CloudApi>(
+        &mut self,
+        api: &'a A,
+        token: AccessToken,
+        fence: LeaseFence,
+    ) {
+        if self.pending.is_some()
+            || !self.announcements.is_empty()
+            || self.membership_pending.is_some()
+            || Instant::now() < self.next_poll
+        {
+            return;
+        }
+        self.next_poll = Instant::now() + Duration::from_secs(4);
+        self.pending = Some(Box::pin(async move {
+            tokio::time::timeout(Duration::from_secs(3), load_snapshot(api, token, fence))
+                .await
+                .unwrap_or(Err(OnlineError::Unavailable))
+        }));
+    }
+
+    pub(crate) async fn next(&mut self) -> Result<Option<InviteWatcherEvent>, OnlineError> {
+        if let Some((grouped, remote_join_possible)) = self.membership_pending.take() {
+            return Ok(Some(InviteWatcherEvent::GroupStateChanged {
+                grouped,
+                remote_join_possible,
+            }));
+        }
+        if let Some(username) = self.announcements.pop_front() {
+            return Ok(Some(InviteWatcherEvent::InviteReceived(username)));
+        }
+        let result = match &mut self.pending {
+            Some(pending) => pending.await,
+            None => std::future::pending().await,
+        };
+        self.pending = None;
+        self.observe(result?, crate::session::now_millis());
+        Ok(self
+            .membership_pending
+            .take()
+            .map(
+                |(grouped, remote_join_possible)| InviteWatcherEvent::GroupStateChanged {
+                    grouped,
+                    remote_join_possible,
+                },
+            ))
+    }
+
+    fn observe(&mut self, snapshot: OnlineSnapshotResponse, now: u64) {
+        // Emit on every successful poll so a ROM reset within the same lease
+        // can recover the authoritative membership without opening Online.
+        self.membership_pending = Some((snapshot.group.is_some(), snapshot.remote_join_possible));
+        self.seen.retain(|(_, expires)| *expires > now);
+        for entry in snapshot.incoming {
+            let invite = entry.invitation;
+            // The server already omits expired invitations. Comparing its
+            // expiry against the local PC clock would hide valid invitations
+            // when the two clocks disagree.
+            if self.seen.iter().any(|(id, _)| *id == invite.invitation_id) {
+                continue;
+            }
+            // The control pipe can accept a notice while the sidecar is
+            // quiescing or waiting for the ROM. Reannounce a still-pending
+            // invitation so that a dropped notice does not hide it until
+            // the invitation expires.
+            self.seen
+                .push((invite.invitation_id, now.saturating_add(12_000)));
+            self.announcements
+                .push_back(entry.username.as_str().to_owned());
         }
     }
 }
@@ -362,6 +708,11 @@ fn action_response_matches(action: &CloudAction, response: &OnlineActionResponse
             OnlineActionResponse::Accepted { .. }
         ) | (CloudAction::Decline { .. }, OnlineActionResponse::Declined)
             | (CloudAction::Leave { .. }, OnlineActionResponse::Left)
+            | (CloudAction::Cancel { .. }, OnlineActionResponse::Cancelled)
+            | (
+                CloudAction::InviteLastPartner,
+                OnlineActionResponse::Invited { .. }
+            )
     )
 }
 
@@ -374,9 +725,14 @@ pub(crate) fn empty_status(request_id: u32, result: OnlineResult) -> OnlineStatu
         incoming_count: 0,
         nearby_page: 0,
         incoming_page: 0,
+        outgoing_count: 0,
+        outgoing_page: 0,
+        location_map_group: 0,
+        location_map_number: 0,
         nearby_name: String::new(),
         incoming_name: String::new(),
         group_name: String::new(),
+        last_partner_name: String::new(),
     }
 }
 
@@ -384,12 +740,18 @@ fn snapshot_status(
     request: OnlineRequest,
     snapshot: &OnlineSnapshotResponse,
     result: OnlineResult,
+    character_id: coop_cloud::CharacterId,
 ) -> OnlineStatus {
     let mut status = empty_status(request.request_id, result);
+    if snapshot.remote_join_possible {
+        status.flags |= 64;
+    }
     status.nearby_count = u8::try_from(snapshot.nearby.len()).unwrap_or(32).min(32);
     status.incoming_count = u8::try_from(snapshot.incoming.len()).unwrap_or(32).min(32);
+    status.outgoing_count = u8::try_from(snapshot.outgoing.len()).unwrap_or(4).min(4);
     status.nearby_page = request.page.min(status.nearby_count.saturating_sub(1));
     status.incoming_page = request.page.min(status.incoming_count.saturating_sub(1));
+    status.outgoing_page = request.page.min(status.outgoing_count.saturating_sub(1));
     if let Some(peer) = snapshot.nearby.get(usize::from(status.nearby_page)) {
         status.flags |= 2;
         peer.username.as_str().clone_into(&mut status.nearby_name);
@@ -404,6 +766,38 @@ fn snapshot_status(
     if let Some(group) = &snapshot.group {
         status.flags |= 1;
         group.username.as_str().clone_into(&mut status.group_name);
+        let caller_index = group
+            .group
+            .members
+            .iter()
+            .position(|member| member.character_id == character_id);
+        let partner_index = match caller_index {
+            Some(0) => Some(1),
+            Some(1) => Some(0),
+            _ => None,
+        };
+        let partner_zone =
+            partner_index.and_then(|index| group.group.member_world_zones.get(index));
+        if let Some(partner_zone) = partner_zone
+            && let Ok(entry) = partner_zone.map_entry()
+        {
+            status.flags |= 16;
+            status.location_map_group = entry.map_group;
+            status.location_map_number = entry.map_number;
+        }
+    }
+    if let Some(last_partner) = &snapshot.last_partner {
+        status.flags |= 32;
+        status.last_partner_name = last_partner.username.as_str().chars().take(16).collect();
+    }
+    if snapshot.group.is_none() {
+        if let Some(invitation) = snapshot.outgoing.get(usize::from(status.outgoing_page)) {
+            status.flags |= 8;
+            invitation
+                .username
+                .as_str()
+                .clone_into(&mut status.group_name);
+        }
     }
     status
 }
@@ -438,9 +832,235 @@ mod tests {
                 username: coop_protocol::CanonicalUsername::new("brendan").unwrap(),
             }],
             incoming: vec![],
+            outgoing: vec![],
             incoming_next: None,
             group: None,
+            remote_join_possible: false,
+            last_partner: None,
         }
+    }
+    #[test]
+    fn invite_watcher_trusts_server_expiry_despite_local_clock_skew() {
+        let mut watcher = InviteWatcher::default();
+        let mut response = serde_json::to_value(snapshot()).unwrap();
+        response["incoming"] = json!([
+            {"invitation":{"api_version":1,"invitation_id":Uuid::from_u128(10),
+                "inviter_character_id":Uuid::from_u128(3),"invitee_character_id":fence().character_id,
+                "expires_at":1000},"username":"may"}
+        ]);
+        let response: OnlineSnapshotResponse = serde_json::from_value(response).unwrap();
+        watcher.observe(response.clone(), 2000);
+        assert_eq!(watcher.announcements.pop_front(), Some("may".to_owned()));
+        watcher.observe(response.clone(), 2000);
+        watcher.observe(response, 3000);
+        assert!(watcher.announcements.is_empty());
+        let mut response = snapshot();
+        response.incoming = vec![serde_json::from_value(json!({
+            "invitation":{"api_version":1,"invitation_id":Uuid::from_u128(10),
+                "inviter_character_id":Uuid::from_u128(3),"invitee_character_id":fence().character_id,
+                "expires_at":1000},"username":"may"
+        })).unwrap()];
+        watcher.observe(response, 14_001);
+        assert_eq!(watcher.announcements.pop_front(), Some("may".to_owned()));
+    }
+
+    #[test]
+    fn invite_watcher_queues_entire_inbox_and_tracks_every_id() {
+        let mut watcher = InviteWatcher::default();
+        let mut response = snapshot();
+        response.incoming = (1..=33_u128)
+            .map(|number| {
+                serde_json::from_value(json!({
+                    "invitation": {
+                        "api_version": 1,
+                        "invitation_id": Uuid::from_u128(number),
+                        "inviter_character_id": Uuid::from_u128(100 + number),
+                        "invitee_character_id": fence().character_id,
+                        "expires_at": 1000
+                    },
+                    "username": "may"
+                }))
+                .unwrap()
+            })
+            .collect();
+        watcher.observe(response.clone(), 2000);
+        assert_eq!(watcher.announcements.len(), 33);
+        assert_eq!(watcher.seen.len(), 33);
+        watcher.announcements.clear();
+        watcher.observe(response, 2001);
+        assert!(watcher.announcements.is_empty());
+    }
+
+    #[tokio::test]
+    async fn invite_watcher_reports_membership_and_cancels_pre_menu_snapshot() {
+        let mut watcher = InviteWatcher::default();
+        watcher.observe(snapshot(), 2000);
+        assert!(matches!(
+            watcher.next().await.unwrap(),
+            Some(InviteWatcherEvent::GroupStateChanged {
+                grouped: false,
+                remote_join_possible: false
+            })
+        ));
+
+        // A menu request discards a prior poll's membership before the menu
+        // response can set a newer state in the ROM.
+        watcher.observe(snapshot(), 2001);
+        watcher.invalidate_poll();
+        assert!(watcher.membership_pending.is_none());
+        assert!(watcher.is_idle());
+
+        let mut response = serde_json::to_value(snapshot()).unwrap();
+        response["group"] = json!({
+            "username":"may",
+            "group":{
+                "api_version":1,"group_id":Uuid::from_u128(20),
+                "members":[
+                    {"character_id":Uuid::from_u128(2),"world_revision":1},
+                    {"character_id":Uuid::from_u128(3),"world_revision":1}
+                ],
+                "member_world_zones":[
+                    {"region":"HOENN","map":"ROUTE101","channel":0},
+                    {"region":"HOENN","map":"ROUTE101","channel":0}
+                ],
+                "world_zone":{"region":"HOENN","map":"ROUTE101","channel":0}
+            }
+        });
+        watcher.observe(serde_json::from_value(response).unwrap(), 2002);
+        assert!(matches!(
+            watcher.next().await.unwrap(),
+            Some(InviteWatcherEvent::GroupStateChanged {
+                grouped: true,
+                remote_join_possible: false
+            })
+        ));
+    }
+
+    #[tokio::test]
+    async fn watcher_and_online_status_report_remote_join_availability() {
+        let mut response = snapshot();
+        response.remote_join_possible = true;
+        let mut watcher = InviteWatcher::default();
+        watcher.observe(response.clone(), 2000);
+        assert!(matches!(
+            watcher.next().await.unwrap(),
+            Some(InviteWatcherEvent::GroupStateChanged {
+                grouped: false,
+                remote_join_possible: true
+            })
+        ));
+        let status = snapshot_status(
+            request(1, 0, OnlineAction::Refresh),
+            &response,
+            OnlineResult::Ready,
+            fence().character_id,
+        );
+        assert_eq!(status.flags & 64, 64);
+        assert_eq!(
+            OnlineStatus::decode(&status.encode().unwrap()).unwrap(),
+            status
+        );
+        watcher.observe(response, 2001);
+        watcher.invalidate_poll();
+        assert!(watcher.membership_pending.is_none());
+    }
+
+    #[test]
+    fn group_change_cancels_older_online_snapshot_with_menu_reply() {
+        let mut owner = OnlineOwner::default();
+        owner.latest_request = 9;
+        owner.pending = Some(Box::pin(std::future::pending()));
+        let status = owner.invalidate_for_group_change().unwrap();
+        assert_eq!(status.request_id, 9);
+        assert_eq!(status.result, OnlineResult::Unavailable);
+        assert!(!owner.is_pending());
+        assert!(owner.invalidate_for_group_change().is_none());
+    }
+
+    #[test]
+    fn sender_cancel_uses_only_the_displayed_outgoing_invitation() {
+        let mut response = serde_json::to_value(snapshot()).unwrap();
+        response["outgoing"] = json!([{"invitation":{
+            "api_version":1,"invitation_id":Uuid::from_u128(44),
+            "inviter_character_id":fence().character_id,
+            "invitee_character_id":Uuid::from_u128(45),
+            "expires_at":9_999_999_999_999_u64},"username":"may"}]);
+        let snapshot: OnlineSnapshotResponse = serde_json::from_value(response).unwrap();
+        let status = snapshot_status(
+            request(1, 0, OnlineAction::Refresh),
+            &snapshot,
+            OnlineResult::Ready,
+            fence().character_id,
+        );
+        assert_eq!(status.outgoing_count, 1);
+        assert_eq!(status.group_name, "may");
+        let owner = OnlineOwner {
+            view: Some(View {
+                id: 1,
+                fence: fence(),
+                generation: 1,
+                snapshot,
+            }),
+            ..OnlineOwner::default()
+        };
+        assert!(
+            matches!(owner.selected_action(request(2, 1, OnlineAction::Cancel), fence(), 1),
+            Ok(Some(CloudAction::Cancel { invitation_id })) if invitation_id.as_uuid() == Uuid::from_u128(44))
+        );
+        assert!(
+            owner
+                .selected_action(request(2, 0, OnlineAction::Cancel), fence(), 1)
+                .is_err()
+        );
+        assert!(
+            owner
+                .selected_action(request(2, 1, OnlineAction::Cancel), fence(), 2)
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn grouped_status_maps_catalogued_zone_to_rom_coordinates() {
+        let mut response = serde_json::to_value(snapshot()).unwrap();
+        response["group"] = json!({
+            "username":"may",
+            "group":{
+                "api_version":1,"group_id":Uuid::from_u128(20),
+                "members":[
+                    {"character_id":Uuid::from_u128(2),"world_revision":1},
+                    {"character_id":Uuid::from_u128(3),"world_revision":1}
+                ],
+                "member_world_zones":[
+                    {"region":"HOENN","map":"ROUTE101","channel":0},
+                    {"region":"HOENN","map":"SLATEPORT_CITY","channel":0}
+                ],
+                "world_zone":{"region":"HOENN","map":"ROUTE101","channel":0}
+            }
+        });
+        let snapshot: OnlineSnapshotResponse = serde_json::from_value(response).unwrap();
+        let status = snapshot_status(
+            request(1, 0, OnlineAction::Refresh),
+            &snapshot,
+            OnlineResult::Ready,
+            fence().character_id,
+        );
+        assert_eq!(status.flags & 17, 17);
+        assert_eq!(
+            (status.location_map_group, status.location_map_number),
+            (0, 1)
+        );
+        let outsider = CharacterId::new(Uuid::from_u128(99)).unwrap();
+        let outsider_status = snapshot_status(
+            request(2, 0, OnlineAction::Refresh),
+            &snapshot,
+            OnlineResult::Ready,
+            outsider,
+        );
+        assert_eq!(outsider_status.flags & 16, 0);
+        assert_eq!(
+            OnlineStatus::decode(&status.encode().unwrap()).unwrap(),
+            status
+        );
     }
     fn request(id: u32, view_id: u32, action: OnlineAction) -> OnlineRequest {
         OnlineRequest {

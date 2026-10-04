@@ -6,6 +6,18 @@ BirthIsland_Harbor_EventScript_Sailor::
 	faceplayer
 	msgbox BirthIsland_Harbor_Text_SailorReturn, MSGBOX_YESNO
 	goto_if_eq VAR_RESULT, NO, BirthIsland_Harbor_EventScript_AsYouLike
+	setvar VAR_0x8004, 81
+	setvar VAR_0x8005, 2
+	special Special_CoopGroupTravelBegin
+	goto_if_eq VAR_RESULT, 0, BirthIsland_Harbor_EventScript_SailorSoloReturn
+	goto_if_eq VAR_RESULT, 1, BirthIsland_Harbor_EventScript_SailorGroupWaiting
+	release
+	end
+
+BirthIsland_Harbor_EventScript_SailorGroupWaiting::
+	end
+
+BirthIsland_Harbor_EventScript_SailorSoloReturn::
 	msgbox EventTicket_Text_SailHome, MSGBOX_DEFAULT
 	closemessage
 	applymovement VAR_LAST_TALKED, Common_Movement_WalkInPlaceFasterDown

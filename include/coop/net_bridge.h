@@ -12,7 +12,7 @@
 
 #define COOP_NET_BRIDGE_MAGIC 0x504B434Fu
 #define COOP_NET_BRIDGE_ABI_VERSION 1
-#define COOP_NET_BRIDGE_GAME_PROTOCOL_VERSION 1
+#define COOP_NET_BRIDGE_GAME_PROTOCOL_VERSION 5
 #define COOP_NET_BRIDGE_GAME_BUILD_ID 0x00010000u
 #define COOP_NET_BRIDGE_PAYLOAD_SIZE 128
 #define COOP_NET_BRIDGE_QUEUE_CAPACITY 32
@@ -38,10 +38,16 @@ enum CoopBridgeMessageType
     COOP_BRIDGE_MESSAGE_GROUP_TRAVEL_CLIENT = 15,
     COOP_BRIDGE_MESSAGE_COMPANION_STATE = 16,
     COOP_BRIDGE_MESSAGE_SOCIAL_SIGNAL = 17,
+    COOP_BRIDGE_MESSAGE_PAIRING_REQUEST = 18,
+    COOP_BRIDGE_MESSAGE_PROGRESS_OBSERVATION = 19,
+    COOP_BRIDGE_MESSAGE_BATTLE_ABORT_REQUEST = 20,
+    COOP_BRIDGE_MESSAGE_BATTLE_READY = 21,
+    COOP_BRIDGE_MESSAGE_TRADE_OFFER_REQUEST = 22,
+    COOP_BRIDGE_MESSAGE_TRADE_OFFER_DECISION = 23,
     /* Raw ASCII portal ID (1..96 bytes), followed by CHECKPOINT_READY. */
-    COOP_BRIDGE_MESSAGE_PORTAL_TRAVEL_REQUEST = 18,
+    COOP_BRIDGE_MESSAGE_PORTAL_TRAVEL_REQUEST = 24,
     /* Offline verifier proof; carries COOP_ARRIVAL_PROOF_PAYLOAD_SIZE bytes. */
-    COOP_BRIDGE_MESSAGE_ARRIVAL_PROOF = 19,
+    COOP_BRIDGE_MESSAGE_ARRIVAL_PROOF = 25,
 
     COOP_BRIDGE_MESSAGE_SESSION_READY = 0x0100,
     COOP_BRIDGE_MESSAGE_REMOTE_PLAYER_SPAWN = 0x0101,
@@ -60,8 +66,19 @@ enum CoopBridgeMessageType
     COOP_BRIDGE_MESSAGE_GROUP_TRAVEL_SERVER = 0x010E,
     COOP_BRIDGE_MESSAGE_REMOTE_COMPANION = 0x010F,
     COOP_BRIDGE_MESSAGE_REMOTE_SOCIAL_SIGNAL = 0x0110,
+    COOP_BRIDGE_MESSAGE_REMOTE_INTERACTION = 0x0111,
+    COOP_BRIDGE_MESSAGE_PAIRING_STATUS = 0x0112,
+    COOP_BRIDGE_MESSAGE_PROGRESS_EVENT = 0x0113,
+    COOP_BRIDGE_MESSAGE_PEER_PARTY_CHUNK = 0x0114,
+    COOP_BRIDGE_MESSAGE_BATTLE_CONSENT_OUTCOME = 0x0115,
+    COOP_BRIDGE_MESSAGE_BATTLE_RESERVE_REJECTED = 0x0116,
+    COOP_BRIDGE_MESSAGE_BATTLE_START = 0x0117,
+    COOP_BRIDGE_MESSAGE_GROUP_ENDED = 0x0118,
+    COOP_BRIDGE_MESSAGE_TRADE_COMMIT = 0x0119,
+    COOP_BRIDGE_MESSAGE_TRADE_OFFER_RECEIVED = 0x011A,
+    COOP_BRIDGE_MESSAGE_TRADE_OFFER_STATUS = 0x011B,
     /* Epoch-0 verifier challenge; carries exactly a 16-byte nonce. */
-    COOP_BRIDGE_MESSAGE_ARRIVAL_CHALLENGE = 0x0111,
+    COOP_BRIDGE_MESSAGE_ARRIVAL_CHALLENGE = 0x011C,
 };
 
 enum CoopBridgeStatus
@@ -195,7 +212,15 @@ void CoopNetBridge_Poll(void);
 u32 CoopNetBridge_GetSessionEpoch(void);
 bool8 CoopNetBridge_SendOnlineRequest(const struct CoopOnlineRequest *request);
 bool8 CoopNetBridge_GetOnlineStatus(struct CoopOnlineStatus *status);
+bool8 CoopNetBridge_SendPairingRequest(const struct CoopPairingRequest *request);
+bool8 CoopNetBridge_GetPairingStatus(struct CoopPairingStatus *status);
+bool8 CoopNetBridge_TakeInviteNotice(void);
+bool8 CoopNetBridge_TakeProgressNotice(u8 *kind, u8 *region, u16 *subject_id);
 bool8 CoopNetBridge_IsGrouped(void);
+bool8 CoopNetBridge_IsOrMayBeGrouped(void);
+bool8 CoopNetBridge_CanSendBattle(void);
+/* Cloud epoch accepted, session ready and sidecar heartbeat fresh. */
+bool8 CoopNetBridge_IsSessionActive(void);
 enum CoopCheckpointState CoopNetBridge_GetCheckpointState(void);
 bool8 CoopNetBridge_IsCloudMode(void);
 bool8 CoopNetBridge_IsRecoveryRequired(void);
@@ -219,6 +244,7 @@ bool8 CoopNetBridge_IsCheckpointAuthorizedForSave(void);
  * ring is full. */
 void CoopNetBridge_NotifySaveResult(bool8 save_succeeded);
 bool8 CoopNetBridge_EnqueueGameToNetwork(u16 type, const void *payload, u16 payload_size);
+bool8 CoopNetBridge_ObserveProgress(u8 kind, enum CoopRegion region, u16 subject_id);
 bool8 CoopNetBridge_DequeueGameToNetwork(struct CoopBridgeMessage *message);
 bool8 CoopNetBridge_EnqueueNetworkToGame(const struct CoopBridgeMessage *message);
 bool8 CoopNetBridge_DequeueNetworkToGame(struct CoopBridgeMessage *message);

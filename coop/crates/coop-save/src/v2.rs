@@ -41,13 +41,13 @@ pub const COOP_SAVE_V2_STATUS_KNOWN_MASK: u32 =
 /// schema-two co-op extension.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ValidatedSaveV2 {
-    raw: Box<[u8]>,
+    pub(crate) raw: Box<[u8]>,
     selected_slot: super::SaveSlot,
     counter: u32,
-    logical_sector_offsets: [usize; super::SECTORS_PER_SLOT],
+    pub(crate) logical_sector_offsets: [usize; super::SECTORS_PER_SLOT],
     save_block3: [u8; super::SAVE_BLOCK3_CAPACITY],
     character_lineage: super::CharacterLineage,
-    coop: CoopSaveV2,
+    pub(crate) coop: CoopSaveV2,
 }
 
 impl ValidatedSaveV2 {
@@ -393,6 +393,25 @@ pub struct CoopSaveV2 {
 }
 
 impl CoopSaveV2 {
+    /// Canonical campaign progress, including the fifth Cormoria record.
+    #[must_use]
+    pub fn progress_for(&self, region: RegionId) -> Option<&RegionalProgress> {
+        self.regional_progress
+            .iter()
+            .find(|progress| progress.region == region)
+    }
+
+    /// Whether this finalized save records a clear of a registered trainer.
+    pub fn defeated_trainer(
+        &self,
+        identity: &coop_protocol::TrainerInstanceId,
+    ) -> Result<bool, coop_protocol::ProtocolError> {
+        let ordinal = coop_protocol::identity_catalog::trainer(identity)?
+            .ordinal
+            .expect("registered trainer identities have ordinals");
+        Ok(self.defeated_trainers[usize::from(ordinal / 8)] & (1_u8 << (ordinal % 8)) != 0)
+    }
+
     /// Whether legacy migration found an identity collision.
     #[must_use]
     pub const fn migration_ambiguous(&self) -> bool {

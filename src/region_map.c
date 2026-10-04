@@ -35,6 +35,8 @@
 #include "constants/cormoria_event_ids.h"
 #include "cormoria/heal_locations.h"
 #endif
+#include "coop/group_travel.h"
+#include "coop/net_bridge.h"
 
 extern bool8 gFlightCallFromBag;
 extern bool8 gSkipShowMonAnim;
@@ -80,6 +82,7 @@ struct MultiNameFlyDest
 
 //Flight Call
 static EWRAM_DATA bool8 sUseForcedFlightRegion;
+static EWRAM_DATA bool8 sPartnerFlyMap;
 static EWRAM_DATA u8 sForcedFlightRegion;
 static EWRAM_DATA enum KantoEra sForcedFlightKantoEra;
 
@@ -111,6 +114,14 @@ void CancelFlightCall(void)
     gFlightCallFromBag = FALSE;
     (void)JohtoTravel_Cancel();
     ClearForcedFlightRegion();
+}
+
+void CoopRegionMap_OpenPartnerFlyMap(void)
+{
+    CancelFlightCall();
+    sPartnerFlyMap = TRUE;
+    CleanupOverworldWindowsAndTilemaps();
+    SetMainCallback2(CB2_OpenFlyMap);
 }
 
 static u8 GetActiveRegionMapType(void)
@@ -1406,6 +1417,11 @@ static bool32 IsReservedLaterKantoMapGroup(u8 mapGroup)
 
 enum RegionMapType GetRegionMapTypeByMap(u8 mapGroup, u8 mapNum, u32 mapSecId)
 {
+    /* Reception Gate shares a Johto map group, but its arrival context is
+     * original Kanto on the return crossing. */
+    if (mapGroup == MAP_GROUP(MAP_RECEPTION_GATE)
+     && mapNum == MAP_NUM(MAP_RECEPTION_GATE))
+        return REGION_MAP_KANTO;
     if (IsRegisteredJohtoMapPair(mapGroup, mapNum))
         return REGION_MAP_JOHTO;
     if (IsRegisteredLaterKantoMapPair(mapGroup, mapNum))
@@ -1420,6 +1436,9 @@ enum KantoEra GetKantoEraByMap(u8 mapGroup, u8 mapNum, u32 mapSecId)
 {
     enum RegionMapType regionMapType = GetRegionMapTypeByMap(mapGroup, mapNum, mapSecId);
 
+    if (mapGroup == MAP_GROUP(MAP_RECEPTION_GATE)
+     && mapNum == MAP_NUM(MAP_RECEPTION_GATE))
+        return KANTO_ERA_ORIGINAL;
     if (IsRegisteredLaterKantoMapPair(mapGroup, mapNum))
         return KANTO_ERA_LATER;
     if (IsReservedJohtoMapGroup(mapGroup) || IsReservedLaterKantoMapGroup(mapGroup))
@@ -2234,7 +2253,13 @@ void CB2_OpenFlyMap(void)
         if (sFlyMap == NULL)
         {
             CancelFlightCall();
-            SetMainCallback2(CB2_ReturnToFieldWithOpenMenu);
+            if (sPartnerFlyMap)
+            {
+                sPartnerFlyMap = FALSE;
+                SetMainCallback2(CB2_ReturnToField);
+            }
+            else
+                SetMainCallback2(CB2_ReturnToFieldWithOpenMenu);
         }
         else
         {
@@ -2415,19 +2440,6 @@ struct FlyLocation
 
 static const struct FlyLocation sFlyLocations[] =
 {
-#if ROM_WORLD == 2
-    { REGION_MAP_CORMORIA, KANTO_ERA_NONE, Cormoria_FLAG_VISITED_CARABRUE_TOWN, MAPSEC_CORMORIA_CARABRUE_TOWN, HEAL_LOCATION_CORMORIA_CARABRUE_TOWN },
-    { REGION_MAP_CORMORIA, KANTO_ERA_NONE, Cormoria_FLAG_VISITED_FENNILAHL_TOWN, MAPSEC_CORMORIA_FENNILAHL_TOWN, HEAL_LOCATION_CORMORIA_FENNILAHL_TOWN },
-    { REGION_MAP_CORMORIA, KANTO_ERA_NONE, Cormoria_FLAG_VISITED_GASTREE_CITY, MAPSEC_CORMORIA_GASTREE_CITY, HEAL_LOCATION_CORMORIA_GASTREE_CITY },
-    { REGION_MAP_CORMORIA, KANTO_ERA_NONE, Cormoria_FLAG_VISITED_CERAM_BASE_CAMP, MAPSEC_CORMORIA_CERAM_BASE_CAMP, HEAL_LOCATION_CORMORIA_CERAM_BASE_CAMP },
-    { REGION_MAP_CORMORIA, KANTO_ERA_NONE, Cormoria_FLAG_VISITED_GALECREST_CITY, MAPSEC_CORMORIA_GALECREST_CITY, HEAL_LOCATION_CORMORIA_GALECREST_CITY },
-    { REGION_MAP_CORMORIA, KANTO_ERA_NONE, Cormoria_FLAG_VISITED_SILVERSUN_CITY, MAPSEC_CORMORIA_SILVERSUN_CITY, HEAL_LOCATION_CORMORIA_SILVERSUN_CITY },
-    { REGION_MAP_CORMORIA, KANTO_ERA_NONE, Cormoria_FLAG_VISITED_PELLUCA_CITY, MAPSEC_CORMORIA_PELLUCA_CITY, HEAL_LOCATION_CORMORIA_PELLUCA_CITY },
-    { REGION_MAP_CORMORIA, KANTO_ERA_NONE, Cormoria_FLAG_VISITED_MIRROH_BASE_CAMP, MAPSEC_CORMORIA_MIRROH_BASE_CAMP, HEAL_LOCATION_CORMORIA_MIRROH_BASE_CAMP },
-    { REGION_MAP_CORMORIA, KANTO_ERA_NONE, Cormoria_FLAG_VISITED_WINTERLILY_HOLLOW, MAPSEC_CORMORIA_WINTERLILY_HOLLOW, HEAL_LOCATION_CORMORIA_WINTERLILY_HOLLOW },
-    { REGION_MAP_CORMORIA, KANTO_ERA_NONE, Cormoria_FLAG_VISITED_RIVETSHORE_CITY, MAPSEC_CORMORIA_RIVETSHORE_CITY, HEAL_LOCATION_CORMORIA_RIVETSHORE_CITY },
-    { REGION_MAP_CORMORIA, KANTO_ERA_NONE, Cormoria_FLAG_VISITED_VICTORY_CAPE, MAPSEC_CORMORIA_VICTORY_CAPE, HEAL_LOCATION_CORMORIA_VICTORY_CAPE },
-#endif
     { REGION_MAP_JOHTO, KANTO_ERA_NONE, JOHTO_FLAG_VISITED_NEWBARK_TOWN, MAPSEC_NEW_BARK_TOWN, HEAL_LOCATION_JOHTO_NEW_BARK_TOWN },
     { REGION_MAP_JOHTO, KANTO_ERA_NONE, JOHTO_FLAG_VISITED_CHERRYGROVE_CITY, MAPSEC_JOHTO_CHERRYGROVE_CITY, HEAL_LOCATION_JOHTO_CHERRYGROVE_CITY },
     { REGION_MAP_JOHTO, KANTO_ERA_NONE, JOHTO_FLAG_VISITED_VIOLET_CITY, MAPSEC_JOHTO_VIOLET_CITY, HEAL_LOCATION_JOHTO_VIOLET_CITY },
@@ -2628,6 +2640,19 @@ static const struct FlyLocation sFlyLocations[] =
         .mapsec = MAPSEC_ROUTE_10_POKECENTER,
         .flag = FLAG_WORLD_MAP_ROUTE10_POKEMON_CENTER_1F,
     },
+#if ROM_WORLD == 2
+    { REGION_MAP_CORMORIA, KANTO_ERA_NONE, Cormoria_FLAG_VISITED_CARABRUE_TOWN, MAPSEC_CORMORIA_CARABRUE_TOWN, HEAL_LOCATION_CORMORIA_CARABRUE_TOWN },
+    { REGION_MAP_CORMORIA, KANTO_ERA_NONE, Cormoria_FLAG_VISITED_FENNILAHL_TOWN, MAPSEC_CORMORIA_FENNILAHL_TOWN, HEAL_LOCATION_CORMORIA_FENNILAHL_TOWN },
+    { REGION_MAP_CORMORIA, KANTO_ERA_NONE, Cormoria_FLAG_VISITED_GASTREE_CITY, MAPSEC_CORMORIA_GASTREE_CITY, HEAL_LOCATION_CORMORIA_GASTREE_CITY },
+    { REGION_MAP_CORMORIA, KANTO_ERA_NONE, Cormoria_FLAG_VISITED_CERAM_BASE_CAMP, MAPSEC_CORMORIA_CERAM_BASE_CAMP, HEAL_LOCATION_CORMORIA_CERAM_BASE_CAMP },
+    { REGION_MAP_CORMORIA, KANTO_ERA_NONE, Cormoria_FLAG_VISITED_GALECREST_CITY, MAPSEC_CORMORIA_GALECREST_CITY, HEAL_LOCATION_CORMORIA_GALECREST_CITY },
+    { REGION_MAP_CORMORIA, KANTO_ERA_NONE, Cormoria_FLAG_VISITED_SILVERSUN_CITY, MAPSEC_CORMORIA_SILVERSUN_CITY, HEAL_LOCATION_CORMORIA_SILVERSUN_CITY },
+    { REGION_MAP_CORMORIA, KANTO_ERA_NONE, Cormoria_FLAG_VISITED_PELLUCA_CITY, MAPSEC_CORMORIA_PELLUCA_CITY, HEAL_LOCATION_CORMORIA_PELLUCA_CITY },
+    { REGION_MAP_CORMORIA, KANTO_ERA_NONE, Cormoria_FLAG_VISITED_MIRROH_BASE_CAMP, MAPSEC_CORMORIA_MIRROH_BASE_CAMP, HEAL_LOCATION_CORMORIA_MIRROH_BASE_CAMP },
+    { REGION_MAP_CORMORIA, KANTO_ERA_NONE, Cormoria_FLAG_VISITED_WINTERLILY_HOLLOW, MAPSEC_CORMORIA_WINTERLILY_HOLLOW, HEAL_LOCATION_CORMORIA_WINTERLILY_HOLLOW },
+    { REGION_MAP_CORMORIA, KANTO_ERA_NONE, Cormoria_FLAG_VISITED_RIVETSHORE_CITY, MAPSEC_CORMORIA_RIVETSHORE_CITY, HEAL_LOCATION_CORMORIA_RIVETSHORE_CITY },
+    { REGION_MAP_CORMORIA, KANTO_ERA_NONE, Cormoria_FLAG_VISITED_VICTORY_CAPE, MAPSEC_CORMORIA_VICTORY_CAPE, HEAL_LOCATION_CORMORIA_VICTORY_CAPE },
+#endif
 };
 
 static bool32 IsFlyLocationInActiveContext(const struct FlyLocation *location)
@@ -2654,6 +2679,135 @@ static const struct FlyLocation *FindFlyLocationInActiveContext(mapsec_u16_t map
     }
 
     return NULL;
+}
+
+/* Route 7 predates the shared Fly catalog. Later route IDs follow the order
+ * of sFlyLocations, omitting its Littleroot entry. Keep the Rust catalog in
+ * that same order when adding destinations. */
+static const struct FlyLocation *GroupFlyLocationForRoute(u8 route)
+{
+    u32 index;
+
+    if (route == 7)
+        index = 10;
+    else if (route >= 8 && route <= 17)
+        index = route - 8;
+    else if (route >= 18 && route <= 62)
+        index = route - 7;
+    else
+        return NULL;
+    if (index >= ARRAY_COUNT(sFlyLocations)
+     || sFlyLocations[index].mapsec == MAPSEC_EVER_GRANDE_CITY)
+        return NULL;
+    return &sFlyLocations[index];
+}
+
+u8 CoopRegionMap_GroupFlyRouteForSelection(mapsec_u16_t mapSecId, u16 posWithinMapSec)
+{
+    const struct FlyLocation *location;
+    u32 index;
+
+    if (mapSecId == MAPSEC_EVER_GRANDE_CITY)
+        return FlagGet(FLAG_LANDMARK_POKEMON_LEAGUE) && posWithinMapSec == 0
+            ? COOP_GROUP_TRAVEL_ROUTE_FLY_EVER_GRANDE_LEAGUE
+            : COOP_GROUP_TRAVEL_ROUTE_FLY_EVER_GRANDE_CITY;
+    if (mapSecId == MAPSEC_BATTLE_FRONTIER)
+        return COOP_GROUP_TRAVEL_ROUTE_FLY_BATTLE_FRONTIER;
+    location = FindFlyLocationInActiveContext(mapSecId);
+    if (location == NULL)
+        return 0;
+#if ROM_WORLD == 2
+    /* Cormoria Fly points have no group-travel route assignment yet. Never
+     * alias an appended point onto a main-world gate or ship route. Main has
+     * no Cormoria entries (or region map type), so nothing to exclude there. */
+    if (location->regionMapType == REGION_MAP_CORMORIA)
+        return 0;
+#endif
+    index = location - sFlyLocations;
+    if (index == 10)
+        return 7;
+    return index < 10 ? index + 8 : index + 7;
+}
+
+bool8 CoopRegionMap_GroupFlyFields(u8 route, u8 *era, u8 *destination)
+{
+    const struct FlyLocation *location = GroupFlyLocationForRoute(route);
+
+    if (era == NULL || destination == NULL)
+        return FALSE;
+    if (route >= COOP_GROUP_TRAVEL_ROUTE_FLY_EVER_GRANDE_CITY
+     && route <= COOP_GROUP_TRAVEL_ROUTE_FLY_BATTLE_FRONTIER)
+    {
+        *era = COOP_GROUP_TRAVEL_ERA_HOENN;
+        *destination = route;
+        return TRUE;
+    }
+    if (location == NULL)
+        return FALSE;
+    switch (location->regionMapType)
+    {
+    case REGION_MAP_KANTO:
+        *era = location->kantoEra == KANTO_ERA_LATER ? 2 : 1;
+        break;
+    case REGION_MAP_HOENN:
+        *era = 3;
+        break;
+    case REGION_MAP_JOHTO:
+        *era = 4;
+        break;
+    case REGION_MAP_SEVII123:
+    case REGION_MAP_SEVII45:
+    case REGION_MAP_SEVII67:
+        *era = 5;
+        break;
+    default:
+        return FALSE;
+    }
+    *destination = route;
+    return TRUE;
+}
+
+bool8 CoopRegionMap_GroupFlyUnlocked(u8 route)
+{
+    const struct FlyLocation *location = GroupFlyLocationForRoute(route);
+
+    if (route == COOP_GROUP_TRAVEL_ROUTE_FLY_EVER_GRANDE_CITY)
+        return FlagGet(FLAG_VISITED_EVER_GRANDE_CITY);
+    if (route == COOP_GROUP_TRAVEL_ROUTE_FLY_EVER_GRANDE_LEAGUE)
+        return FlagGet(FLAG_VISITED_EVER_GRANDE_CITY)
+            && FlagGet(FLAG_LANDMARK_POKEMON_LEAGUE);
+    if (route == COOP_GROUP_TRAVEL_ROUTE_FLY_BATTLE_FRONTIER)
+        return FlagGet(FLAG_LANDMARK_BATTLE_FRONTIER);
+    return location != NULL && FlagGet(location->flag);
+}
+
+u32 CoopRegionMap_GroupFlyHealLocation(u8 route)
+{
+    const struct FlyLocation *location = GroupFlyLocationForRoute(route);
+
+    if (route == COOP_GROUP_TRAVEL_ROUTE_FLY_EVER_GRANDE_CITY)
+        return HEAL_LOCATION_EVER_GRANDE_CITY;
+    if (route == COOP_GROUP_TRAVEL_ROUTE_FLY_EVER_GRANDE_LEAGUE)
+        return HEAL_LOCATION_EVER_GRANDE_CITY_POKEMON_LEAGUE;
+    if (route == COOP_GROUP_TRAVEL_ROUTE_FLY_BATTLE_FRONTIER)
+        return HEAL_LOCATION_BATTLE_FRONTIER_OUTSIDE_EAST;
+    if (location == NULL)
+        return HEAL_LOCATION_NONE;
+    if (location->healLocation != HEAL_LOCATION_NONE)
+        return location->healLocation;
+    return sMapHealLocations[location->mapsec][2];
+}
+
+mapsec_u16_t CoopRegionMap_GroupFlyMapSection(u8 route)
+{
+    const struct FlyLocation *location = GroupFlyLocationForRoute(route);
+
+    if (route == COOP_GROUP_TRAVEL_ROUTE_FLY_EVER_GRANDE_CITY
+     || route == COOP_GROUP_TRAVEL_ROUTE_FLY_EVER_GRANDE_LEAGUE)
+        return MAPSEC_EVER_GRANDE_CITY;
+    if (route == COOP_GROUP_TRAVEL_ROUTE_FLY_BATTLE_FRONTIER)
+        return MAPSEC_BATTLE_FRONTIER;
+    return location == NULL ? MAPSEC_NONE : location->mapsec;
 }
 
 static bool32 TryGetCampaignFlyLocationVisited(mapsec_u16_t mapSecId, bool32 *visited)
@@ -2879,6 +3033,8 @@ static void CB_ExitFlyMap(void)
             FreeRegionMapIconResources();
 
             if (sFlyMap->choseFlyLocation
+                && !CoopNetBridge_IsOrMayBeGrouped()
+                && !sPartnerFlyMap
                 && JohtoTravel_GetPendingDestination() != JOHTO_TRAVEL_DESTINATION_NONE
                 && (!JohtoTravel_RecordCurrentHeal(
                         GetHealLocationIndexByWarpData(&gSaveBlock1Ptr->lastHealLocation))
@@ -2887,20 +3043,75 @@ static void CB_ExitFlyMap(void)
                 sFlyMap->choseFlyLocation = FALSE;
             }
 
-            if (sFlyMap->choseFlyLocation && SetFlyDestination(&sFlyMap->regionMap))
+            if (sFlyMap->choseFlyLocation)
             {
-				if (gFlightCallFromBag)
-					gSkipShowMonAnim = TRUE;
+                struct RegionMap *tempRegionMap = &sFlyMap->regionMap;
+                bool8 groupFlyWaiting = FALSE;
+                bool8 returnToBag = gFlightCallFromBag;
+                bool8 returnToPartner = sPartnerFlyMap;
 
-                gFlightCallFromBag = FALSE;
-                ReturnToFieldFromFlyMapSelect();
+                if (returnToPartner || CoopNetBridge_IsOrMayBeGrouped())
+                {
+                    u8 route = CoopRegionMap_GroupFlyRouteForSelection(
+                        tempRegionMap->mapSecId, tempRegionMap->posWithinMapSec);
+
+                    if (route != 0 && CoopGroupTravel_BeginFly(route)
+                        == COOP_GROUP_TRAVEL_BEGIN_WAITING)
+                    {
+                        CancelFlightCall();
+                        SetMainCallback2(CB2_ReturnToField);
+                        gFieldCallback = NULL;
+                        groupFlyWaiting = TRUE;
+                    }
+                    else
+                    {
+                        sFlyMap->choseFlyLocation = FALSE;
+                        CancelFlightCall();
+                    }
+                }
+
+                if (!groupFlyWaiting)
+                {
+                    // Solo flight resolves its warp only after the group route
+                    // was declined. A section with no fly warp (for example an
+                    // unmapped Kanto or Cormoria section) cancels like B.
+                    if (sFlyMap->choseFlyLocation && !SetFlyDestination(tempRegionMap))
+                    {
+                        sFlyMap->choseFlyLocation = FALSE;
+                        CancelFlightCall();
+                    }
+
+                    if (gFlightCallFromBag)
+                        gSkipShowMonAnim = TRUE;
+
+                    if (sFlyMap->choseFlyLocation)
+                    {
+                        gFlightCallFromBag = FALSE;
+                        ReturnToFieldFromFlyMapSelect();
+                    }
+                    else if (returnToPartner)
+                    {
+                        gFieldCallback = NULL;
+                        SetMainCallback2(CB2_ReturnToField);
+                    }
+                    else if (returnToBag)
+                        SetMainCallback2(CB2_ReturnToBagMenuPocket);
+                    else
+                        SetMainCallback2(CB2_ReturnToPartyMenuFromFlyMap);
+                }
             }
             else
             {
                 bool8 returnToBag = gFlightCallFromBag;
+                bool8 returnToPartner = sPartnerFlyMap;
 
                 CancelFlightCall();
-                if (returnToBag)
+                if (returnToPartner)
+                {
+                    gFieldCallback = NULL;
+                    SetMainCallback2(CB2_ReturnToField);
+                }
+                else if (returnToBag)
                 {
                     SetMainCallback2(CB2_ReturnToBagMenuPocket);
                 }
@@ -2911,6 +3122,7 @@ static void CB_ExitFlyMap(void)
             }
 
             ClearForcedFlightRegion();
+            sPartnerFlyMap = FALSE;
             TRY_FREE_AND_SET_NULL(sFlyMap);
             FreeAllWindowBuffers();
         }

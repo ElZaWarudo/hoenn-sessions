@@ -18,6 +18,25 @@ pub struct MapCatalogEntry {
     pub map_group: u16,
     /// The numeric map-number coordinate used by the ROM bridge.
     pub map_number: u16,
+    /// The map layout width in walkable tile coordinates.
+    pub width: u16,
+    /// The map layout height in walkable tile coordinates.
+    pub height: u16,
+    /// Whether the engine permits Dig/Escape Rope on this map.
+    pub allow_escaping: bool,
+    /// Start index of this map's generated vanilla escape endpoints.
+    pub escape_targets_start: u16,
+    /// Number of generated vanilla escape endpoints for this map.
+    pub escape_targets_len: u16,
+}
+
+/// One vanilla escape endpoint inherited from an outdoor map warp.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct MapEscapeTarget {
+    pub map_group: u8,
+    pub map_number: u8,
+    pub x: u8,
+    pub y: u8,
 }
 
 impl MapCatalogEntry {
@@ -39,6 +58,20 @@ impl MapCatalogEntry {
         (self.map_group, self.map_number)
     }
 
+    /// Returns the generated dimensions as `(width, height)`.
+    #[must_use]
+    pub const fn dimensions(&self) -> (u16, u16) {
+        (self.width, self.height)
+    }
+
+    /// Returns the generated vanilla escape endpoints for this map.
+    #[must_use]
+    pub fn escape_targets(&self) -> &'static [MapEscapeTarget] {
+        let start = usize::from(self.escape_targets_start);
+        let end = start + usize::from(self.escape_targets_len);
+        &GENERATED_MAP_ESCAPE_TARGETS[start..end]
+    }
+
     /// Returns the stable region-qualified spelling used by identity APIs.
     #[must_use]
     pub fn qualified_key(&self) -> String {
@@ -46,10 +79,34 @@ impl MapCatalogEntry {
     }
 }
 
+/// A cardinal map edge from the ROM's authoritative map headers.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct MapConnectionEntry {
+    pub from_group: u16,
+    pub from_number: u16,
+    pub to_group: u16,
+    pub to_number: u16,
+}
+
 include!("generated_map_catalog.rs");
+include!("generated_map_connections.rs");
 
 /// The complete generated map catalog.
 pub const MAP_CATALOG: &[MapCatalogEntry] = GENERATED_MAP_CATALOG;
+
+/// Exact cardinal map edges. Dive, emerge, and warps are excluded.
+pub const MAP_CONNECTIONS: &[MapConnectionEntry] = GENERATED_MAP_CONNECTIONS;
+
+/// Whether the current map header names the other map as a cardinal neighbor.
+#[must_use]
+pub fn maps_share_edge(from_group: u16, from_number: u16, to_group: u16, to_number: u16) -> bool {
+    MAP_CONNECTIONS.iter().any(|connection| {
+        connection.from_group == from_group
+            && connection.from_number == from_number
+            && connection.to_group == to_group
+            && connection.to_number == to_number
+    })
+}
 
 /// A zero-sized access façade for callers that prefer an object-like API.
 #[derive(Clone, Copy, Debug, Default)]
@@ -213,6 +270,25 @@ mod tests {
     use std::collections::HashSet;
 
     use super::*;
+
+    #[test]
+    fn cardinal_connections_resolve_to_same_region_maps() {
+        assert!(maps_share_edge(0, 19, 0, 20)); // Route 104 to Route 105.
+        assert!(!maps_share_edge(0, 19, 0, 9)); // Littleroot is not adjacent.
+        for connection in MAP_CONNECTIONS {
+            let source = MAP_CATALOG
+                .iter()
+                .find(|entry| {
+                    entry.coordinates() == (connection.from_group, connection.from_number)
+                })
+                .unwrap();
+            let target = MAP_CATALOG
+                .iter()
+                .find(|entry| entry.coordinates() == (connection.to_group, connection.to_number))
+                .unwrap();
+            assert_eq!(source.region, target.region);
+        }
+    }
 
     #[test]
     fn generated_catalog_has_complete_unique_coverage() {

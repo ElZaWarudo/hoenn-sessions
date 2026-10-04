@@ -16,8 +16,9 @@ use subtle::ConstantTimeEq;
 
 use super::storage::{
     MAX_CHARACTER_SAV, MAX_PENDING_COMMITS, MAX_RESUME_RESPONSE, MAX_RESUME_SS1,
-    MAX_RETIRED_SNAPSHOTS, PreparedSnapshot, RESTORE_STAGE_TTL_MS, Store, TicketRecord,
-    UploadObjectRecord, commit_id_allowed, is_artifact_size_allowed,
+    MAX_RETIRED_SNAPSHOTS, MAX_SNAPSHOT_STORAGE_BYTES, MAX_SNAPSHOTS_PER_CHARACTER,
+    PreparedSnapshot, RESTORE_STAGE_TTL_MS, Store, TicketRecord, TradeStageStatus,
+    UploadObjectRecord, is_artifact_size_allowed,
 };
 use super::{AuthenticatedActor, Phase2Error};
 
@@ -67,7 +68,7 @@ fn active_lease(
     now: u64,
 ) -> Result<&super::storage::LeaseRecord, Phase2Error> {
     if state.rom_handoff_staging.contains_key(&fence.character_id)
-        || state.paired_handoff_for_member(fence.character_id)
+        || state.handoff_for_member(fence.character_id)
     {
         return Err(Phase2Error::Conflict);
     }
@@ -126,7 +127,7 @@ fn active_lease_identity(
     now: u64,
 ) -> Result<super::storage::LeaseRecord, Phase2Error> {
     if state.rom_handoff_staging.contains_key(&character_id)
-        || state.paired_handoff_for_member(character_id)
+        || state.handoff_for_member(character_id)
     {
         return Err(Phase2Error::Conflict);
     }
@@ -473,7 +474,8 @@ fn ticket_limit(ticket: &TicketRecord) -> u64 {
     }
 }
 
-pub(super) type VerifiedSourceObjects = (Vec<(ArtifactIdentity, Vec<u8>)>, coop_save::ValidatedSaveV2);
+pub(super) type VerifiedSourceObjects =
+    (Vec<(ArtifactIdentity, Vec<u8>)>, coop_save::ValidatedSaveV2);
 
 pub(super) fn identity_registry_contract() -> coop_save::RegistryContract {
     coop_save::RegistryContract::new(
@@ -482,7 +484,7 @@ pub(super) fn identity_registry_contract() -> coop_save::RegistryContract {
     )
 }
 
-pub(super) fn validate_character_sav(
+pub(crate) fn validate_character_sav(
     bytes: &[u8],
     revision: Revision,
 ) -> Result<coop_save::ValidatedSaveV2, Phase2Error> {
@@ -1201,6 +1203,32 @@ pub(super) fn snapshot_save(
     validate_character_sav(&bytes, snapshot.revision).map_err(|_| Phase2Error::Conflict)
 }
 
+fn current_head_save(
+    store: &Store,
+    character_id: coop_cloud::CharacterId,
+) -> Result<coop_save::ValidatedSaveV2, Phase2Error> {
+    let snapshot = store.read_transaction(|state| {
+        let character = state
+            .characters
+            .get(&character_id)
+            .ok_or(Phase2Error::NotFound)?;
+        let snapshot_id = character.active_snapshot.ok_or(Phase2Error::Conflict)?;
+        let snapshot = state
+            .snapshots
+            .get(&snapshot_id)
+            .ok_or(Phase2Error::Conflict)?;
+        if snapshot.character_id != character_id
+            || snapshot.snapshot_id != snapshot_id
+            || snapshot.revision != character.revision
+            || character.world_heads.get(&snapshot.rom_world_id) != Some(&snapshot_id)
+        {
+            return Err(Phase2Error::Conflict);
+        }
+        Ok(snapshot.clone())
+    })?;
+    snapshot_save(store, character_id, &snapshot)
+}
+
 fn validate_finalize_save(
     store: &Store,
     character_id: coop_cloud::CharacterId,
@@ -1299,7 +1327,7 @@ fn cleanup_restore_objects(store: &Store, keys: &[String]) -> Result<(), Phase2E
     Ok(())
 }
 
-pub(super) fn seal_object(store: &Store, key: &str) -> Result<(), Phase2Error> {
+pub(crate) fn seal_object(store: &Store, key: &str) -> Result<(), Phase2Error> {
     for _ in 0..8 {
         store.objects.delete_if_present(key)?;
         if store.objects.retire_if_absent(key)? {
@@ -1342,7 +1370,7 @@ fn snapshot_storage_usage(
         })
 }
 
-fn files_storage_usage(files: &[SnapshotFile]) -> Result<u64, Phase2Error> {
+pub(crate) fn files_storage_usage(files: &[SnapshotFile]) -> Result<u64, Phase2Error> {
     files.iter().try_fold(0_u64, |sum, file| {
         sum.checked_add(file.size_bytes)
             .ok_or(Phase2Error::Internal)
@@ -1366,6 +1394,154 @@ fn prepared_storage_usage(
                 .checked_add(files_storage_usage(&prepared.request.files)?)
                 .ok_or(Phase2Error::Internal)
         })
+}
+
+fn ensure_snapshot_quota_base(
+    state: &super::storage::State,
+    character_id: coop_cloud::CharacterId,
+    files: &[SnapshotFile],
+    excluded_snapshot: Option<SnapshotId>,
+    excluded_restore_stage: Option<SnapshotId>,
+) -> Result<(), Phase2Error> {
+    let snapshot_count = state
+        .snapshots
+        .values()
+        .filter(|snapshot| snapshot.character_id == character_id)
+        .count();
+    if snapshot_count >= MAX_SNAPSHOTS_PER_CHARACTER {
+        return Err(Phase2Error::Busy);
+    }
+    let used = snapshot_storage_usage(state, character_id)?;
+    let prepared = prepared_storage_usage(state, character_id, excluded_snapshot)?;
+    let restore_staging =
+        restore_staging_storage_usage(state, character_id, excluded_restore_stage)?;
+    let requested = files_storage_usage(files)?;
+    let total = used
+        .checked_add(prepared)
+        .and_then(|total| total.checked_add(restore_staging))
+        .and_then(|total| total.checked_add(requested))
+        .ok_or(Phase2Error::Internal)?;
+    if total > MAX_SNAPSHOT_STORAGE_BYTES {
+        return Err(Phase2Error::Busy);
+    }
+    Ok(())
+}
+
+fn trade_reservation_usage(
+    state: &super::storage::State,
+    character_id: coop_cloud::CharacterId,
+    excluded_offer: Option<coop_cloud::TradeOfferId>,
+) -> Result<(usize, u64), Phase2Error> {
+    let live_trade_count = state
+        .trade_staging
+        .iter()
+        .filter(|(offer_id, stage)| {
+            Some(**offer_id) != excluded_offer && stage.status != TradeStageStatus::Published
+        })
+        .filter(|(_, stage)| {
+            stage
+                .outputs
+                .iter()
+                .any(|output| output.character_id == character_id)
+        })
+        .count();
+    let reserved = state
+        .trade_staging
+        .iter()
+        .filter(|(offer_id, stage)| {
+            Some(**offer_id) != excluded_offer && stage.status != TradeStageStatus::Published
+        })
+        .try_fold(0_u64, |total, (_, stage)| {
+            stage
+                .outputs
+                .iter()
+                .enumerate()
+                .filter(|(_, output)| output.character_id == character_id)
+                .try_fold(total, |total, (index, _)| {
+                    total
+                        .checked_add(stage.reserved_bytes[index])
+                        .ok_or(Phase2Error::Internal)
+                })
+        })?;
+    Ok((live_trade_count, reserved))
+}
+
+fn ensure_quota_with_trade_reservations(
+    state: &super::storage::State,
+    character_id: coop_cloud::CharacterId,
+    files: &[SnapshotFile],
+    excluded_offer: Option<coop_cloud::TradeOfferId>,
+    excluded_snapshot: Option<SnapshotId>,
+    excluded_restore_stage: Option<SnapshotId>,
+) -> Result<(), Phase2Error> {
+    let (live_trade_count, reserved) =
+        trade_reservation_usage(state, character_id, excluded_offer)?;
+    let snapshot_count = state
+        .snapshots
+        .values()
+        .filter(|snapshot| snapshot.character_id == character_id)
+        .count();
+    if snapshot_count
+        .checked_add(live_trade_count)
+        .is_none_or(|count| count >= MAX_SNAPSHOTS_PER_CHARACTER)
+    {
+        return Err(Phase2Error::Busy);
+    }
+    let requested = files_storage_usage(files)?;
+    let used = snapshot_storage_usage(state, character_id)?;
+    let prepared = prepared_storage_usage(state, character_id, excluded_snapshot)?;
+    let restore_staging =
+        restore_staging_storage_usage(state, character_id, excluded_restore_stage)?;
+    let total = used
+        .checked_add(prepared)
+        .and_then(|total| total.checked_add(restore_staging))
+        .and_then(|total| total.checked_add(reserved))
+        .and_then(|total| total.checked_add(requested))
+        .ok_or(Phase2Error::Internal)?;
+    if total > MAX_SNAPSHOT_STORAGE_BYTES {
+        return Err(Phase2Error::Busy);
+    }
+    Ok(())
+}
+
+/// Checks an ordinary snapshot against all live trade reservations. This
+/// prevents a concurrent finalize or restore from consuming capacity already
+/// promised to a consented pair.
+pub(crate) fn ensure_snapshot_quota(
+    state: &super::storage::State,
+    character_id: coop_cloud::CharacterId,
+    files: &[SnapshotFile],
+    excluded_snapshot: Option<SnapshotId>,
+    excluded_restore_stage: Option<SnapshotId>,
+) -> Result<(), Phase2Error> {
+    ensure_snapshot_quota_base(
+        state,
+        character_id,
+        files,
+        excluded_snapshot,
+        excluded_restore_stage,
+    )?;
+    ensure_quota_with_trade_reservations(
+        state,
+        character_id,
+        files,
+        None,
+        excluded_snapshot,
+        excluded_restore_stage,
+    )
+}
+
+/// Checks a trade output against ordinary snapshot quota plus reservations
+/// held by other live trade stages. The current offer is excluded because its
+/// own reservation is the request being validated or committed.
+pub(crate) fn ensure_trade_snapshot_quota(
+    state: &super::storage::State,
+    character_id: coop_cloud::CharacterId,
+    files: &[SnapshotFile],
+    excluded_offer: Option<coop_cloud::TradeOfferId>,
+) -> Result<(), Phase2Error> {
+    ensure_snapshot_quota_base(state, character_id, files, None, None)?;
+    ensure_quota_with_trade_reservations(state, character_id, files, excluded_offer, None, None)
 }
 
 fn restore_staging_storage_usage(
@@ -1433,7 +1609,7 @@ fn finalize_preflight(
     now: u64,
 ) -> Result<FinalizePreflight, Phase2Error> {
     store.read_transaction(|state| {
-        let lease = active_lease_identity(
+        let lease = active_lease_identity_for_handoff(
             state,
             actor,
             request.character_id,
@@ -1451,6 +1627,9 @@ fn finalize_preflight(
             } else {
                 Err(Phase2Error::Conflict)
             };
+        }
+        if state.handoff_for_member(request.character_id) {
+            return Err(Phase2Error::Conflict);
         }
         if lease.contract.current_revision != request.expected_parent_revision {
             return Err(Phase2Error::Conflict);
@@ -1497,9 +1676,6 @@ pub(crate) fn finalize(
     request
         .validate()
         .map_err(|_| Phase2Error::InvalidRequest)?;
-    if !commit_id_allowed(request.last_applied_commit) {
-        return Err(Phase2Error::Forbidden);
-    }
     let now = store.now();
     let prepared = match finalize_preflight(store, actor, request, now)? {
         FinalizePreflight::Replay(record) => return Ok(record),
@@ -1513,6 +1689,14 @@ pub(crate) fn finalize(
         &request.files,
     )?;
     validate_finalize_save(store, request.character_id, request, &incoming_save)?;
+    let source_save = if request.revision > Revision::new(1) {
+        Some(current_head_save(store, request.character_id)?)
+    } else {
+        if request.last_applied_commit.is_some() {
+            return Err(Phase2Error::Conflict);
+        }
+        None
+    };
     let snapshot = finalized_record(request, prepared.request.rom_world_id, now)?;
 
     store.write_transaction(|state| {
@@ -1572,6 +1756,29 @@ pub(crate) fn finalize(
             lease.contract.heartbeat_interval_ms,
         )
         .map_err(|_| Phase2Error::Internal)?;
+        handoff::can_make_snapshot_room(
+            state,
+            request.character_id,
+            &request.files,
+            Some(request.snapshot_id),
+            None,
+            None,
+        )?;
+        if let Some(source_save) = source_save.as_ref() {
+            super::ledger::apply_on_finalize(
+                state,
+                actor,
+                request,
+                source_save,
+                &incoming_save,
+                store.now(),
+            )?;
+        } else if request.last_applied_commit.is_some() {
+            return Err(Phase2Error::Conflict);
+        }
+        // Ledger evidence is checked before any history retirement. The plan
+        // above is unchanged by ledger-only mutations, so this commit cannot
+        // partially prune history on a rejected gameplay delta.
         handoff::make_snapshot_room(
             state,
             request.character_id,
@@ -2338,4 +2545,116 @@ pub(crate) fn resume_artifact(
         validate_resume_state(&bytes).map_err(|_| Phase2Error::Internal)?;
     }
     Ok(bytes)
+}
+
+#[cfg(test)]
+mod gameplay_head_tests {
+    use super::*;
+
+    #[test]
+    fn gameplay_head_rejects_foreign_stale_or_wrong_world_metadata_before_reads() {
+        let app = super::super::Phase2App::test();
+        let character_id = coop_cloud::CharacterId::new(uuid::Uuid::new_v4()).unwrap();
+        let world = coop_protocol::RomWorldId::new(1).unwrap();
+        let source = super::super::tests::valid_character_sav(false);
+        let sav = SnapshotFile::from_bytes(ArtifactIdentity::CharacterSav, &source).unwrap();
+        let pending = SnapshotFile::from_bytes(ArtifactIdentity::PendingCommits, b"[]").unwrap();
+        let snapshot_id = SnapshotId::new(uuid::Uuid::new_v4()).unwrap();
+        let snapshot = SnapshotRecord::new(
+            snapshot_id,
+            world,
+            SnapshotFence::new(
+                coop_cloud::SessionId::new(uuid::Uuid::new_v4()).unwrap(),
+                character_id,
+                coop_cloud::SessionEpoch::new(1).unwrap(),
+            ),
+            Revision::initial(),
+            Revision::new(1),
+            vec![sav, pending.clone()],
+            pending.sha256,
+            None,
+            coop_cloud::UnixTimestampMillis::new(1),
+        )
+        .unwrap();
+        app.store
+            .objects
+            .put(
+                Store::object_key(character_id, snapshot_id, ArtifactIdentity::CharacterSav),
+                source,
+            )
+            .unwrap();
+        app.store
+            .write_transaction(|state| {
+                state.characters.insert(
+                    character_id,
+                    super::super::storage::CharacterRecord {
+                        owner: coop_cloud::UserId::new(uuid::Uuid::new_v4()).unwrap(),
+                        state: coop_cloud::CharacterCloudState::new(
+                            character_id,
+                            coop_protocol::WorldZone::new(
+                                coop_protocol::RegionId::Hoenn,
+                                "LITTLEROOT_TOWN",
+                                1,
+                            )
+                            .unwrap(),
+                            vec![
+                                coop_protocol::RegionalProgress::new(
+                                    coop_protocol::RegionId::Hoenn,
+                                    0,
+                                    0,
+                                    vec![],
+                                    vec![],
+                                )
+                                .unwrap(),
+                            ],
+                        )
+                        .unwrap(),
+                        revision: Revision::new(1),
+                        world_revision: 0,
+                        active_snapshot: Some(snapshot_id),
+                        last_session_epoch: 1,
+                        world_heads: std::collections::BTreeMap::from([(world, snapshot_id)]),
+                    },
+                );
+                state.snapshots.insert(snapshot_id, snapshot.clone());
+                Ok::<_, Phase2Error>(())
+            })
+            .unwrap();
+        assert!(current_head_save(&app.store, character_id).is_ok());
+        for corrupt in 0..4 {
+            app.store
+                .write_transaction(|state| {
+                    state.snapshots.insert(snapshot_id, snapshot.clone());
+                    let character = state.characters.get_mut(&character_id).unwrap();
+                    character.revision = Revision::new(1);
+                    character.world_heads =
+                        std::collections::BTreeMap::from([(world, snapshot_id)]);
+                    match corrupt {
+                        0 => {
+                            state.snapshots.get_mut(&snapshot_id).unwrap().character_id =
+                                coop_cloud::CharacterId::new(uuid::Uuid::new_v4()).unwrap()
+                        }
+                        1 => {
+                            state.snapshots.get_mut(&snapshot_id).unwrap().revision =
+                                Revision::new(2)
+                        }
+                        2 => {
+                            state.snapshots.get_mut(&snapshot_id).unwrap().rom_world_id =
+                                coop_protocol::RomWorldId::new(2).unwrap()
+                        }
+                        _ => {
+                            character
+                                .world_heads
+                                .insert(world, SnapshotId::new(uuid::Uuid::new_v4()).unwrap());
+                        }
+                    }
+                    Ok::<_, Phase2Error>(())
+                })
+                .unwrap();
+            assert!(matches!(
+                current_head_save(&app.store, character_id),
+                Err(Phase2Error::Conflict)
+            ));
+        }
+    }
 }

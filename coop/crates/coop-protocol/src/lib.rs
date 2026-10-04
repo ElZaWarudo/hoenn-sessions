@@ -17,10 +17,16 @@ pub mod online;
 pub use online::*;
 pub mod social;
 pub use social::*;
+pub mod progress_observation;
+pub use progress_observation::*;
 pub mod group_travel;
 pub use group_travel::*;
 pub mod rom_world;
 pub use rom_world::RomWorldId;
+pub mod battle_bridge;
+pub use battle_bridge::*;
+pub mod trade_offer;
+pub use trade_offer::*;
 
 pub use catalog::{MAP_CATALOG, MapCatalog, MapCatalogEntry, all_maps};
 pub use identity_catalog::{

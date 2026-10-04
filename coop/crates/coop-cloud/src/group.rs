@@ -4,14 +4,18 @@ use crate::{
     ApiVersion, CharacterId, ClientInstanceId, IdError, IdempotencyKey, LeaseFence, Revision,
     SessionEpoch, SessionId, UnixTimestampMillis, ids::deserialize_bounded_string,
 };
-use coop_protocol::{GroupTravelDeparture, RegionId, WorldZone};
+use coop_protocol::{GroupTravelDeparture, GroupTravelEndpoint, RegionId, WorldZone};
 use serde::{Deserialize, Deserializer, Serialize};
 use thiserror::Error;
 
 /// Maximum JSON body accepted by group and invitation endpoints.
 pub const GROUP_REQUEST_BODY_MAX_BYTES: usize = 8 * 1024;
 /// Invitation lifetime, measured from the server's clock.
-pub const GROUP_INVITATION_TTL_MS: u64 = 120_000;
+pub const GROUP_INVITATION_TTL_MS: u64 = 60_000;
+/// Pairing links remain redeemable long enough to share out of band, but are
+/// still short-lived bearer capabilities.
+pub const GROUP_PAIRING_CODE_TTL_MS: u64 = 10 * 60_000;
+pub const GROUP_PAIRING_CODE_LINK_PREFIX: &str = "hoenn-sessions://join/";
 /// Maximum route identifier size on the wire.
 pub const GROUP_ROUTE_ID_MAX_BYTES: usize = 128;
 pub const MAX_WORLD_REVISION: u64 = i64::MAX as u64;
@@ -32,6 +36,8 @@ pub enum GroupError {
     InvalidZone(String),
     #[error("world revision is invalid")]
     InvalidWorldRevision,
+    #[error("pairing code is invalid")]
+    InvalidPairingCode,
 }
 
 /// A symmetric UUID-identified group.  The members are always sorted.
@@ -109,7 +115,7 @@ impl RouteId {
     /// # Errors
     ///
     /// Returns an error when the route identity is not a bounded canonical
-    /// region-qualified uppercase value.
+    /// region- or Seagallop-qualified uppercase value.
     pub fn new(value: impl Into<String>) -> Result<Self, GroupError> {
         let value = value.into();
         let mut qualified = value.split(':');
@@ -118,9 +124,10 @@ impl RouteId {
         if value.is_empty()
             || value.len() > GROUP_ROUTE_ID_MAX_BYTES
             || qualified.next().is_some()
-            || RegionId::parse_token(region)
-                .ok()
-                .is_none_or(|region| region == RegionId::Unspecified)
+            || (region != "SEAGALLOP"
+                && RegionId::parse_token(region)
+                    .ok()
+                    .is_none_or(|region| region == RegionId::Unspecified))
             || local_key.is_empty()
             || !local_key
                 .bytes()
@@ -453,11 +460,199 @@ pub struct GroupMemberView {
     pub world_revision: u64,
 }
 
+/// A six-symbol pairing code rendered as `ABC-123` on the wire.
+///
+/// The server only persists an HMAC of this value.  Keeping the type in the
+/// shared contract ensures all clients reject malformed codes before sending
+/// them to the redeem endpoint.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub struct PairingCode(String);
+
+impl PairingCode {
+    pub fn new(value: impl Into<String>) -> Result<Self, GroupError> {
+        let value = value.into();
+        let bytes = value.as_bytes();
+        if bytes.len() != 7 || bytes[3] != b'-' {
+            return Err(GroupError::InvalidPairingCode);
+        }
+        if !bytes
+            .iter()
+            .enumerate()
+            .all(|(index, byte)| index == 3 || PAIRING_CODE_ALPHABET.contains(byte))
+        {
+            return Err(GroupError::InvalidPairingCode);
+        }
+        Ok(Self(value))
+    }
+
+    #[must_use]
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+const PAIRING_CODE_ALPHABET: &[u8] = b"ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+
+/// Extracts a pairing code from a `hoenn-sessions://join/<code>` link or a
+/// bare code, ignoring surrounding space, letter case, and one trailing slash.
+#[must_use]
+pub fn pairing_code_from_join_text(text: &str) -> Option<PairingCode> {
+    let text = text.trim();
+    let prefix = GROUP_PAIRING_CODE_LINK_PREFIX;
+    let code = match text.get(..prefix.len()) {
+        Some(head) if head.eq_ignore_ascii_case(prefix) => &text[prefix.len()..],
+        _ => text,
+    };
+    let code = code.strip_suffix('/').unwrap_or(code);
+    PairingCode::new(code.to_ascii_uppercase()).ok()
+}
+
+impl Serialize for PairingCode {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serializer.serialize_str(&self.0)
+    }
+}
+
+impl<'de> Deserialize<'de> for PairingCode {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let value = deserialize_bounded_string(deserializer, 7, "pairing code")?;
+        Self::new(value).map_err(serde::de::Error::custom)
+    }
+}
+
+/// Create a one-use remote pairing code.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CreatePairingCodeRequest {
+    pub api_version: ApiVersion,
+    pub session_id: SessionId,
+    pub character_id: CharacterId,
+    pub current_revision: Revision,
+    pub session_epoch: SessionEpoch,
+    pub client_instance_id: ClientInstanceId,
+}
+
+impl CreatePairingCodeRequest {
+    #[must_use]
+    pub const fn new(fence: LeaseFence) -> Self {
+        Self {
+            api_version: ApiVersion::V1,
+            session_id: fence.session_id,
+            character_id: fence.character_id,
+            current_revision: fence.current_revision,
+            session_epoch: fence.session_epoch,
+            client_instance_id: fence.client_instance_id,
+        }
+    }
+
+    #[must_use]
+    pub const fn fence(&self) -> LeaseFence {
+        LeaseFence::new(
+            self.session_id,
+            self.character_id,
+            self.current_revision,
+            self.session_epoch,
+            self.client_instance_id,
+        )
+    }
+
+    pub fn validate(&self) -> Result<(), GroupError> {
+        if self.api_version.value() != 1 {
+            return Err(GroupError::InvalidApiVersion);
+        }
+        Ok(())
+    }
+}
+
+/// Redeem a pairing code while bound to the redeeming player's lease.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RedeemPairingCodeRequest {
+    pub api_version: ApiVersion,
+    pub code: PairingCode,
+    pub session_id: SessionId,
+    pub character_id: CharacterId,
+    pub current_revision: Revision,
+    pub session_epoch: SessionEpoch,
+    pub client_instance_id: ClientInstanceId,
+}
+
+impl RedeemPairingCodeRequest {
+    #[must_use]
+    pub fn new(fence: LeaseFence, code: PairingCode) -> Self {
+        Self {
+            api_version: ApiVersion::V1,
+            code,
+            session_id: fence.session_id,
+            character_id: fence.character_id,
+            current_revision: fence.current_revision,
+            session_epoch: fence.session_epoch,
+            client_instance_id: fence.client_instance_id,
+        }
+    }
+
+    #[must_use]
+    pub const fn fence(&self) -> LeaseFence {
+        LeaseFence::new(
+            self.session_id,
+            self.character_id,
+            self.current_revision,
+            self.session_epoch,
+            self.client_instance_id,
+        )
+    }
+
+    pub fn validate(&self) -> Result<(), GroupError> {
+        if self.api_version.value() != 1 {
+            return Err(GroupError::InvalidApiVersion);
+        }
+        Ok(())
+    }
+}
+
+/// The caller's current or most recent group partner.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PartnerStatus {
+    pub username: crate::Username,
+    pub online: bool,
+    /// Time of the last successful session heartbeat, when one was observed.
+    pub last_seen_at: Option<UnixTimestampMillis>,
+    /// The location in the partner's last committed character state.
+    pub world_zone: WorldZone,
+    /// The partner's current authenticated presence location, when the
+    /// partner has a fresh active presence connection. This is ephemeral and
+    /// must never be treated as save or progression authority.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub live_world_zone: Option<WorldZone>,
+    pub badge_count: u8,
+    pub group_active: bool,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PartnerStatusResponse {
+    pub api_version: ApiVersion,
+    pub partner: Option<PartnerStatus>,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct GroupView {
     pub api_version: ApiVersion,
     pub group_id: crate::GroupId,
     pub members: [GroupMemberView; 2],
+    /// Each member's current location.  This is populated for remote pairing
+    /// and lets clients keep both players in place until consent travel.
+    pub member_world_zones: [WorldZone; 2],
+    /// Legacy shared-zone field retained for old clients. It is the first
+    /// canonical member's zone in durable group views; authenticated ONLINE
+    /// snapshots may override it with the caller's partner live zone.
     pub world_zone: WorldZone,
 }
 
@@ -471,9 +666,22 @@ impl GroupView {
         zone: WorldZone,
         revisions: [u64; 2],
     ) -> Result<Self, GroupError> {
+        Self::new_with_member_zones(group_id, group, [zone.clone(), zone], revisions)
+    }
+
+    /// Builds a group view when members are allowed to remain on different
+    /// maps, as with a redeemed pairing code.
+    pub fn new_with_member_zones(
+        group_id: crate::GroupId,
+        group: Group,
+        member_world_zones: [WorldZone; 2],
+        revisions: [u64; 2],
+    ) -> Result<Self, GroupError> {
         group.validate().map_err(|_| GroupError::InvalidMembers)?;
-        zone.validate()
-            .map_err(|error| GroupError::InvalidZone(error.to_string()))?;
+        for zone in &member_world_zones {
+            zone.validate()
+                .map_err(|error| GroupError::InvalidZone(error.to_string()))?;
+        }
         if revisions
             .iter()
             .any(|revision| *revision > MAX_WORLD_REVISION)
@@ -494,7 +702,8 @@ impl GroupView {
                     world_revision: revisions[1],
                 },
             ],
-            world_zone: zone,
+            member_world_zones: member_world_zones.clone(),
+            world_zone: member_world_zones[0].clone(),
         })
     }
 }
@@ -510,6 +719,8 @@ impl<'de> Deserialize<'de> for GroupView {
             api_version: ApiVersion,
             group_id: crate::GroupId,
             members: [GroupMemberView; 2],
+            #[serde(default)]
+            member_world_zones: Option<[WorldZone; 2]>,
             world_zone: WireWorldZone,
         }
         let wire = Wire::deserialize(deserializer)?;
@@ -531,10 +742,19 @@ impl<'de> Deserialize<'de> for GroupView {
             wire.world_zone.channel,
         )
         .map_err(|error| serde::de::Error::custom(GroupError::InvalidZone(error.to_string())))?;
+        let member_world_zones = wire
+            .member_world_zones
+            .unwrap_or_else(|| [world_zone.clone(), world_zone.clone()]);
+        for zone in &member_world_zones {
+            zone.validate().map_err(|error| {
+                serde::de::Error::custom(GroupError::InvalidZone(error.to_string()))
+            })?;
+        }
         Ok(Self {
             api_version: wire.api_version,
             group_id: wire.group_id,
             members: wire.members,
+            member_world_zones,
             world_zone,
         })
     }
@@ -558,6 +778,23 @@ where
 
 /// Response returned by invitation creation.
 pub type CreateGroupInvitationResponse = GroupInvitationView;
+/// Response returned when a new pairing code is issued.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CreatePairingCodeResponse {
+    pub api_version: ApiVersion,
+    pub code: PairingCode,
+    pub join_link: String,
+    pub expires_at: UnixTimestampMillis,
+}
+
+/// Response returned after a code forms a remote group.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RedeemPairingCodeResponse {
+    pub api_version: ApiVersion,
+    pub group: GroupView,
+}
 /// Response returned by invitation acceptance.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -585,6 +822,9 @@ pub struct GroupTravelProposalRequest {
     pub session_epoch: SessionEpoch,
     pub client_instance_id: ClientInstanceId,
     pub idempotency_key: IdempotencyKey,
+    /// Dynamic Dig/Escape Rope endpoints are omitted for legacy static routes.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub endpoint: Option<GroupTravelEndpoint>,
 }
 
 impl GroupTravelProposalRequest {
@@ -603,6 +843,14 @@ impl GroupTravelProposalRequest {
             GroupTravelDeparture::Ferry
         } else if route_id.as_str().ends_with("_ROUTE22") {
             GroupTravelDeparture::Gate
+        } else if route_id.as_str() == "HOENN:FLY_LITTLEROOT" {
+            GroupTravelDeparture::Fly
+        } else if route_id.as_str() == "HOENN:DIG" {
+            GroupTravelDeparture::Dig
+        } else if route_id.as_str() == "HOENN:ESCAPE_ROPE" {
+            GroupTravelDeparture::EscapeRope
+        } else if route_id.as_str().ends_with("_CABLE_CAR") {
+            GroupTravelDeparture::CableCar
         } else {
             return Err(GroupError::InvalidRouteId);
         };
@@ -618,6 +866,20 @@ impl GroupTravelProposalRequest {
         departure: GroupTravelDeparture,
         idempotency_key: IdempotencyKey,
     ) -> Result<Self, GroupError> {
+        Self::new_with_departure_and_endpoint(fence, route_id, departure, None, idempotency_key)
+    }
+
+    /// Creates a proposal request with an optional dynamic endpoint.
+    ///
+    /// The endpoint is required for Dig and Escape Rope and must be omitted
+    /// for all legacy static routes.
+    pub fn new_with_departure_and_endpoint(
+        fence: LeaseFence,
+        route_id: impl Into<String>,
+        departure: GroupTravelDeparture,
+        endpoint: Option<GroupTravelEndpoint>,
+        idempotency_key: IdempotencyKey,
+    ) -> Result<Self, GroupError> {
         let request = Self {
             api_version: ApiVersion::V1,
             route_id: RouteId::new(route_id)?,
@@ -628,9 +890,21 @@ impl GroupTravelProposalRequest {
             session_epoch: fence.session_epoch,
             client_instance_id: fence.client_instance_id,
             idempotency_key,
+            endpoint,
         };
         request.validate()?;
         Ok(request)
+    }
+
+    /// Alias retained for callers that already have an explicit endpoint.
+    pub fn new_with_endpoint(
+        fence: LeaseFence,
+        route_id: impl Into<String>,
+        departure: GroupTravelDeparture,
+        endpoint: Option<GroupTravelEndpoint>,
+        idempotency_key: IdempotencyKey,
+    ) -> Result<Self, GroupError> {
+        Self::new_with_departure_and_endpoint(fence, route_id, departure, endpoint, idempotency_key)
     }
 
     #[must_use]
@@ -650,6 +924,10 @@ impl GroupTravelProposalRequest {
     pub fn validate(&self) -> Result<(), GroupError> {
         if self.api_version.value() != 1 {
             return Err(GroupError::InvalidApiVersion);
+        }
+        let dynamic = matches!(self.route_id.as_str(), "HOENN:DIG" | "HOENN:ESCAPE_ROPE");
+        if dynamic != self.endpoint.is_some() {
+            return Err(GroupError::InvalidRouteId);
         }
         Ok(())
     }
@@ -672,6 +950,8 @@ impl<'de> Deserialize<'de> for GroupTravelProposalRequest {
             session_epoch: SessionEpoch,
             client_instance_id: ClientInstanceId,
             idempotency_key: IdempotencyKey,
+            #[serde(default)]
+            endpoint: Option<GroupTravelEndpoint>,
         }
         let wire = Wire::deserialize(deserializer)?;
         let request = Self {
@@ -684,6 +964,7 @@ impl<'de> Deserialize<'de> for GroupTravelProposalRequest {
             session_epoch: wire.session_epoch,
             client_instance_id: wire.client_instance_id,
             idempotency_key: wire.idempotency_key,
+            endpoint: wire.endpoint,
         };
         request.validate().map_err(serde::de::Error::custom)?;
         Ok(request)
@@ -781,10 +1062,55 @@ impl<'de> Deserialize<'de> for GroupTravelActionRequest {
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum GroupTravelProposalStatus {
     Pending,
+    AwaitingSceneReceipts,
+    Suspended,
     Committed,
     Declined,
     Cancelled,
     Expired,
+}
+
+/// The caller's own unfinished first-Briney scene marker, discoverable after
+/// its group and live proposal indexes have been closed.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct StoryTravelRecoveryView {
+    pub api_version: ApiVersion,
+    pub proposal_id: crate::GroupTravelProposalId,
+    pub group_id: crate::GroupId,
+    pub status: GroupTravelProposalStatus,
+    pub marker_fence: LeaseFence,
+    pub scene_nonce: u32,
+    pub marked_at: UnixTimestampMillis,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum StoryTravelRecoveryAction {
+    Reconcile,
+    Abandon,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct StoryTravelRecoveryActionRequest {
+    pub api_version: ApiVersion,
+    pub action: StoryTravelRecoveryAction,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum StoryTravelRecoveryOutcome {
+    Reconciled,
+    Abandoned,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct StoryTravelRecoveryResolutionView {
+    pub api_version: ApiVersion,
+    pub proposal_id: crate::GroupTravelProposalId,
+    pub outcome: StoryTravelRecoveryOutcome,
 }
 
 /// Immutable delivery payload created by the atomic accept transaction.
@@ -794,6 +1120,9 @@ pub struct GroupTravelCommit {
     pub group_zone_revision: u64,
     pub members: [GroupMemberView; 2],
     pub destination: WorldZone,
+    /// Dynamic endpoint retained verbatim for replay and delivery.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub endpoint: Option<GroupTravelEndpoint>,
 }
 
 /// Persistent proposal state delivered to either group member.
@@ -809,12 +1138,77 @@ pub struct GroupTravelProposalView {
     pub departure: GroupTravelDeparture,
     pub source: WorldZone,
     pub destination: WorldZone,
+    /// Dynamic endpoint retained verbatim for replay and delivery.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub endpoint: Option<GroupTravelEndpoint>,
     pub expected_group_zone_revision: u64,
     pub expected_members: [GroupMemberView; 2],
     pub status: GroupTravelProposalStatus,
     pub expires_at: UnixTimestampMillis,
+    /// Server clock sampled when this response was produced. This is response
+    /// metadata and is never persisted with the proposal.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub server_now: Option<UnixTimestampMillis>,
     pub commit: Option<GroupTravelCommit>,
     pub applied_by: [bool; 2],
+    /// Story routes advance only after each participant proves a completed
+    /// scene and a distinct finalized post-scene save.
+    #[serde(default)]
+    pub scene_marked_by: [bool; 2],
+    #[serde(default)]
+    pub scene_receipted_by: [bool; 2],
+}
+
+/// A ROM-originated completion marker for one consented story scene.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct GroupTravelSceneMarkerRequest {
+    pub api_version: ApiVersion,
+    pub session_id: SessionId,
+    pub character_id: CharacterId,
+    pub current_revision: Revision,
+    pub session_epoch: SessionEpoch,
+    pub client_instance_id: ClientInstanceId,
+    pub scene_nonce: u32,
+}
+
+impl GroupTravelSceneMarkerRequest {
+    #[must_use]
+    pub const fn fence(&self) -> LeaseFence {
+        LeaseFence::new(
+            self.session_id,
+            self.character_id,
+            self.current_revision,
+            self.session_epoch,
+            self.client_instance_id,
+        )
+    }
+}
+
+/// Names the exact finalized save containing the post-scene evidence.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct GroupTravelSceneReceiptRequest {
+    pub api_version: ApiVersion,
+    pub session_id: SessionId,
+    pub character_id: CharacterId,
+    pub current_revision: Revision,
+    pub session_epoch: SessionEpoch,
+    pub client_instance_id: ClientInstanceId,
+    pub snapshot_id: crate::SnapshotId,
+}
+
+impl GroupTravelSceneReceiptRequest {
+    #[must_use]
+    pub const fn fence(&self) -> LeaseFence {
+        LeaseFence::new(
+            self.session_id,
+            self.character_id,
+            self.current_revision,
+            self.session_epoch,
+            self.client_instance_id,
+        )
+    }
 }
 
 #[cfg(test)]
@@ -893,5 +1287,91 @@ mod tests {
         assert!(serde_json::from_value::<GroupTravelActionRequest>(value.clone()).is_ok());
         value["action"] = json!("applied");
         assert!(serde_json::from_value::<GroupTravelActionRequest>(value).is_err());
+    }
+
+    #[test]
+    fn join_text_accepts_links_and_bare_codes_only() {
+        let code = |text| pairing_code_from_join_text(text).map(|code| code.as_str().to_owned());
+        assert_eq!(
+            code("hoenn-sessions://join/ABC-234"),
+            Some("ABC-234".to_owned())
+        );
+        assert_eq!(
+            code(" HOENN-SESSIONS://JOIN/abc-234/ "),
+            Some("ABC-234".to_owned())
+        );
+        assert_eq!(code("abc-234"), Some("ABC-234".to_owned()));
+        for bad in [
+            "",
+            "hoenn-sessions://join/",
+            "hoenn-sessions://join/ABC-234/extra",
+            "hoenn-sessions://other/ABC-234",
+            "https://join/ABC-234",
+            "ABC-1I0",
+            "ABCD234",
+            "hoenn-sessions://join/ABC-234?x=1",
+            "h\u{e9}enn-sessions://join/ABC-234",
+        ] {
+            assert_eq!(code(bad), None, "{bad}");
+        }
+    }
+
+    #[test]
+    fn dynamic_proposal_endpoint_is_optional_only_for_legacy_routes() {
+        let static_proposal = GroupTravelProposalRequest::new_with_departure(
+            sample_fence(),
+            "JOHTO:GOLDENROD_KANTO_ORIGINAL_TRAIN",
+            GroupTravelDeparture::Train,
+            id(IdempotencyKey::new, 15),
+        )
+        .expect("static proposal");
+        let static_json = serde_json::to_value(&static_proposal).expect("static json");
+        assert!(static_json.get("endpoint").is_none());
+
+        let endpoint = GroupTravelEndpoint::new(0, 9, 0, 10, 4, 6);
+        let dynamic = GroupTravelProposalRequest::new_with_endpoint(
+            sample_fence(),
+            "HOENN:DIG",
+            GroupTravelDeparture::Dig,
+            Some(endpoint),
+            id(IdempotencyKey::new, 16),
+        )
+        .expect("dynamic proposal");
+        let dynamic_json = serde_json::to_value(&dynamic).expect("dynamic json");
+        assert_eq!(dynamic_json["endpoint"]["source_map_group"], 0);
+        assert_eq!(
+            serde_json::from_value::<GroupTravelProposalRequest>(dynamic_json).unwrap(),
+            dynamic
+        );
+    }
+
+    #[test]
+    fn seagallop_route_ids_preserve_the_existing_ferry_catalog() {
+        let route = RouteId::new("SEAGALLOP:VERMILION_ONE_FERRY").expect("ferry route");
+        assert_eq!(route.as_str(), "SEAGALLOP:VERMILION_ONE_FERRY");
+        assert!(RouteId::new("SEAGALLOP:vermilion_one_ferry").is_err());
+        assert!(RouteId::new("OTHER:VERMILION_ONE_FERRY").is_err());
+    }
+
+    #[test]
+    fn pairing_codes_are_fixed_format_and_group_views_keep_member_zones() {
+        assert!(PairingCode::new("HX7-4QK").is_ok());
+        assert!(PairingCode::new("hx7-4qk").is_err());
+        assert!(PairingCode::new("HX7-4QKI").is_err());
+
+        let first = WorldZone::new(RegionId::Hoenn, "ROUTE101", 1).expect("first map");
+        let second = WorldZone::new(RegionId::Hoenn, "SLATEPORT_CITY", 1).expect("second map");
+        let view = GroupView::new_with_member_zones(
+            id(crate::GroupId::new, 4),
+            Group::new(id(CharacterId::new, 5), id(CharacterId::new, 6)).expect("group"),
+            [first.clone(), second.clone()],
+            [1, 2],
+        )
+        .expect("view");
+        let encoded = serde_json::to_value(&view).expect("view json");
+        assert_eq!(encoded["member_world_zones"][0]["map"], "ROUTE101");
+        assert_eq!(encoded["member_world_zones"][1]["map"], "SLATEPORT_CITY");
+        let decoded: GroupView = serde_json::from_value(encoded).expect("view round trip");
+        assert_eq!(decoded.member_world_zones, [first, second]);
     }
 }

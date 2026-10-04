@@ -106,8 +106,8 @@
         .pluralName = ITEM_PLURAL_NAME("Diamond"),
         .description = COMPOUND_STRING(
             "A lustrous gleaming\n"
-            "gem that symbolizes\n"
-            "virtue."),
+            "gem that\n"
+            "symbolizes virtue."),
         .importance = 1,
         .pocket = POCKET_KEY_ITEMS,
         .type = ITEM_USE_BAG_MENU,
@@ -461,7 +461,7 @@
     {
         .name = ITEM_NAME("Water of Time"),
         .description = COMPOUND_STRING(
-            "A bottle of mystical\n"
+            "A bottle of mystic\n"
             "glowing water. What\n"
             "is it used for?"),
         .importance = 1,

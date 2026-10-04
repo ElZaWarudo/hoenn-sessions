@@ -54,6 +54,18 @@
       <RemoveFolder Id="RemoveNoticeFolder" Directory="NOTICEFOLDER" On="uninstall" />
       <RegistryValue Root="HKCU" Key="Software\Hoenn Sessions\InstallerComponents" Name="ThirdPartyNotices" Type="integer" Value="1" KeyPath="yes" />
     </Component>
+    <!-- hoenn-sessions://join/<code> links open the bootstrapper, which hands
+         only a validated code to the app; the player still presses Join. -->
+    <Component Id="JoinLinkProtocol" Directory="APPFOLDER" Guid="0C9D551B-6401-46AA-8157-4903DD1EFD6D">
+      <RegistryKey Root="HKCU" Key="Software\Classes\hoenn-sessions">
+        <RegistryValue Type="string" Value="URL:Hoenn Sessions join link" />
+        <RegistryValue Name="URL Protocol" Type="string" Value="" />
+        <RegistryKey Key="shell\open\command">
+          <RegistryValue Type="string" Value="&quot;[APPFOLDER]hoenn-sessions-bootstrapper.exe&quot; &quot;%1&quot;" />
+        </RegistryKey>
+      </RegistryKey>
+      <RegistryValue Root="HKCU" Key="Software\Hoenn Sessions\InstallerComponents" Name="JoinLinkProtocol" Type="integer" Value="1" KeyPath="yes" />
+    </Component>
     <Component Id="StartMenuShortcut" Directory="PROGRAMMENUDIR" Guid="*">
       <Shortcut Id="HoennSessionsShortcut"
                 Name="Hoenn Sessions"
@@ -69,6 +81,7 @@
       <ComponentRef Id="OnboardingFallback" />
       <ComponentRef Id="PrivatePilotConfig" />
       <ComponentRef Id="ThirdPartyNotices" />
+      <ComponentRef Id="JoinLinkProtocol" />
       <ComponentRef Id="StartMenuShortcut" />
     </Feature>
   </Package>

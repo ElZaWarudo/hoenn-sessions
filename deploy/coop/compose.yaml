@@ -50,6 +50,13 @@ services:
       COOP_BOOTSTRAP_INVITE_FILE: /run/secrets/bootstrap_invite
       COOP_UPLOAD_BASE_URL: https://${COOP_DOMAIN:?Set COOP_DOMAIN}
       COOP_RELEASE_ROOT: /srv/hoenn
+      # Trusted release catalog. The server refuses to start without it: every
+      # world acquisition, snapshot and resume package needs the catalog.
+      # The path must sit under the read-only /srv/hoenn mount; pinned arrival
+      # saves are loaded from the catalog's directory. The digest comes from
+      # release configuration, never from the catalog file itself.
+      COOP_PHASE2_RELEASE_CATALOG_PATH: ${COOP_PHASE2_RELEASE_CATALOG_PATH:?Set COOP_PHASE2_RELEASE_CATALOG_PATH}
+      COOP_PHASE2_RELEASE_CATALOG_SHA256: ${COOP_PHASE2_RELEASE_CATALOG_SHA256:?Set COOP_PHASE2_RELEASE_CATALOG_SHA256}
     secrets:
       - database_url
       - firebase_service_account

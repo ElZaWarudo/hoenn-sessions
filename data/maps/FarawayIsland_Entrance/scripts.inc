@@ -21,6 +21,18 @@ FarawayIsland_Entrance_EventScript_Sailor::
 	faceplayer
 	msgbox FarawayIsland_Entrance_Text_SailorReturn, MSGBOX_YESNO
 	goto_if_eq VAR_RESULT, NO, FarawayIsland_Entrance_EventScript_AsYouLike
+	setvar VAR_0x8004, 82
+	setvar VAR_0x8005, 2
+	special Special_CoopGroupTravelBegin
+	goto_if_eq VAR_RESULT, 0, FarawayIsland_Entrance_EventScript_SailorSoloReturn
+	goto_if_eq VAR_RESULT, 1, FarawayIsland_Entrance_EventScript_SailorGroupWaiting
+	release
+	end
+
+FarawayIsland_Entrance_EventScript_SailorGroupWaiting::
+	end
+
+FarawayIsland_Entrance_EventScript_SailorSoloReturn::
 	msgbox EventTicket_Text_SailHome, MSGBOX_DEFAULT
 	closemessage
 	applymovement VAR_LAST_TALKED, Common_Movement_WalkInPlaceFasterDown

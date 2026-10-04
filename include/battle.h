@@ -710,6 +710,14 @@ struct BattleStruct
     u32 dancerSavedAttacker:3;
     u32 dancerSavedTarget:3;
     u32 padding:7;
+    // Co-op friendly battles: this ROM's replacement picks for the decision
+    // round in progress, by member battler slot (PARTY_SIZE: none).
+    u8 coopDecisionIndex[2];
+    u8 coopDecisionMask;
+    // Co-op trainer battles: the personality of the Pokemon the local
+    // player chose for its bag item (the party slot is resolved after the
+    // party menu restores the field order).
+    u32 coopItemPersonality;
 };
 
 struct AiBattleData

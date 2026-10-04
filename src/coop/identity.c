@@ -64,6 +64,52 @@ bool8 CoopIdentity_ResolveTrainerOrdinal(enum CoopRegion region,
     return FALSE;
 }
 
+static bool8 IsReverseTrainerMatch(const struct CoopIdentityRegistryEntry *entry,
+                                   enum CoopRegion region, u16 ordinal)
+{
+    return entry->region == region
+        && entry->ordinal == ordinal
+        && entry->legacy_value != COOP_IDENTITY_LEGACY_NONE;
+}
+
+bool8 CoopIdentity_ResolveTrainerLegacyId(enum CoopRegion region,
+                                          u16 ordinal,
+                                          u16 *legacy_id)
+{
+    const struct CoopIdentityRegistryEntry *entry = NULL;
+    u32 i;
+
+    if (!CoopRegion_IsValid(region)
+     || ordinal >= COOP_TRAINER_IDENTITY_CAPACITY)
+        return FALSE;
+
+    /* Hoenn's frozen v1 ordinals are the registry indexes. Verify the entry
+     * instead of trusting the layout, exactly as the forward path does. */
+    if (region == COOP_REGION_HOENN && ordinal < COOP_HOENN_TRAINER_LEGACY_MAX)
+    {
+        if (IsReverseTrainerMatch(&gCoopTrainerIdentityRegistry[ordinal],
+                                  region, ordinal))
+            entry = &gCoopTrainerIdentityRegistry[ordinal];
+    }
+    else
+    {
+        for (i = 0; i < COOP_TRAINER_IDENTITY_COUNT; i++)
+        {
+            if (IsReverseTrainerMatch(&gCoopTrainerIdentityRegistry[i],
+                                      region, ordinal))
+            {
+                entry = &gCoopTrainerIdentityRegistry[i];
+                break;
+            }
+        }
+    }
+    if (entry == NULL)
+        return FALSE;
+    if (legacy_id != NULL)
+        *legacy_id = entry->legacy_value;
+    return TRUE;
+}
+
 static enum CoopIdentityAccessResult ResolveActiveTrainer(u16 legacy_trainer_id,
                                                            u16 *ordinal)
 {

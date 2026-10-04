@@ -143,9 +143,9 @@ static EWRAM_DATA struct PokemonSummaryScreenData
         u8 ribbonCount; // 0x6
         u8 ailment; // 0x7
         u8 abilityNum; // 0x8
-        metloc_u8_t metLocation; // 0x9
-        u8 metLevel; // 0xA
-        u8 metGame; // 0xB
+        u16 metLocation; // logical V2 met location (see GetMonMetLocation)
+        u8 metLevel;
+        u8 metGame;
         u32 pid; // 0xC
         u32 exp; // 0x10
         enum Move moves[MAX_MON_MOVES]; // 0x14
@@ -1565,7 +1565,7 @@ static bool8 ExtractMonDataToSummaryStruct(struct Pokemon *mon)
         sum->ailment = GetMonAilment(mon);
         sum->OTGender = GetMonData(mon, MON_DATA_OT_GENDER);
         sum->OTID = GetMonData(mon, MON_DATA_OT_ID);
-        sum->metLocation = GetMonData(mon, MON_DATA_MET_LOCATION);
+        sum->metLocation = GetMonMetLocation(mon);
         sum->metLevel = GetMonData(mon, MON_DATA_MET_LEVEL);
         sum->metGame = GetMonData(mon, MON_DATA_MET_GAME);
         sum->friendship = GetMonData(mon, MON_DATA_FRIENDSHIP);
@@ -3599,11 +3599,11 @@ static void BufferMonTrainerMemo(void)
             else
                 text = (sum->metLocation >= MAPSEC_NONE) ? gText_XNatureMetSomewhereAt : gText_XNatureMetAtYZ;
         }
-        else if (sum->metLocation == METLOC_FATEFUL_ENCOUNTER)
+        else if (sum->metLocation == MET_LOCATION_V2_FATEFUL_ENCOUNTER)
         {
             text = gText_XNatureFatefulEncounter;
         }
-        else if (sum->metLocation != METLOC_IN_GAME_TRADE && DidMonComeFromGBAGames())
+        else if (sum->metLocation != MET_LOCATION_V2_IN_GAME_TRADE && DidMonComeFromGBAGames())
         {
             text = (sum->metLocation >= MAPSEC_NONE) ? gText_XNatureObtainedInTrade : gText_XNatureProbablyMetAt;
         }
@@ -3742,11 +3742,11 @@ static void PrintEggMemo(void)
 
     if (sMonSummaryScreen->summary.sanity != 1)
     {
-        if (sum->metLocation == METLOC_FATEFUL_ENCOUNTER)
+        if (sum->metLocation == MET_LOCATION_V2_FATEFUL_ENCOUNTER)
             text = gText_PeculiarEggNicePlace;
         else if (DidMonComeFromGBAGames() == FALSE || DoesMonOTMatchOwner() == FALSE)
             text = gText_PeculiarEggTrade;
-        else if (sum->metLocation == METLOC_SPECIAL_EGG)
+        else if (sum->metLocation == MET_LOCATION_V2_SPECIAL_EGG)
             text = (DidMonComeFromRSE() == TRUE) ? gText_EggFromHotSprings : gText_EggFromTraveler;
         else
             text = gText_OddEggFoundByCouple;

@@ -11,6 +11,18 @@ SouthernIsland_Exterior_EventScript_Sailor::
 	faceplayer
 	msgbox EventTicket_Text_SouthernIslandSailBack, MSGBOX_YESNO
 	goto_if_eq VAR_RESULT, NO, SouthernIsland_Exterior_EventScript_AsYouLike
+	setvar VAR_0x8004, 80
+	setvar VAR_0x8005, 2
+	special Special_CoopGroupTravelBegin
+	goto_if_eq VAR_RESULT, 0, SouthernIsland_Exterior_EventScript_SailorSoloReturn
+	goto_if_eq VAR_RESULT, 1, SouthernIsland_Exterior_EventScript_SailorGroupWaiting
+	release
+	end
+
+SouthernIsland_Exterior_EventScript_SailorGroupWaiting::
+	end
+
+SouthernIsland_Exterior_EventScript_SailorSoloReturn::
 	msgbox EventTicket_Text_SailHome, MSGBOX_DEFAULT
 	closemessage
 	applymovement VAR_LAST_TALKED, Common_Movement_WalkInPlaceFasterDown

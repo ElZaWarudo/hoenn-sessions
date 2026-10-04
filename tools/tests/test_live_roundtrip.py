@@ -1,4 +1,4 @@
-"""Mocked phase, custody composition, fenced grouping, and cleanup boundaries."""
+"""Mocked phase, custody composition, per-session pairing-code groups, and cleanup boundaries."""
 from contextlib import ExitStack
 import copy
 import base64
@@ -39,11 +39,10 @@ class RoundtripTests(unittest.TestCase):
             return rt.plan_receipt(rt.immutable(root / "custody-plan.json", plan))
         def seed(plan, root, register):
             return rt.plan_receipt(rt.immutable(root / "signed-plan.json", plan), actors={"a": {}, "b": {}})
-        def outbound(plan, actors, root, group):
+        def outbound(plan, actors, root):
             return rt.plan_receipt(rt.immutable(root / "attested-plan.json", plan))
         for name, callback in (("author", author), ("seed_plan", seed), ("outbound", outbound)):
             m[name] = stack.enter_context(mock.patch.object(rt, name, side_effect=callback))
-        m["group"] = stack.enter_context(mock.patch.object(rt, "form_group", return_value={"group": {"group_id": "group"}}))
         m["prepare"] = stack.enter_context(mock.patch.object(rt.prepare, "prepare", return_value={"reused": ["a", "b"]}))
         m["return"] = stack.enter_context(mock.patch.object(rt, "return_leg", return_value={"report": {"strict": True}}))
         m["complete"] = stack.enter_context(mock.patch.object(rt, "complete_check"))
@@ -56,7 +55,7 @@ class RoundtripTests(unittest.TestCase):
     def test_completed_retry_skips_factory_seed_group_prepare_and_launch(self):
         m = self.lifecycle(); first = self.run_mock(); second = self.run_mock()
         self.assertFalse(first["reused"]); self.assertTrue(second["reused"])
-        for name in ("author", "seed_plan", "group", "prepare", "outbound", "return"):
+        for name in ("author", "seed_plan", "prepare", "outbound", "return"):
             self.assertEqual(m[name].call_count, 1)
         m["launch"].assert_not_called()
         self.assertEqual(m["complete"].call_count, 2)
@@ -83,7 +82,7 @@ class RoundtripTests(unittest.TestCase):
                 self.run_mock()
             self.assertFalse(inputs_path.exists())
             inputs_path.write_bytes(original)
-        for label in ("author", "seed_plan", "group", "prepare", "outbound", "return"):
+        for label in ("author", "seed_plan", "prepare", "outbound", "return"):
             self.assertEqual(m[label].call_count, 1)
         m["launch"].assert_not_called()
 
@@ -96,7 +95,7 @@ class RoundtripTests(unittest.TestCase):
             with self.assertRaisesRegex(rt.harness.HarnessFailure, "below 2 GiB"):
                 self.run_mock()
             self.assertEqual(list(self.root.iterdir()), [])
-            for label in ("author", "seed_plan", "group", "prepare", "outbound", "return", "launch"):
+            for label in ("author", "seed_plan", "prepare", "outbound", "return", "launch"):
                 m[label].assert_not_called()
             api.assert_not_called()
         m["space"].side_effect = None
@@ -104,7 +103,7 @@ class RoundtripTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "partial crossing"):
             self.run_mock()
         files = {p: (p.read_bytes(), p.stat().st_mtime_ns) for p in self.root.rglob("*") if p.is_file()}
-        calls = {label: m[label].call_count for label in ("author", "seed_plan", "group", "prepare", "outbound", "return")}
+        calls = {label: m[label].call_count for label in ("author", "seed_plan", "prepare", "outbound", "return")}
         m["space"].side_effect = actual_space
         with mock.patch.object(rt.harness.shutil, "disk_usage", return_value=SimpleNamespace(free=1)), \
                 mock.patch.object(rt.groups, "_call") as api:
@@ -166,75 +165,11 @@ class RoundtripTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "stop"):
                 rt.cleanup(base(), {"a": 10}, self.root / "cleanup.json")
 
-    def group_mocks(self, fail=None, release_failure=False):
-        stack = ExitStack(); self.addCleanup(stack.close)
-        p = base(); p["release_dir"] = str(self.root)
-        heads = {n: {"sha256": p["players"][0]["source_sha256"], "revision": 6, "snapshot_id": n + "snapshot"} for n in ("a", "b")}
-        stack.enter_context(mock.patch.object(rt, "initial_heads", return_value=heads))
-        stack.enter_context(mock.patch.object(rt.harness, "_health_url", return_value=(None, SimpleNamespace(scheme="http", netloc="127.0.0.1:8080"))))
-        stack.enter_context(mock.patch.object(rt.harness, "_read_json", return_value={"worlds": [{"world_id": 1, "presence_regions": ["HOENN"]}]}))
-        stack.enter_context(mock.patch.dict(os.environ, {"COOP_HARNESS_USERNAME_A": "a", "COOP_HARNESS_USERNAME_B": "b", "COOP_HARNESS_PASSWORD": "private"}))
-        active, calls = set(), []
-        def acquire(server, request, token, wait):
-            self.assertEqual(wait, 0); active.add(request["character_id"])
-            return {"session_id": request["character_id"], "current_revision": 6,
-                    "session_epoch": 1, "client_instance_id": "client"}
-        stack.enter_context(mock.patch.object(rt.groups, "_acquire_after_release", side_effect=acquire))
-        gid, iid = str(uuid_value(1)), str(uuid_value(2))
-        group = {"group_id": gid, "members": [{"character_id": "a"}, {"character_id": "b"}], "world_zone": {"region": "HOENN", "map": "HARBOR"}}
-        def call(server, method, path, **kwargs):
-            calls.append((method, path))
-            if path == "/v1/auth/login":
-                n = kwargs["payload"]["username"]
-                return 200, json.dumps({"character_id": "wrong" if fail == "actor" else n, "access_token": "private"}).encode()
-            if path == "/v1/sessions/release":
-                active.discard(kwargs["payload"]["character_id"])
-                return (500 if release_failure else 200), b'{}'
-            if path.endswith("/snapshots"):
-                n = path.split("/")[3]
-                return 200, json.dumps({"snapshots": [{"revision": 6, "snapshot_id": n + "snapshot", "rom_world_id": 2 if fail == "head" else 1,
-                    "files": [{"artifact": "character.sav", "sha256": heads[n]["sha256"]}]}]}).encode()
-            if path == "/v1/groups/invitations":
-                self.assertEqual(active, {"a", "b"})
-                self.assertEqual(kwargs["payload"]["invitee_character_id"], "b")
-                if fail == "zone": return 409, b'{}'
-                return (200 if fail == "invite-status" else 201), json.dumps({"invitation_id": iid, "inviter_character_id": "a", "invitee_character_id": "b"}).encode()
-            if path.endswith("/accept"):
-                if fail == "accept": return 500, b'{}'
-                return 200, json.dumps({"group": group}).encode()
-            inspected = copy.deepcopy(group)
-            if fail == "inspection": inspected["world_zone"]["map"] = "OTHER"
-            return 200, json.dumps(inspected).encode()
-        stack.enter_context(mock.patch.object(rt.groups, "_call", side_effect=call))
-        return p, calls, active
-
-    def test_group_uses_concurrent_leases_201_invite_and_two_inspections(self):
-        p, calls, active = self.group_mocks()
-        result = rt.form_group(p, {}, self.root)
-        self.assertFalse(active)
-        self.assertEqual(sum(method == "GET" and "/groups/" in path for method, path in calls), 2)
-        self.assertEqual(sum(path == "/v1/sessions/release" for _, path in calls), 2)
-        self.assertEqual(set(result), {"group", "world_zone", "heads", "invitation_id", "request_ids"})
-
-    def test_wrong_actor_head_zone_partial_accept_or_inspection_releases_all(self):
-        for failure in ("actor", "head", "zone", "accept", "inspection", "invite-status"):
-            with self.subTest(failure=failure), tempfile.TemporaryDirectory(dir=self.root) as directory:
-                p, calls, active = self.group_mocks(failure)
-                with self.assertRaises(rt.harness.HarnessFailure): rt.form_group(p, {}, Path(directory))
-                self.assertFalse(active)
-                if failure == "actor": self.assertFalse(any(path == "/v1/groups/invitations" for _, path in calls))
-
-    def test_group_release_error_retains_first_accept_error(self):
-        p, calls, active = self.group_mocks("accept", release_failure=True)
-        with self.assertRaises(rt.harness.HarnessFailure) as raised: rt.form_group(p, {}, self.root)
-        self.assertIn("accept", str(raised.exception)); self.assertEqual(len(raised.exception.__notes__), 2)
-        self.assertFalse(active)
-
-    def test_ambiguous_group_accept_phase_never_blindly_retries(self):
-        action = mock.Mock(side_effect=RuntimeError("accept uncertain"))
-        with self.assertRaises(RuntimeError): rt.phase(self.root, "key", "grouped", action)
+    def test_ambiguous_outbound_pairing_phase_never_blindly_retries(self):
+        action = mock.Mock(side_effect=RuntimeError("pairing uncertain"))
+        with self.assertRaises(RuntimeError): rt.phase(self.root, "key", "outbound", action)
         with self.assertRaisesRegex(rt.harness.HarnessFailure, "ambiguous effects"):
-            rt.phase(self.root, "key", "grouped", action)
+            rt.phase(self.root, "key", "outbound", action)
         self.assertEqual(action.call_count, 1)
 
     def test_unsupported_factory_adapter_rejected_without_authoring_or_launch(self):
@@ -319,8 +254,8 @@ class RoundtripTests(unittest.TestCase):
                 rt.complete_check(p, self.root, {})
             verify.assert_not_called()
 
-    def test_initial_changed_heads_actor_world_hash_group_release_before_input(self):
-        for failure in ("revision", "actor", "world", "hash", "raw", "group"):
+    def test_initial_changed_heads_actor_world_hash_release_before_input(self):
+        for failure in ("revision", "actor", "world", "hash", "raw"):
             with self.subTest(failure=failure), ExitStack() as stack:
                 p = base(); actors = {n: {"revision": 6} for n in ("a", "b")}
                 stack.enter_context(mock.patch.object(rt.harness, "check_c_space"))
@@ -335,11 +270,11 @@ class RoundtripTests(unittest.TestCase):
                     if path.endswith("/snapshots"):
                         return 200, json.dumps({"snapshots": [{"revision": 6, "snapshot_id": "snapshot", "rom_world_id": 2 if failure == "world" else 1,
                             "files": [{"artifact": "character.sav", "sha256": "wrong" if failure == "hash" else p["players"][0]["source_sha256"]}]}]}).encode()
-                    if "/groups/" in path: return 200, json.dumps({"group_id": "wrong", "members": [], "world_zone": {"region": "wrong"}}).encode()
+                    self.assertNotIn("/groups/", path)
                     return 200, b"wrong" if failure == "raw" else b"save"
                 calls = stack.enter_context(mock.patch.object(rt.groups, "_call", side_effect=call))
                 with self.assertRaises(rt.harness.HarnessFailure):
-                    rt.initial_heads(p, actors, {"group_id": "expected"})
+                    rt.initial_heads(p, actors)
                 if failure == "actor": acquire.assert_not_called()
                 else: self.assertEqual(sum(c.args[2] == "/v1/sessions/release" for c in calls.call_args_list), 1)
 
@@ -456,9 +391,104 @@ class RoundtripTests(unittest.TestCase):
                 self.run_mock()
             api.assert_not_called()
         m["space"].assert_not_called()
-        for label in ("author", "seed_plan", "group", "prepare", "outbound", "return"):
+        for label in ("author", "seed_plan", "prepare", "outbound", "return"):
             self.assertEqual(m[label].call_count, 1)
         m["launch"].assert_not_called()
+
+
+class OutboundPairingTests(unittest.TestCase):
+    """Outbound forms its group via b's desktop and proves it before and after the crossing."""
+
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory(dir="S:/cormoria-build" if Path("S:/cormoria-build").is_dir() else None)
+        self.addCleanup(self.temp.cleanup); self.root = Path(self.temp.name)
+
+    def outbound_mocks(self):
+        stack = ExitStack(); self.addCleanup(stack.close)
+        order = []
+        def record(label, value=None):
+            def effect(*args, **kwargs):
+                order.append(label)
+                return value() if callable(value) else value
+            return effect
+        p = base(); p["legs"][0].update(destination_world_id=2)
+        m = {}
+        for target, name, value in (
+                (rt, "initial_heads", {"a": {}, "b": {}}),
+                (rt, "presence_regions", lambda: ["REGION"]),
+                (rt.groups, "require_ungrouped", {"a": {}, "b": {}}),
+                (rt.groups, "create_pairing_code", {"code": "ABC-234", "code_sha256": "c" * 64,
+                                                    "expires_at_unix_ms": 1, "inviter_character_id": "a"}),
+                (rt.harness, "launch", {"a": 10, "b": 11}),
+                (rt.harness, "start_games", {"a": 20, "b": 21}),
+                (rt, "bind_games", {}),
+                (rt.selected, "bind_loaded_sources", {}),
+                (rt.groups, "pair_desktops", {"players": {}, "checked_at_unix_ms": 1}),
+                (rt.harness, "drive", {}),
+                (rt.harness, "wait_arrival_games", {"a": 30, "b": 31}),
+                (rt.harness, "continue_arrivals", None),
+                (rt.groups, "journal_group_id", "group"),
+                (rt.groups, "partner_proof", {"players": {}, "checked_at_unix_ms": 2}),
+                (rt.groups, "group_record", {"group_id": "group"}),
+                (rt.harness, "stop_runtime", None),
+                (rt.harness, "_paths", (Path("release"), self.root)),
+                (rt.groups, "collect", {"group": "group.json"}),
+                (rt.harness, "discover_evidence", {}),
+                (rt.departure, "publish_plan", self.root / "attested.json"),
+                (rt.harness, "close_desktops", None)):
+            m[name] = stack.enter_context(mock.patch.object(target, name, side_effect=record(name, value)))
+        stack.enter_context(mock.patch.object(rt.harness, "digest", return_value="d" * 64))
+        stack.enter_context(mock.patch.object(rt.harness.psutil, "pid_exists", return_value=False))
+        return p, m, order
+
+    def test_code_before_launch_join_before_drive_and_post_arrival_proof_before_stop(self):
+        p, m, order = self.outbound_mocks()
+        rt.outbound(p, {}, self.root)
+        position = {name: order.index(name) for name in order[::-1]}
+        self.assertLess(position["require_ungrouped"], position["create_pairing_code"])
+        self.assertLess(position["create_pairing_code"], position["launch"])
+        self.assertLess(position["start_games"], position["pair_desktops"])
+        self.assertLess(position["pair_desktops"], position["drive"])
+        self.assertLess(position["continue_arrivals"], position["partner_proof"])
+        self.assertLess(position["partner_proof"], order.index("stop_runtime"))
+        self.assertLess(order.index("stop_runtime"), position["collect"])
+        self.assertEqual(m["collect"].call_args.args[2], {"group_id": "group"})
+        self.assertEqual(m["group_record"].call_args.args[2:], ("group", {"players": {}, "checked_at_unix_ms": 1},
+                                                               {"players": {}, "checked_at_unix_ms": 2}))
+        receipt = json.loads((self.root / "outbound-pairing.json").read_text())
+        self.assertNotIn("code", receipt)
+
+    def test_failed_join_or_lost_group_never_drives_or_collects(self):
+        for boundary in ("pair_desktops", "partner_proof", "journal_group_id"):
+            with self.subTest(boundary=boundary), tempfile.TemporaryDirectory(dir=self.root) as folder:
+                self.root_backup, self.root = self.root, Path(folder)
+                try:
+                    p, m, order = self.outbound_mocks()
+                    m[boundary].side_effect = rt.harness.HarnessFailure(boundary + " rejected")
+                    with self.assertRaisesRegex(rt.harness.HarnessFailure, "rejected"):
+                        rt.outbound(p, {}, self.root)
+                    m["collect"].assert_not_called()
+                    if boundary == "pair_desktops": m["drive"].assert_not_called()
+                    self.assertIn("close_desktops", order)
+                    self.assertFalse(json.loads((self.root / "outbound-cleanup.json").read_text())["alive_pids"])
+                finally:
+                    self.root = self.root_backup
+
+    def test_occupied_group_or_code_failure_never_launches(self):
+        for boundary in ("require_ungrouped", "create_pairing_code"):
+            with self.subTest(boundary=boundary):
+                p, m, order = self.outbound_mocks()
+                m[boundary].side_effect = rt.harness.HarnessFailure("refused")
+                with self.assertRaises(rt.harness.HarnessFailure):
+                    rt.outbound(p, {}, self.root)
+                m["launch"].assert_not_called()
+
+    def test_factory_requires_desktop_pairing_group_mode(self):
+        for mode in ("api-preformed", None):
+            with self.subTest(mode=mode), mock.patch.object(rt.harness, "_read_json", return_value=base()):
+                with self.assertRaisesRegex(rt.harness.HarnessFailure, "unsupported"):
+                    rt.inputs(Path("plan"), Path("config"), {"adapter": "hoenn-debug-v1", "source_world_id": 1,
+                                                             "group_mode": mode}, False)
 
 
 def uuid_value(value):

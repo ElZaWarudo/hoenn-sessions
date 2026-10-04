@@ -34,12 +34,15 @@
 #include "constants/party_menu.h"
 #include "constants/trainers.h"
 #include "test/battle.h"
+#include "coop/battle_items.h"
+#include "coop/battle_runtime.h"
 
 static void PlayerPartnerHandleDrawTrainerPic(enum BattlerId battler);
 static void PlayerPartnerHandleTrainerSlide(enum BattlerId battler);
 static void PlayerPartnerHandleTrainerSlideBack(enum BattlerId battler);
 static void PlayerPartnerHandleChooseAction(enum BattlerId battler);
 static void PlayerPartnerHandleChooseMove(enum BattlerId battler);
+static void PlayerPartnerHandleChooseItem(enum BattlerId battler);
 static void PlayerPartnerHandleChoosePokemon(enum BattlerId battler);
 static void PlayerPartnerHandleIntroTrainerBallThrow(enum BattlerId battler);
 static void PlayerPartnerHandleDrawPartyStatusSummary(enum BattlerId battler);
@@ -69,7 +72,7 @@ static void (*const sPlayerPartnerBufferCommands[CONTROLLER_CMDS_COUNT])(enum Ba
     [CONTROLLER_CHOOSEACTION]             = PlayerPartnerHandleChooseAction,
     [CONTROLLER_YESNOBOX]                 = BtlController_Empty,
     [CONTROLLER_CHOOSEMOVE]               = PlayerPartnerHandleChooseMove,
-    [CONTROLLER_OPENBAG]                  = BtlController_Empty,
+    [CONTROLLER_OPENBAG]                  = PlayerPartnerHandleChooseItem,
     [CONTROLLER_CHOOSEPOKEMON]            = PlayerPartnerHandleChoosePokemon,
     [CONTROLLER_23]                       = BtlController_Empty,
     [CONTROLLER_HEALTHBARUPDATE]          = BtlController_HandleHealthBarUpdate,
@@ -201,7 +204,11 @@ static enum TrainerPicID PlayerPartnerGetTrainerBackPicId(enum DifficultyLevel d
 {
     enum TrainerPicID trainerPicId;
 
-    if (gBattleTypeFlags & BATTLE_TYPE_INGAME_PARTNER)
+    /* A co-op partner is another player: the player back pic of its
+     * gender (the OT gender of its lead), not the in-game partner's. */
+    if (CoopBattleRuntime_IsTrainerEngine())
+        trainerPicId = GetPlayerTrainerPic(CoopBattleRuntime_PartnerGender(), GAME_VERSION);
+    else if (gBattleTypeFlags & BATTLE_TYPE_INGAME_PARTNER)
         trainerPicId = gBattlePartners[difficulty][gPartnerTrainerId - TRAINER_PARTNER(PARTNER_NONE)].trainerPic;
     else
         trainerPicId = GetPlayerTrainerPic(gSaveBlock2Ptr->playerGender, GAME_VERSION);
@@ -268,12 +275,51 @@ static void PlayerPartnerHandleTrainerSlideBack(enum BattlerId battler)
 
 static void PlayerPartnerHandleChooseAction(enum BattlerId battler)
 {
+    if (CoopBattleRuntime_IsEngineActive())
+    {
+        struct CoopBattleAction action;
+        u8 chosen;
+
+        if (!CoopBattleRuntime_PollPeerAction(&action))
+            return;
+        if (action.kind == COOP_BATTLE_ACTION_MOVE)
+            chosen = B_ACTION_USE_MOVE;
+        else if (action.kind == COOP_BATTLE_ACTION_SWITCH)
+            chosen = B_ACTION_SWITCH;
+        else if (action.kind == COOP_BATTLE_ACTION_NO_ACTION)
+            chosen = B_ACTION_NOTHING_FAINTED;
+        else if (action.kind == COOP_BATTLE_ACTION_ITEM)
+            chosen = B_ACTION_USE_ITEM;
+        else
+            return;
+        BtlController_EmitTwoReturnValues(battler, B_COMM_TO_ENGINE, chosen, 0);
+        BtlController_Complete(battler);
+        return;
+    }
     AI_TrySwitchOrUseItem(battler);
     BtlController_Complete(battler);
 }
 
 static void PlayerPartnerHandleChooseMove(enum BattlerId battler)
 {
+    if (CoopBattleRuntime_IsEngineActive())
+    {
+        struct CoopBattleAction action;
+        u8 targetPosition;
+
+        if (!CoopBattleRuntime_PollPeerAction(&action)
+         || action.kind != COOP_BATTLE_ACTION_MOVE)
+            return;
+        targetPosition = CoopBattleRuntime_TranslateTarget(action.target,
+                                                           CoopBattleRuntime_EngineLocalMemberSlot());
+        if (targetPosition == 0xFF)
+            return;
+        BtlController_EmitTwoReturnValues(battler, B_COMM_TO_ENGINE,
+                                          B_ACTION_EXEC_SCRIPT,
+                                          action.index | (GetBattlerAtPosition(targetPosition) << 8));
+        BtlController_Complete(battler);
+        return;
+    }
     u32 chosenMoveIndex;
     struct ChooseMoveStruct *moveInfo = (struct ChooseMoveStruct *)(&gBattleResources->bufferA[battler][4]);
 
@@ -307,8 +353,56 @@ static void PlayerPartnerHandleChooseMove(enum BattlerId battler)
     BtlController_Complete(battler);
 }
 
+/* The peer's bag item: the same item, party slot and move slot its own ROM
+ * bound for its battler. This ROM's bag is never touched. */
+static void PlayerPartnerHandleChooseItem(enum BattlerId battler)
+{
+    struct CoopBattleAction action;
+
+    if (!CoopBattleRuntime_IsEngineActive())
+    {
+        BtlController_Complete(battler);
+        return;
+    }
+    if (!CoopBattleRuntime_PollPeerAction(&action))
+        return;
+    if (!CoopBattleItems_BindAction(battler, &action))
+    {
+        CoopBattleRuntime_FailEngine();
+        return;
+    }
+    BtlController_EmitOneReturnValue(battler, B_COMM_TO_ENGINE, action.item);
+    BtlController_Complete(battler);
+}
+
 static void PlayerPartnerHandleChoosePokemon(enum BattlerId battler)
 {
+    if (CoopBattleRuntime_IsEngineActive())
+    {
+        struct CoopBattleAction action;
+
+        /* A mid-turn forced replacement needs its own server decision record.
+         * Never fall through to the in-game partner AI for that choice. */
+        if (!CoopBattleRuntime_IsLocalActionSubmitted())
+        {
+            CoopBattleRuntime_FailEngine();
+            return;
+        }
+        if (!CoopBattleRuntime_PollPeerAction(&action)
+         || action.kind != COOP_BATTLE_ACTION_SWITCH)
+            return;
+        /* A side may hold fewer than three staged mons; never switch into
+         * one of its empty records. */
+        if (GetMonData(&gParties[B_TRAINER_2][action.index], MON_DATA_SPECIES) == SPECIES_NONE)
+        {
+            CoopBattleRuntime_FailEngine();
+            return;
+        }
+        BtlController_EmitChosenMonReturnValue(battler, B_COMM_TO_ENGINE,
+                                               action.index, NULL);
+        BtlController_Complete(battler);
+        return;
+    }
     s32 chosenMonId;
     // Choosing Revival Blessing target
     if (gBattleResources->bufferA[battler][1] == PARTY_ACTION_CHOOSE_FAINTED_MON)
@@ -354,7 +448,9 @@ static void PlayerPartnerHandleIntroTrainerBallThrow(enum BattlerId battler)
     const u16 *trainerPal;
     enum DifficultyLevel difficulty = GetBattlePartnerDifficultyLevel(gPartnerTrainerId);
 
-    if (gPartnerTrainerId > TRAINER_PARTNER(PARTNER_NONE))
+    if (CoopBattleRuntime_IsTrainerEngine())
+        trainerPal = GetTrainerBackPicPalette(PlayerPartnerGetTrainerBackPicId(difficulty));
+    else if (gPartnerTrainerId > TRAINER_PARTNER(PARTNER_NONE))
         trainerPal = GetTrainerBackPicPalette(gBattlePartners[difficulty][gPartnerTrainerId - TRAINER_PARTNER(PARTNER_NONE)].trainerPic);
     else if (IsAiVsAiBattle())
         trainerPal = GetTrainerFrontPicPalette(GetTrainerPicFromId(gPartnerTrainerId));

@@ -159,7 +159,7 @@ void Johto_CommitKantoTravel(void)
      * crossing intact until the co-op runtime can emit APPLIED. */
     gSpecialVar_Result = CoopGroupTravel_IsManagingArrival()
         ? TRUE
-        : JohtoTravel_TryCommitArrival();
+        : (JohtoTravel_CommitAtReceptionGate() || JohtoTravel_TryCommitArrival());
 }
 
 void Johto_NeedsLaterKantoInitialization(void)

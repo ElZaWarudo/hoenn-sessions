@@ -1,6 +1,7 @@
 //! Fenced cloud session materialization and checkpoint orchestration.
 
 use std::{
+    collections::VecDeque,
     fs::{File, OpenOptions},
     future::Future,
     io::{self, Read, Write},
@@ -12,7 +13,7 @@ use std::{
 
 use coop_cloud::{
     AcquireLeaseRequest, AcquireWorldLeaseResponse, ArtifactIdentity, CharacterId,
-    ClientInstanceId, HeartbeatLeaseRequest, IdempotencyKey, LeaseContract,
+    ClientInstanceId, CommitId, HeartbeatLeaseRequest, IdempotencyKey, LeaseContract,
     MintRealtimeTicketRequest, PrepareSnapshotRequest, ReconnectLeaseRequest, ReleaseLeaseRequest,
     ResumePackageManifest, ResumeSelection, Revision, RomHandoffCommitRequest,
     RomHandoffPrepareRequest, RomHandoffPrepareResponse, RomHandoffRecoveryRequest,
@@ -42,6 +43,10 @@ const HEARTBEAT_RETRY_MAX_MS: u64 = 2_000;
 const HEARTBEAT_RETRY_EXPIRY_MARGIN_MS: u64 = 2_000;
 const PRESENCE_RETRY_BASE_MS: u64 = 250;
 const PRESENCE_RETRY_MAX_MS: u64 = 5_000;
+/// Progress observations are unique edge events. Keep enough bounded session
+/// storage for every valid badge transition and national dex subject while a
+/// realtime attempt is minting or rearming.
+const MAX_PENDING_PROGRESS_OBSERVATIONS: usize = 1_088;
 
 use crate::{
     auth::{AuthApi, AuthError, AuthSession},
@@ -136,6 +141,37 @@ fn compatible_presence_map(state: &coop_protocol::LocalPresenceStateV1) -> bool 
     .is_ok()
 }
 
+fn queue_pending_progress_observation(
+    queue: &mut VecDeque<coop_protocol::ProgressObservationV1>,
+    expected_epoch: u32,
+    observation: coop_protocol::ProgressObservationV1,
+) -> Result<(), SessionError> {
+    if expected_epoch == 0 || observation.session_epoch != expected_epoch || !observation.is_valid()
+    {
+        return Err(SessionError::Realtime);
+    }
+
+    /* Reconnects may replay the same bridge edge. One badge/catch is one feed
+     * item, so coalesce it while preserving the first authenticated source
+     * sequence for the eventual send. */
+    if queue.iter().any(|queued| {
+        queued.kind == observation.kind
+            && queued.region_id == observation.region_id
+            && queued.subject_id == observation.subject_id
+    }) {
+        return Ok(());
+    }
+    if queue.len() >= MAX_PENDING_PROGRESS_OBSERVATIONS {
+        /* A valid observation must never turn a recoverable realtime outage
+         * into a disconnect. The cap covers the complete current event
+         * universe; retaining the newest value is a defensive future-proofing
+         * policy if that universe grows. */
+        queue.pop_front();
+    }
+    queue.push_back(observation);
+    Ok(())
+}
+
 /// Compares two u32 serial values using the RFC 1982 half-range rule used by
 /// the sidecar. Zero is never a published save sequence.
 #[must_use]
@@ -183,6 +219,52 @@ enum RealtimeCheckpointWorkInput {
     Complete(Result<Revision, SessionError>),
     Control(Result<ControlEvent, ProcessError>),
     Realtime(Result<RealtimeCoordinatorEvent, crate::realtime::RealtimeCoordinatorError>),
+}
+
+fn queue_pending_battle(
+    queue: &mut VecDeque<ControlEvent>,
+    event: ControlEvent,
+) -> Result<(), SessionError> {
+    // One full battle can produce six party chunks and two records per turn.
+    // Leave space for consent and replay while checkpoint work owns control.
+    if queue.len() == 128 {
+        return Err(SessionError::Realtime);
+    }
+    queue.push_back(event);
+    Ok(())
+}
+
+/// One in-game trade cloud call with a single refresh-and-retry on 401. A
+/// second 401 ends the session like every other authenticated call.
+macro_rules! trade_call {
+    ($session:ident, $api:ident, |$token:ident| $call:expr) => {{
+        $session.refresh_if_needed($api).await?;
+        let $token = $session
+            .auth
+            .access_token()
+            .ok_or(SessionError::Unauthorized)?
+            .clone();
+        let mut result = $call.await;
+        if matches!(
+            result,
+            Err(crate::trade_offer::TradeOfferError::Unauthorized)
+        ) {
+            $session.refresh_required($api).await?;
+            let $token = $session
+                .auth
+                .access_token()
+                .ok_or(SessionError::Unauthorized)?
+                .clone();
+            result = $call.await;
+        }
+        if matches!(
+            result,
+            Err(crate::trade_offer::TradeOfferError::Unauthorized)
+        ) {
+            return Err(SessionError::Unauthorized);
+        }
+        result
+    }};
 }
 
 #[derive(Clone, Copy)]
@@ -362,6 +444,8 @@ async fn await_realtime_mint<A, F>(
     generation: u32,
     freshest: &mut (u32, u32, coop_protocol::LocalPresenceStateV1),
     pending_checkpoint: &mut Option<ControlEvent>,
+    pending_progress: &mut VecDeque<coop_protocol::ProgressObservationV1>,
+    pending_battle: &mut VecDeque<ControlEvent>,
     #[cfg(test)] state_probe: Option<&tokio::sync::Notify>,
 ) -> Result<MintWait, SessionError>
 where
@@ -410,10 +494,15 @@ where
                         probe.notify_one();
                     }
                 }
-                RawSupervisorEvent::Control(
-                    ControlEvent::InteractRemotePlayer(_) | ControlEvent::SocialSignal(_),
-                ) => {
+                RawSupervisorEvent::Control(ControlEvent::InteractRemotePlayer(_) | ControlEvent::SocialSignal(_)) => {
                     // Interactions and signals have no meaning until server readiness.
+                }
+                RawSupervisorEvent::Control(ControlEvent::ProgressObservation(observation)) => {
+                    queue_pending_progress_observation(
+                        pending_progress,
+                        active_lease.session_epoch.value(),
+                        observation,
+                    )?;
                 }
                 RawSupervisorEvent::Control(ControlEvent::CompanionState(_)) => {
                     // Companion state is latest-value cached in the pump and
@@ -431,6 +520,26 @@ where
                         session_epoch: active_lease.session_epoch.value(),
                         status: crate::online::empty_status(request.request_id, coop_protocol::OnlineResult::Unavailable),
                     }).await?;
+                }
+                RawSupervisorEvent::Control(ControlEvent::PairingRequest(request)) => {
+                    children.control().send(&ControlCommand::PairingStatus {
+                        session_epoch: active_lease.session_epoch.value(),
+                        status: coop_protocol::PairingStatus { request_id: request.request_id, result: coop_protocol::PairingResult::Unavailable, code: String::new() },
+                    }).await?;
+                }
+                RawSupervisorEvent::Control(event @ (ControlEvent::TrainerBattleReserve(_)
+                    | ControlEvent::BattleJoinResponse(_)
+                    | ControlEvent::BattleAbortRequest(_)
+                    | ControlEvent::PartySnapshot(_)
+                    | ControlEvent::BattleReady(_)
+                    | ControlEvent::ActionIntent(_)
+                    | ControlEvent::TurnResultHash(_)
+                    | ControlEvent::BattleFinished(_)
+                    | ControlEvent::CommitApplied(_)
+                    | ControlEvent::TradeCommitApplied(_)
+                    | ControlEvent::TradeOfferRequest(_)
+                    | ControlEvent::TradeOfferDecision(_))) => {
+                    queue_pending_battle(pending_battle, event)?;
                 }
                 RawSupervisorEvent::Control(ready @ ControlEvent::CheckpointReady { .. }) => {
                     if pending_checkpoint.replace(ready).is_some() {
@@ -530,6 +639,215 @@ pub trait CloudApi: AuthApi {
     ) -> CloudFuture<'a, coop_cloud::GroupRomHandoffStatus> {
         Box::pin(async { Err(SessionError::PortalHandoffUnavailable) })
     }
+    /// `POST /v1/groups/{group_id}/trade-offers` (an open in-game offer).
+    fn trade_offer_create(
+        &self,
+        _token: coop_cloud::AccessToken,
+        _group_id: coop_cloud::GroupId,
+        _request: coop_cloud::TradeOfferRequest,
+    ) -> crate::trade_offer::TradeOfferFuture<'_, coop_cloud::TradeOfferView> {
+        Box::pin(async { Err(crate::trade_offer::TradeOfferError::Unavailable) })
+    }
+    /// `GET /v1/groups/{group_id}/trade-offers/{offer_id}`.
+    fn trade_offer_get(
+        &self,
+        _token: coop_cloud::AccessToken,
+        _group_id: coop_cloud::GroupId,
+        _offer_id: coop_cloud::TradeOfferId,
+        _fence: coop_cloud::LeaseFence,
+    ) -> crate::trade_offer::TradeOfferFuture<'_, coop_cloud::TradeOfferView> {
+        Box::pin(async { Err(crate::trade_offer::TradeOfferError::Unavailable) })
+    }
+    /// `GET /v1/groups/{group_id}/trade-offers/current`; `Ok(None)` when no
+    /// open offer is pending.
+    fn trade_offer_current(
+        &self,
+        _token: coop_cloud::AccessToken,
+        _group_id: coop_cloud::GroupId,
+        _fence: coop_cloud::LeaseFence,
+    ) -> crate::trade_offer::TradeOfferFuture<'_, Option<coop_cloud::TradeOfferCurrentView>> {
+        Box::pin(async { Err(crate::trade_offer::TradeOfferError::Unavailable) })
+    }
+    /// `POST /v1/groups/{group_id}/trade-offers/{offer_id}/decision`.
+    fn trade_offer_decide(
+        &self,
+        _token: coop_cloud::AccessToken,
+        _group_id: coop_cloud::GroupId,
+        _request: coop_cloud::TradeDecisionRequest,
+    ) -> crate::trade_offer::TradeOfferFuture<'_, coop_cloud::TradeOfferView> {
+        Box::pin(async { Err(crate::trade_offer::TradeOfferError::Unavailable) })
+    }
+    /// `GET /v1/characters/{character_id}/ledger/open` under the lease fence.
+    /// `Ok(None)` means the character has no open outcome-ledger entry.
+    fn ledger_open(
+        &self,
+        _token: coop_cloud::AccessToken,
+        _character_id: CharacterId,
+        _fence: coop_cloud::LeaseFence,
+    ) -> crate::ledger::LedgerFuture<'_, Option<crate::ledger::LedgerEntryView>> {
+        Box::pin(async { Err(crate::ledger::LedgerError::Unavailable) })
+    }
+    fn story_travel_recovery(
+        &self,
+        _token: coop_cloud::AccessToken,
+        _fence: coop_cloud::LeaseFence,
+    ) -> crate::group_travel::GroupTravelFuture<'_, Option<coop_cloud::StoryTravelRecoveryView>>
+    {
+        // Minimal deterministic adapters have no story-travel proposals.
+        Box::pin(async { Ok(None) })
+    }
+    fn story_travel_recovery_action(
+        &self,
+        _token: coop_cloud::AccessToken,
+        _proposal_id: coop_cloud::GroupTravelProposalId,
+        _fence: coop_cloud::LeaseFence,
+        _action: coop_cloud::StoryTravelRecoveryAction,
+    ) -> crate::group_travel::GroupTravelFuture<'_, coop_cloud::StoryTravelRecoveryResolutionView>
+    {
+        Box::pin(async { Err(crate::group_travel::GroupTravelError::Unavailable) })
+    }
+    fn battle_peer_party(
+        &self,
+        _token: coop_cloud::AccessToken,
+        _group_id: coop_cloud::GroupId,
+        _battle_id: uuid::Uuid,
+        _fence: coop_cloud::LeaseFence,
+    ) -> crate::battle::BattleFuture<'_, crate::battle::BattlePeerPartyView> {
+        Box::pin(async { Err(crate::battle::BattleApiError::Unavailable) })
+    }
+    fn battle_commit_snapshot(
+        &self,
+        _token: coop_cloud::AccessToken,
+        _group_id: coop_cloud::GroupId,
+        _battle_id: uuid::Uuid,
+        _fence: coop_cloud::LeaseFence,
+        _key: IdempotencyKey,
+        _hash: &str,
+        _party_records: Option<Vec<String>>,
+    ) -> crate::battle::BattleFuture<'_, crate::battle::BattleConsensusView> {
+        Box::pin(async { Err(crate::battle::BattleApiError::Unavailable) })
+    }
+    fn battle_ready(
+        &self,
+        _token: coop_cloud::AccessToken,
+        _group_id: coop_cloud::GroupId,
+        _battle_id: uuid::Uuid,
+        _fence: coop_cloud::LeaseFence,
+        _key: IdempotencyKey,
+        _digest: coop_protocol::BattleDigest,
+    ) -> crate::battle::BattleFuture<'_, crate::battle::BattleConsensusView> {
+        Box::pin(async { Err(crate::battle::BattleApiError::Unavailable) })
+    }
+    fn battle_inspect_consensus(
+        &self,
+        _token: coop_cloud::AccessToken,
+        _group_id: coop_cloud::GroupId,
+        _battle_id: uuid::Uuid,
+        _fence: coop_cloud::LeaseFence,
+    ) -> crate::battle::BattleFuture<'_, crate::battle::BattleConsensusView> {
+        Box::pin(async { Err(crate::battle::BattleApiError::Unavailable) })
+    }
+    fn battle_submit_action(
+        &self,
+        _token: coop_cloud::AccessToken,
+        _group_id: coop_cloud::GroupId,
+        _battle_id: uuid::Uuid,
+        _fence: coop_cloud::LeaseFence,
+        _key: IdempotencyKey,
+        _turn: u16,
+        _action: &str,
+    ) -> crate::battle::BattleFuture<'_, crate::battle::BattleConsensusView> {
+        Box::pin(async { Err(crate::battle::BattleApiError::Unavailable) })
+    }
+    fn battle_acknowledge_hash(
+        &self,
+        _token: coop_cloud::AccessToken,
+        _group_id: coop_cloud::GroupId,
+        _battle_id: uuid::Uuid,
+        _fence: coop_cloud::LeaseFence,
+        _key: IdempotencyKey,
+        _turn: u16,
+        _hash: &str,
+    ) -> crate::battle::BattleFuture<'_, crate::battle::BattleConsensusView> {
+        Box::pin(async { Err(crate::battle::BattleApiError::Unavailable) })
+    }
+    fn battle_reserve(
+        &self,
+        _token: coop_cloud::AccessToken,
+        _group_id: coop_cloud::GroupId,
+        _fence: coop_cloud::LeaseFence,
+        _kind: crate::battle::BattleKind,
+        _trainer_id: Option<coop_protocol::TrainerInstanceId>,
+        _friendly_rules: Option<coop_protocol::FriendlyBattleRules>,
+        _key: IdempotencyKey,
+    ) -> crate::battle::BattleFuture<'_, crate::battle::BattleReservationView> {
+        Box::pin(async { Err(crate::battle::BattleApiError::Unavailable) })
+    }
+    fn battle_current(
+        &self,
+        _token: coop_cloud::AccessToken,
+        _group_id: coop_cloud::GroupId,
+        _fence: coop_cloud::LeaseFence,
+    ) -> crate::battle::BattleFuture<'_, Option<crate::battle::BattleReservationView>> {
+        Box::pin(async { Err(crate::battle::BattleApiError::Unavailable) })
+    }
+    fn battle_action(
+        &self,
+        _token: coop_cloud::AccessToken,
+        _group_id: coop_cloud::GroupId,
+        _battle_id: uuid::Uuid,
+        _fence: coop_cloud::LeaseFence,
+        _action: &str,
+        _key: IdempotencyKey,
+    ) -> crate::battle::BattleFuture<'_, crate::battle::BattleReservationView> {
+        Box::pin(async { Err(crate::battle::BattleApiError::Unavailable) })
+    }
+    fn battle_finish(
+        &self,
+        _token: coop_cloud::AccessToken,
+        _group_id: coop_cloud::GroupId,
+        _battle_id: uuid::Uuid,
+        _fence: coop_cloud::LeaseFence,
+        _key: IdempotencyKey,
+        _result: coop_protocol::BattleFinishedResult,
+        _turn: u16,
+        _state_hash: coop_protocol::BattleDigest,
+    ) -> crate::battle::BattleFuture<'_, crate::battle::BattleReservationView> {
+        Box::pin(async { Err(crate::battle::BattleApiError::Unavailable) })
+    }
+    fn battle_commit_grant(
+        &self,
+        _token: coop_cloud::AccessToken,
+        _group_id: coop_cloud::GroupId,
+        _battle_id: uuid::Uuid,
+        _fence: coop_cloud::LeaseFence,
+        _expected_trainer: coop_protocol::TrainerInstanceId,
+        _expected_source_digest: coop_protocol::BattleDigest,
+        _expected_terminal_turn: u16,
+        _expected_terminal_hash: coop_protocol::BattleDigest,
+    ) -> crate::battle::BattleFuture<'_, crate::battle::BattleCommitGrantView> {
+        Box::pin(async { Err(crate::battle::BattleApiError::Unavailable) })
+    }
+    fn pairing_create(
+        &self,
+        _token: coop_cloud::AccessToken,
+        _request: coop_cloud::CreatePairingCodeRequest,
+    ) -> crate::online::OnlineFuture<'_, coop_cloud::CreatePairingCodeResponse> {
+        Box::pin(async { Err(crate::online::OnlineError::Unavailable) })
+    }
+    fn pairing_redeem(
+        &self,
+        _token: coop_cloud::AccessToken,
+        _request: coop_cloud::RedeemPairingCodeRequest,
+    ) -> crate::online::OnlineFuture<'_, coop_cloud::RedeemPairingCodeResponse> {
+        Box::pin(async { Err(crate::online::OnlineError::Unavailable) })
+    }
+    fn partner_status(
+        &self,
+        _token: coop_cloud::AccessToken,
+    ) -> crate::online::OnlineFuture<'_, coop_cloud::PartnerStatusResponse> {
+        Box::pin(async { Err(crate::online::OnlineError::Unavailable) })
+    }
     fn group_travel_create(
         &self,
         _token: coop_cloud::AccessToken,
@@ -562,6 +880,24 @@ pub trait CloudApi: AuthApi {
         _group_id: coop_cloud::GroupId,
         _proposal_id: coop_cloud::GroupTravelProposalId,
         _request: coop_cloud::GroupTravelActionRequest,
+    ) -> crate::group_travel::GroupTravelFuture<'_, coop_cloud::GroupTravelProposalView> {
+        Box::pin(async { Err(crate::group_travel::GroupTravelError::Unavailable) })
+    }
+    fn group_travel_scene_marker(
+        &self,
+        _token: coop_cloud::AccessToken,
+        _group_id: coop_cloud::GroupId,
+        _proposal_id: coop_cloud::GroupTravelProposalId,
+        _request: coop_cloud::GroupTravelSceneMarkerRequest,
+    ) -> crate::group_travel::GroupTravelFuture<'_, coop_cloud::GroupTravelProposalView> {
+        Box::pin(async { Err(crate::group_travel::GroupTravelError::Unavailable) })
+    }
+    fn group_travel_scene_receipt(
+        &self,
+        _token: coop_cloud::AccessToken,
+        _group_id: coop_cloud::GroupId,
+        _proposal_id: coop_cloud::GroupTravelProposalId,
+        _request: coop_cloud::GroupTravelSceneReceiptRequest,
     ) -> crate::group_travel::GroupTravelFuture<'_, coop_cloud::GroupTravelProposalView> {
         Box::pin(async { Err(crate::group_travel::GroupTravelError::Unavailable) })
     }
@@ -686,6 +1022,8 @@ pub enum SessionError {
     },
     #[error("presence transport requires an acknowledged replacement")]
     PresenceRecovery { transport_failure: bool },
+    #[error("a first-voyage save requires recovery before the game can resume")]
+    StoryTravelRecoveryPending,
 }
 
 /// The source checkpoint that is safe to hand to the multi-ROM coordinator.
@@ -1088,6 +1426,42 @@ impl SessionWorkspace {
         Ok(path)
     }
 
+    /// Replaces `pending_commits.json`, the only fixed file the launcher
+    /// rewrites during a session. No emulator, sidecar, or bridge process
+    /// reads it; the launcher reads it only from the same task that writes
+    /// it, so the Windows replace-by-rename (`MoveFileExW` with
+    /// `MOVEFILE_REPLACE_EXISTING`) has no concurrent reader to race.
+    fn replace_pending_commits(&self, bytes: &[u8]) -> Result<(), SessionError> {
+        const NAME: &str = "pending_commits.json";
+        if bytes.len() > MAX_SESSION_FILE_BYTES {
+            return Err(SessionError::Package);
+        }
+        let path = fixed_path(self.path(), NAME)?;
+        reject_symlink_ancestors(&path).map_err(SessionError::Filesystem)?;
+        let temporary = self
+            .path()
+            .join(format!(".{NAME}.{}.tmp", uuid::Uuid::new_v4().simple()));
+        reject_symlink(&path)?;
+        reject_symlink(&temporary)?;
+        let result = (|| {
+            let mut file = OpenOptions::new()
+                .create_new(true)
+                .write(true)
+                .open(&temporary)
+                .map_err(SessionError::Filesystem)?;
+            file.write_all(bytes).map_err(SessionError::Filesystem)?;
+            file.sync_all().map_err(SessionError::Filesystem)?;
+            drop(file);
+            reject_symlink_ancestors(&path).map_err(SessionError::Filesystem)?;
+            std::fs::rename(&temporary, &path).map_err(SessionError::Filesystem)
+        })();
+        if result.is_err() {
+            let _ = std::fs::remove_file(&temporary);
+        }
+        result?;
+        sync_workspace_directory(self.path())
+    }
+
     fn read_fixed(&self, name: &str) -> Result<Vec<u8>, SessionError> {
         let path = fixed_path(self.path(), name)?;
         let metadata = std::fs::symlink_metadata(&path).map_err(SessionError::Filesystem)?;
@@ -1449,6 +1823,18 @@ pub struct SessionLifecycle {
     /// of this same attempt. Only confirmed Android teardown followed by a
     /// new server epoch permits another lifecycle through reconnect_embedded.
     realtime_attempted: bool,
+    /// Authenticated ROM edge events waiting for a realtime attempt to reach
+    /// server readiness. This survives mint failures and transport rearm.
+    pending_progress: VecDeque<coop_protocol::ProgressObservationV1>,
+    pending_battle: VecDeque<ControlEvent>,
+    /// A ROM commit acknowledgement is carried into the next snapshot
+    /// finalize. It remains set until the server response echoes the same ID.
+    pending_applied_commit: Option<CommitId>,
+    /// The open outcome-ledger trade this session delivers to the ROM. Its
+    /// commit ID is mirrored into `pending_commits.json` until declared.
+    ledger: crate::ledger::LedgerOwner,
+    /// The in-game trade offers this session relays between ROM and cloud.
+    trade_offers: crate::trade_offer::TradeOfferOwner,
     #[cfg(test)]
     realtime_mint_state_probe: Option<Arc<tokio::sync::Notify>>,
     #[cfg(test)]
@@ -1472,6 +1858,11 @@ pub struct SessionLifecycle {
     /// same sequence twice is an ambiguous replay and fails closed.
     last_portal_sequence: Option<u32>,
     revision_updates: Option<tokio::sync::watch::Sender<u64>>,
+    /// Host UI requests served while realtime runs (see `live_requests`).
+    live_requests: Option<tokio::sync::mpsc::Receiver<crate::live_requests::LiveRequest>>,
+    /// Exact server-validated record from the most recent checkpoint. Story
+    /// travel receipts must name this snapshot, never infer one from a head.
+    last_finalized_snapshot: Option<SnapshotRecord>,
 }
 
 impl std::fmt::Debug for SessionLifecycle {
@@ -1488,6 +1879,7 @@ impl std::fmt::Debug for SessionLifecycle {
             .field("checkpoint_authorized", &self.checkpoint_authorized)
             .field("checkpoint_key", &self.checkpoint_key)
             .field("realtime_attempted", &self.realtime_attempted)
+            .field("pending_applied_commit", &self.pending_applied_commit)
             .field("fresh_resume_save_digest", &self.fresh_resume_save_digest)
             .field(
                 "checkpoint_resume_baseline",
@@ -1506,6 +1898,10 @@ impl std::fmt::Debug for SessionLifecycle {
 }
 
 impl SessionLifecycle {
+    pub(crate) fn last_finalized_snapshot(&self) -> Option<&SnapshotRecord> {
+        self.last_finalized_snapshot.as_ref()
+    }
+
     #[cfg(test)]
     fn set_realtime_mint_state_probe(&mut self, probe: Arc<tokio::sync::Notify>) {
         self.realtime_mint_state_probe = Some(probe);
@@ -2206,6 +2602,11 @@ impl SessionLifecycle {
             checkpoint_authorized: false,
             checkpoint_key: None,
             realtime_attempted: false,
+            pending_progress: VecDeque::new(),
+            pending_battle: VecDeque::new(),
+            pending_applied_commit: None,
+            ledger: crate::ledger::LedgerOwner::default(),
+            trade_offers: crate::trade_offer::TradeOfferOwner::default(),
             #[cfg(test)]
             realtime_mint_state_probe: None,
             #[cfg(test)]
@@ -2219,12 +2620,28 @@ impl SessionLifecycle {
             portal_outcome: None,
             last_portal_sequence: None,
             revision_updates: None,
+            live_requests: None,
+            last_finalized_snapshot: None,
         };
         lifecycle.auth.set_active_fence(lifecycle.lease.fence());
-        if let Err(error) = lifecycle.restore_or_bootstrap(api, expected_head).await {
-            // No child has started. A destination setup failure must retain
-            // the player's refresh credential for another region-acquire try.
-            if keep_credentials_on_setup_failure {
+        let setup = async {
+            lifecycle.reconcile_story_travel_before_resume(api).await?;
+            lifecycle.restore_or_bootstrap(api, expected_head).await
+        }
+        .await;
+        // Re-poll the outcome ledger on every start: an entry a previous
+        // launcher delivered but never saw declared is delivered again once
+        // the ROM is ready. Revision zero cannot have a ledger entry.
+        if !lifecycle.revision.is_initial() {
+            lifecycle.ledger.request_poll();
+        }
+        if let Err(error) = setup {
+            // No child process has started. A pending story decision needs
+            // the saved sign-in; other setup failures keep the existing
+            // release-and-logout behavior.
+            if keep_credentials_on_setup_failure
+                || matches!(error, SessionError::StoryTravelRecoveryPending)
+            {
                 let _ = lifecycle.release_lease_keep_credentials(api).await;
             } else {
                 let _ = lifecycle.release(api).await;
@@ -2232,6 +2649,733 @@ impl SessionLifecycle {
             return Err(error);
         }
         Ok(lifecycle)
+    }
+
+    async fn reconcile_story_travel_before_resume<A: CloudApi>(
+        &mut self,
+        api: &A,
+    ) -> Result<(), SessionError> {
+        let recovery = self.authenticated_story_recovery(api).await?;
+        let Some(recovery) = recovery else {
+            return Ok(());
+        };
+        if recovery.status != coop_cloud::GroupTravelProposalStatus::Cancelled {
+            return Err(SessionError::StoryTravelRecoveryPending);
+        }
+        match self
+            .authenticated_story_recovery_action(
+                api,
+                recovery.proposal_id,
+                coop_cloud::StoryTravelRecoveryAction::Reconcile,
+            )
+            .await
+        {
+            Ok(resolution)
+                if resolution.api_version == coop_cloud::ApiVersion::V1
+                    && resolution.proposal_id == recovery.proposal_id
+                    && resolution.outcome == coop_cloud::StoryTravelRecoveryOutcome::Reconciled => {
+            }
+            Ok(_) => return Err(SessionError::Cloud),
+            Err(SessionError::StoryTravelRecoveryPending) => {
+                let fence = self.lease.fence();
+                if fence.session_id == recovery.marker_fence.session_id
+                    || fence.session_epoch.value() <= recovery.marker_fence.session_epoch.value()
+                    || fence.current_revision != recovery.marker_fence.current_revision
+                {
+                    return Err(SessionError::StoryTravelRecoveryPending);
+                }
+                // Only the server can establish that no post-marker snapshot
+                // exists and the closed character still has the source head.
+                // Ambiguous or finalized evidence rejects Abandon there.
+                let resolution = self
+                    .authenticated_story_recovery_action(
+                        api,
+                        recovery.proposal_id,
+                        coop_cloud::StoryTravelRecoveryAction::Abandon,
+                    )
+                    .await?;
+                if resolution.api_version != coop_cloud::ApiVersion::V1
+                    || resolution.proposal_id != recovery.proposal_id
+                    || resolution.outcome != coop_cloud::StoryTravelRecoveryOutcome::Abandoned
+                {
+                    return Err(SessionError::Cloud);
+                }
+            }
+            Err(error) => return Err(error),
+        }
+        if self.authenticated_story_recovery(api).await?.is_some() {
+            return Err(SessionError::StoryTravelRecoveryPending);
+        }
+        Ok(())
+    }
+
+    /// Polls the open outcome-ledger entry when a poll is due. Transient,
+    /// stale-fence, and malformed responses back off and retry instead of
+    /// interrupting gameplay; only a failed refresh is fatal.
+    async fn poll_ledger_if_due<A: CloudApi>(&mut self, api: &A) -> Result<(), SessionError> {
+        use crate::ledger::LedgerError;
+        if self.revision.is_initial() {
+            self.ledger.cancel_poll();
+            return Ok(());
+        }
+        if !self.ledger.poll_ready(tokio::time::Instant::now()) {
+            return Ok(());
+        }
+        self.refresh_if_needed(api).await?;
+        let character_id = self.lease.character_id;
+        let token = self
+            .auth
+            .access_token()
+            .ok_or(SessionError::Unauthorized)?
+            .clone();
+        let mut result = api
+            .ledger_open(token, character_id, self.lease.fence())
+            .await;
+        if matches!(result, Err(LedgerError::Unauthorized)) {
+            self.refresh_required(api).await?;
+            let token = self
+                .auth
+                .access_token()
+                .ok_or(SessionError::Unauthorized)?
+                .clone();
+            result = api
+                .ledger_open(token, character_id, self.lease.fence())
+                .await;
+        }
+        match result.and_then(|view| self.ledger.accept(view.as_ref(), character_id)) {
+            Ok(()) => self.sync_pending_commits_file(),
+            Err(LedgerError::Unauthorized) => Err(SessionError::Unauthorized),
+            Err(LedgerError::Unavailable | LedgerError::Stale | LedgerError::InvalidResponse) => {
+                self.ledger.poll_failed(tokio::time::Instant::now());
+                Ok(())
+            }
+        }
+    }
+
+    /// Mirrors the tracked trade commit into `pending_commits.json`. Nothing
+    /// is rewritten before the first successful poll, so a restored mirror
+    /// survives until the server confirms or contradicts it.
+    fn sync_pending_commits_file(&mut self) -> Result<(), SessionError> {
+        if !self.ledger.synced() {
+            return Ok(());
+        }
+        let desired = crate::ledger::encode_pending_commits(self.ledger.tracked_commit());
+        let current = match self.workspace.read_fixed("pending_commits.json") {
+            Ok(bytes) => Some(bytes),
+            Err(SessionError::Filesystem(error)) if error.kind() == io::ErrorKind::NotFound => None,
+            Err(error) => return Err(error),
+        };
+        if current.as_deref() != Some(desired.as_slice()) {
+            self.workspace.replace_pending_commits(&desired)?;
+        }
+        Ok(())
+    }
+
+    /// The next `TradeCommit` for this control generation, if the tracked
+    /// trade has not been delivered to it or acknowledged yet.
+    fn take_ledger_delivery(&mut self, generation: u32) -> Option<ControlCommand> {
+        self.ledger
+            .take_delivery(generation)
+            .map(|record| ControlCommand::TradeCommit {
+                session_epoch: self.lease.session_epoch.value(),
+                record,
+            })
+    }
+
+    /// Resolves this member's group for the trade UI. `None` means the
+    /// lookup failed; `Some(None)` means this member is not grouped.
+    async fn trade_group<A: CloudApi>(
+        &mut self,
+        api: &A,
+    ) -> Result<Option<Option<coop_cloud::GroupId>>, SessionError> {
+        let now = tokio::time::Instant::now();
+        if let Some(group) = self.trade_offers.fresh_group(now) {
+            return Ok(Some(Some(group)));
+        }
+        self.refresh_if_needed(api).await?;
+        let token = self
+            .auth
+            .access_token()
+            .ok_or(SessionError::Unauthorized)?
+            .clone();
+        let request = coop_cloud::OnlineSnapshotRequest {
+            api_version: coop_cloud::ApiVersion::V1,
+            fence: self.lease.fence(),
+            incoming_after: None,
+        };
+        let response = tokio::time::timeout(
+            crate::trade_offer::REQUEST_TIMEOUT,
+            api.online_snapshot(token, request),
+        )
+        .await;
+        match response {
+            Ok(Ok(response)) if response.api_version == coop_cloud::ApiVersion::V1 => {
+                let character_id = self.lease.character_id;
+                let group = response
+                    .group
+                    .filter(|group| {
+                        group
+                            .group
+                            .members
+                            .iter()
+                            .any(|member| member.character_id == character_id)
+                    })
+                    .map(|group| group.group.group_id);
+                self.trade_offers.set_group(group, now);
+                Ok(Some(group))
+            }
+            _ => Ok(None),
+        }
+    }
+
+    fn trade_status(&self, record: coop_protocol::TradeOfferStatusRecord) -> ControlCommand {
+        ControlCommand::TradeOfferStatus {
+            session_epoch: self.lease.session_epoch.value(),
+            record,
+        }
+    }
+
+    /// Withdraws this member's own offer with a reject. Returns what the
+    /// requester's ROM is told: a race with the partner's accept reports
+    /// `Accepted` (the ledger then delivers the trade), and a failed call
+    /// keeps the offer queued for withdrawal.
+    async fn withdraw_trade_offer<A: CloudApi>(
+        &mut self,
+        api: &A,
+        offer: crate::trade_offer::Requester,
+    ) -> Result<Option<coop_protocol::TradeOfferOutcome>, SessionError> {
+        use crate::trade_offer::TradeOfferError;
+        use coop_protocol::TradeOfferOutcome;
+        let own = offer.own_slot(self.lease.character_id);
+        let partner =
+            offer.view.slots[usize::from(offer.view.members[0] == self.lease.character_id)];
+        let request = coop_cloud::TradeDecisionRequest {
+            api_version: coop_cloud::ApiVersion::V1,
+            fence: self.lease.fence(),
+            offer_id: offer.view.offer_id,
+            own_slot: own,
+            partner_slot: partner,
+            decision: coop_cloud::TradeDecision::Reject,
+            own_pokemon: None,
+            idempotency_key: IdempotencyKey::new(uuid::Uuid::new_v4())
+                .map_err(|_| SessionError::Realtime)?,
+        };
+        let result = trade_call!(self, api, |token| api.trade_offer_decide(
+            token,
+            offer.group_id,
+            request
+        ));
+        let outcome = match result {
+            Ok(view) if view.status == coop_cloud::TradeOfferStatus::Accepted => {
+                Some(TradeOfferOutcome::Accepted)
+            }
+            Ok(view) if view.status == coop_cloud::TradeOfferStatus::Expired => {
+                Some(TradeOfferOutcome::Expired)
+            }
+            Ok(_) => Some(TradeOfferOutcome::Cancelled),
+            // Only an accepted offer refuses a reject.
+            Err(TradeOfferError::Conflict) => Some(TradeOfferOutcome::Accepted),
+            Err(TradeOfferError::Expired | TradeOfferError::NotFound) => {
+                Some(TradeOfferOutcome::Expired)
+            }
+            Err(_) => None,
+        };
+        if outcome == Some(TradeOfferOutcome::Accepted) {
+            self.ledger.request_poll();
+        }
+        Ok(outcome)
+    }
+
+    /// Handles the ROM's `TradeOfferRequest`: creates an open offer against
+    /// the checkpoint the ROM just took, or withdraws it.
+    async fn handle_trade_offer_request<A: CloudApi>(
+        &mut self,
+        api: &A,
+        record: coop_protocol::TradeOfferRequestRecord,
+        generation: u32,
+    ) -> Result<Vec<ControlCommand>, SessionError> {
+        use crate::trade_offer::{
+            Requester, TradeOfferError, failure_outcome, offer_token, requester_status,
+        };
+        use coop_protocol::{TradeOfferAction, TradeOfferOutcome};
+        self.trade_offers.observe_generation(generation);
+        let now = tokio::time::Instant::now();
+        if record.action == TradeOfferAction::Cancel {
+            let Some(offer) = self
+                .trade_offers
+                .requester
+                .filter(|offer| offer.request_id == record.request_id)
+            else {
+                return Ok(vec![self.trade_status(requester_status(
+                    record.request_id,
+                    0,
+                    TradeOfferOutcome::Cancelled,
+                ))]);
+            };
+            self.trade_offers.requester = None;
+            let outcome = match self.withdraw_trade_offer(api, offer).await? {
+                Some(outcome) => outcome,
+                None => {
+                    // Keep withdrawing on the poll cadence; the ROM stops
+                    // waiting now. The server offer lapses in any case.
+                    self.trade_offers.withdraw = Some(offer);
+                    TradeOfferOutcome::Cancelled
+                }
+            };
+            self.trade_offers.schedule(now);
+            return Ok(vec![self.trade_status(requester_status(
+                record.request_id,
+                offer.token(),
+                outcome,
+            ))]);
+        }
+
+        if let Some(offer) = self.trade_offers.requester {
+            let outcome = if offer.request_id == record.request_id {
+                TradeOfferOutcome::Pending
+            } else {
+                TradeOfferOutcome::Busy
+            };
+            let token = if outcome == TradeOfferOutcome::Pending {
+                offer.token()
+            } else {
+                0
+            };
+            return Ok(vec![self.trade_status(requester_status(
+                record.request_id,
+                token,
+                outcome,
+            ))]);
+        }
+        let fail = |this: &Self, outcome| {
+            Ok(vec![this.trade_status(requester_status(
+                record.request_id,
+                0,
+                outcome,
+            ))])
+        };
+        if self.trade_offers.responder.is_some() || self.trade_offers.withdraw.is_some() {
+            return fail(self, TradeOfferOutcome::Busy);
+        }
+        if self.revision.is_initial() {
+            return fail(self, TradeOfferOutcome::Stale);
+        }
+        let group_id = match self.trade_group(api).await? {
+            None => return fail(self, TradeOfferOutcome::Unavailable),
+            Some(None) => return fail(self, TradeOfferOutcome::PartnerUnavailable),
+            Some(Some(group_id)) => group_id,
+        };
+        let request = coop_cloud::TradeOfferRequest {
+            api_version: coop_cloud::ApiVersion::V1,
+            fence: self.lease.fence(),
+            group_id,
+            own_slot: coop_cloud::PartyPosition::new(record.slot).ok_or(SessionError::Realtime)?,
+            partner_slot: None,
+            partner_expected_revision: None,
+            own_pokemon: Some(coop_cloud::TradePokemonKey {
+                personality: record.personality,
+                ot_id: record.ot_id,
+            }),
+            idempotency_key: IdempotencyKey::new(uuid::Uuid::new_v4())
+                .map_err(|_| SessionError::Realtime)?,
+        };
+        let mut result = trade_call!(self, api, |token| api
+            .trade_offer_create(token, group_id, request));
+        if matches!(result, Err(TradeOfferError::Unavailable)) {
+            // Same idempotency key: a lost response replays the same offer.
+            result = trade_call!(self, api, |token| api
+                .trade_offer_create(token, group_id, request));
+        }
+        let outcome = match result {
+            Ok(view)
+                if view.status == coop_cloud::TradeOfferStatus::Pending && view.partner_chooses =>
+            {
+                self.trade_offers.requester = Some(Requester {
+                    request_id: record.request_id,
+                    group_id,
+                    view,
+                    generation,
+                });
+                self.trade_offers.schedule(now);
+                return Ok(vec![self.trade_status(requester_status(
+                    record.request_id,
+                    offer_token(view.offer_id),
+                    TradeOfferOutcome::Pending,
+                ))]);
+            }
+            Ok(_) => TradeOfferOutcome::Unavailable,
+            Err(TradeOfferError::Conflict) => {
+                // Another live offer blocks this one, or the checkpoint did
+                // not hold the picked Pokémon in that slot.
+                let fence = self.lease.fence();
+                let live = trade_call!(self, api, |token| api
+                    .trade_offer_current(token, group_id, fence));
+                if matches!(live, Ok(Some(_))) {
+                    TradeOfferOutcome::Busy
+                } else {
+                    TradeOfferOutcome::Stale
+                }
+            }
+            Err(TradeOfferError::NotFound) => {
+                self.trade_offers.forget_group();
+                TradeOfferOutcome::PartnerUnavailable
+            }
+            Err(error) => failure_outcome(error),
+        };
+        fail(self, outcome)
+    }
+
+    /// Handles the ROM's `TradeOfferDecision` for the offer it was shown.
+    async fn handle_trade_offer_decision<A: CloudApi>(
+        &mut self,
+        api: &A,
+        record: coop_protocol::TradeOfferDecisionRecord,
+        generation: u32,
+    ) -> Result<Vec<ControlCommand>, SessionError> {
+        use crate::trade_offer::{TradeOfferError, failure_outcome, responder_status};
+        use coop_protocol::{TradeOfferDecision, TradeOfferOutcome};
+        self.trade_offers.observe_generation(generation);
+        let Some(offer) = self
+            .trade_offers
+            .responder
+            .filter(|offer| offer.token() == record.offer_token)
+        else {
+            // The prompt outlived the offer: tell an accepting ROM it lapsed.
+            return Ok(match record.decision {
+                TradeOfferDecision::Accept => vec![self.trade_status(responder_status(
+                    record.offer_token,
+                    TradeOfferOutcome::Expired,
+                ))],
+                TradeOfferDecision::Decline => Vec::new(),
+            });
+        };
+        self.trade_offers.responder = None;
+        self.trade_offers.mark_seen(offer.view.offer_id);
+        self.trade_offers.schedule(tokio::time::Instant::now());
+        let accept = record.decision == TradeOfferDecision::Accept;
+        let request = coop_cloud::TradeDecisionRequest {
+            api_version: coop_cloud::ApiVersion::V1,
+            fence: self.lease.fence(),
+            offer_id: offer.view.offer_id,
+            own_slot: coop_cloud::PartyPosition::new(record.slot).ok_or(SessionError::Realtime)?,
+            partner_slot: offer.initiator_slot(),
+            decision: if accept {
+                coop_cloud::TradeDecision::Accept
+            } else {
+                coop_cloud::TradeDecision::Reject
+            },
+            own_pokemon: accept.then_some(coop_cloud::TradePokemonKey {
+                personality: record.personality,
+                ot_id: record.ot_id,
+            }),
+            idempotency_key: IdempotencyKey::new(uuid::Uuid::new_v4())
+                .map_err(|_| SessionError::Realtime)?,
+        };
+        let mut result = trade_call!(self, api, |token| api.trade_offer_decide(
+            token,
+            offer.group_id,
+            request
+        ));
+        if matches!(result, Err(TradeOfferError::Unavailable)) {
+            result = trade_call!(self, api, |token| api.trade_offer_decide(
+                token,
+                offer.group_id,
+                request
+            ));
+        }
+        if !accept {
+            // A decline needs no answer; a lost one lapses on the server.
+            return Ok(Vec::new());
+        }
+        let outcome = match result {
+            Ok(view) if view.status == coop_cloud::TradeOfferStatus::Accepted => {
+                TradeOfferOutcome::Accepted
+            }
+            Ok(_) => TradeOfferOutcome::Unavailable,
+            Err(TradeOfferError::Conflict) => {
+                // Learn why: the requester withdrew, it lapsed, or this
+                // member's checkpoint or ledger was not ready.
+                let fence = self.lease.fence();
+                let view = trade_call!(self, api, |token| api.trade_offer_get(
+                    token,
+                    offer.group_id,
+                    offer.view.offer_id,
+                    fence
+                ));
+                match view.map(|view| view.status) {
+                    Ok(coop_cloud::TradeOfferStatus::Rejected) => TradeOfferOutcome::Cancelled,
+                    Ok(coop_cloud::TradeOfferStatus::Expired) => TradeOfferOutcome::Expired,
+                    Ok(coop_cloud::TradeOfferStatus::Accepted) => TradeOfferOutcome::Accepted,
+                    Ok(coop_cloud::TradeOfferStatus::Pending) => TradeOfferOutcome::Stale,
+                    Err(_) => TradeOfferOutcome::Unavailable,
+                }
+            }
+            Err(error) => failure_outcome(error),
+        };
+        if outcome == TradeOfferOutcome::Accepted {
+            self.ledger.request_poll();
+        }
+        Ok(vec![
+            self.trade_status(responder_status(offer.token(), outcome)),
+        ])
+    }
+
+    /// Advances the in-game trade offers when their poll is due: a pending
+    /// withdrawal, the requester's outcome, and the partner's offer.
+    async fn poll_trade_offers<A: CloudApi>(
+        &mut self,
+        api: &A,
+        generation: u32,
+    ) -> Result<Vec<ControlCommand>, SessionError> {
+        use crate::trade_offer::{
+            Responder, TradeOfferError, outcome_of, received_record, requester_status,
+            responder_status,
+        };
+        use coop_protocol::TradeOfferOutcome;
+        self.trade_offers.observe_generation(generation);
+        let now = tokio::time::Instant::now();
+        let mut commands = Vec::new();
+        if !self.trade_offers.poll_due(now) {
+            if let Some(received) = self.trade_offers.take_received(generation) {
+                commands.push(ControlCommand::TradeOfferReceived {
+                    session_epoch: self.lease.session_epoch.value(),
+                    record: received,
+                });
+            }
+            return Ok(commands);
+        }
+        if let Some(offer) = self.trade_offers.withdraw
+            && self.withdraw_trade_offer(api, offer).await?.is_some()
+        {
+            self.trade_offers.withdraw = None;
+        }
+        if let Some(offer) = self.trade_offers.requester {
+            let fence = self.lease.fence();
+            let result = trade_call!(self, api, |token| api.trade_offer_get(
+                token,
+                offer.group_id,
+                offer.view.offer_id,
+                fence
+            ));
+            let outcome = match result {
+                Ok(view) => outcome_of(view.status),
+                Err(TradeOfferError::NotFound | TradeOfferError::Expired) => {
+                    Some(TradeOfferOutcome::Expired)
+                }
+                Err(_) => None,
+            };
+            if let Some(outcome) = outcome {
+                self.trade_offers.requester = None;
+                if outcome == TradeOfferOutcome::Accepted {
+                    self.ledger.request_poll();
+                }
+                commands.push(self.trade_status(requester_status(
+                    offer.request_id,
+                    offer.token(),
+                    outcome,
+                )));
+            }
+        } else if self.trade_offers.withdraw.is_none() {
+            match self.trade_group(api).await? {
+                Some(Some(group_id)) => {
+                    let fence = self.lease.fence();
+                    let current = trade_call!(self, api, |token| api
+                        .trade_offer_current(token, group_id, fence));
+                    let character_id = self.lease.character_id;
+                    let shown = match current {
+                        Ok(Some(current))
+                            if current.offer.initiator != character_id
+                                && current.offer.partner_chooses
+                                && current.offer.members.contains(&character_id) =>
+                        {
+                            Some(current)
+                        }
+                        Ok(_) => None,
+                        Err(TradeOfferError::NotFound) => {
+                            self.trade_offers.forget_group();
+                            None
+                        }
+                        // Transient: keep the prompt as it is.
+                        Err(_) => {
+                            self.trade_offers.schedule(now);
+                            return Ok(commands);
+                        }
+                    };
+                    if let Some(old) = self.trade_offers.responder
+                        && shown.is_none_or(|current| current.offer.offer_id != old.view.offer_id)
+                    {
+                        // The shown offer is gone: learn why and close the
+                        // prompt.
+                        self.trade_offers.responder = None;
+                        let view = trade_call!(self, api, |token| api.trade_offer_get(
+                            token,
+                            old.group_id,
+                            old.view.offer_id,
+                            fence
+                        ));
+                        let outcome = match view.map(|view| view.status) {
+                            Ok(coop_cloud::TradeOfferStatus::Rejected) => {
+                                TradeOfferOutcome::Cancelled
+                            }
+                            Ok(coop_cloud::TradeOfferStatus::Accepted) => {
+                                self.ledger.request_poll();
+                                TradeOfferOutcome::Accepted
+                            }
+                            _ => TradeOfferOutcome::Expired,
+                        };
+                        commands.push(self.trade_status(responder_status(old.token(), outcome)));
+                    }
+                    if let Some(current) = shown
+                        && self.trade_offers.responder.is_none()
+                        && !self.trade_offers.seen(current.offer.offer_id)
+                        && let Some(received) = received_record(&current)
+                    {
+                        self.trade_offers.mark_seen(current.offer.offer_id);
+                        self.trade_offers.responder = Some(Responder {
+                            group_id,
+                            view: current.offer,
+                            received,
+                            delivered_generation: None,
+                        });
+                    }
+                }
+                Some(None) => {
+                    if let Some(old) = self.trade_offers.responder.take() {
+                        commands.push(self.trade_status(responder_status(
+                            old.token(),
+                            TradeOfferOutcome::PartnerUnavailable,
+                        )));
+                    }
+                }
+                None => {}
+            }
+        }
+        if let Some(received) = self.trade_offers.take_received(generation) {
+            commands.push(ControlCommand::TradeOfferReceived {
+                session_epoch: self.lease.session_epoch.value(),
+                record: received,
+            });
+        }
+        self.trade_offers.schedule(now);
+        Ok(commands)
+    }
+
+    /// Records a ROM acknowledgement so the next finalize declares it. A
+    /// different commit already waiting for declaration is a protocol
+    /// violation: the server keeps at most one open entry per character.
+    fn record_applied_commit(&mut self, commit_id: CommitId) -> Result<(), SessionError> {
+        if self
+            .pending_applied_commit
+            .is_some_and(|pending| pending != commit_id)
+        {
+            return Err(SessionError::Realtime);
+        }
+        self.pending_applied_commit = Some(commit_id);
+        self.ledger.request_poll();
+        Ok(())
+    }
+
+    /// Handles the 43-byte `CommitApplied` for a delivered `BattleCommit`
+    /// after the battle owner accepted it.
+    fn accept_battle_commit_applied(
+        &mut self,
+        record: coop_protocol::CommitAppliedRecord,
+    ) -> Result<(), SessionError> {
+        let commit_id = CommitId::new(uuid::Uuid::from_bytes(record.commit_id.0))
+            .map_err(|_| SessionError::Realtime)?;
+        self.record_applied_commit(commit_id)
+    }
+
+    /// Handles the 28-byte `CommitApplied` for a delivered `TradeCommit`.
+    fn accept_trade_commit_applied(
+        &mut self,
+        record: coop_protocol::TradeCommitAppliedRecord,
+    ) -> Result<(), SessionError> {
+        let commit_id = self
+            .ledger
+            .acknowledge(record)
+            .ok_or(SessionError::Realtime)?;
+        self.record_applied_commit(commit_id)
+    }
+
+    /// Clears a declared commit once the finalized record echoes it.
+    fn commit_declared(&mut self, record: &SnapshotRecord) -> Result<(), SessionError> {
+        if self.pending_applied_commit == record.last_applied_commit {
+            self.pending_applied_commit = None;
+        }
+        if let Some(commit_id) = record.last_applied_commit {
+            self.ledger.finalized(commit_id);
+            self.sync_pending_commits_file()?;
+        }
+        Ok(())
+    }
+
+    async fn authenticated_story_recovery<A: CloudApi>(
+        &mut self,
+        api: &A,
+    ) -> Result<Option<coop_cloud::StoryTravelRecoveryView>, SessionError> {
+        use crate::group_travel::GroupTravelError;
+        self.refresh_if_needed(api).await?;
+        let fence = self.lease.fence();
+        let token = self
+            .auth
+            .access_token()
+            .ok_or(SessionError::Unauthorized)?
+            .clone();
+        let result = api.story_travel_recovery(token, fence).await;
+        let result = if matches!(result, Err(GroupTravelError::Unauthorized)) {
+            self.refresh_required(api).await?;
+            let token = self
+                .auth
+                .access_token()
+                .ok_or(SessionError::Unauthorized)?
+                .clone();
+            api.story_travel_recovery(token, fence).await
+        } else {
+            result
+        };
+        result.map_err(|error| match error {
+            GroupTravelError::Unauthorized => SessionError::Unauthorized,
+            _ => SessionError::Cloud,
+        })
+    }
+
+    async fn authenticated_story_recovery_action<A: CloudApi>(
+        &mut self,
+        api: &A,
+        proposal_id: coop_cloud::GroupTravelProposalId,
+        action: coop_cloud::StoryTravelRecoveryAction,
+    ) -> Result<coop_cloud::StoryTravelRecoveryResolutionView, SessionError> {
+        use crate::group_travel::GroupTravelError;
+        self.refresh_if_needed(api).await?;
+        let fence = self.lease.fence();
+        let token = self
+            .auth
+            .access_token()
+            .ok_or(SessionError::Unauthorized)?
+            .clone();
+        let result = api
+            .story_travel_recovery_action(token, proposal_id, fence, action)
+            .await;
+        let result = if matches!(result, Err(GroupTravelError::Unauthorized)) {
+            self.refresh_required(api).await?;
+            let token = self
+                .auth
+                .access_token()
+                .ok_or(SessionError::Unauthorized)?
+                .clone();
+            api.story_travel_recovery_action(token, proposal_id, fence, action)
+                .await
+        } else {
+            result
+        };
+        result.map_err(|error| match error {
+            GroupTravelError::Unauthorized => SessionError::Unauthorized,
+            GroupTravelError::Stale | GroupTravelError::NotFound => {
+                SessionError::StoryTravelRecoveryPending
+            }
+            _ => SessionError::Cloud,
+        })
     }
 
     async fn restore_or_bootstrap<A: CloudApi>(
@@ -2721,6 +3865,13 @@ impl SessionLifecycle {
                 other => SessionError::Epoch(other),
             });
         }
+        if lease.session_epoch != self.lease.session_epoch {
+            // Observations carry the epoch in which the ROM produced them.
+            // Replaying them under a replacement lease would be rejected by
+            // the server as an invalid realtime frame.
+            self.pending_progress.clear();
+            self.pending_battle.clear();
+        }
         self.lease = lease;
         self.auth.set_active_fence(self.lease.fence());
         self.reconnect_key = random_idempotency_key()?;
@@ -2732,6 +3883,16 @@ impl SessionLifecycle {
         let (send, receive) = tokio::sync::watch::channel(self.revision.value());
         self.revision_updates = Some(send);
         receive
+    }
+
+    /// Lets a host UI ask this session for partner status or to redeem a
+    /// pairing code while realtime runs, using the session's own token and
+    /// lease fence. Requests arriving outside a realtime run wait for one.
+    pub fn serve_live_requests(
+        &mut self,
+        requests: tokio::sync::mpsc::Receiver<crate::live_requests::LiveRequest>,
+    ) {
+        self.live_requests = Some(requests);
     }
 
     /// Re-enters the Android lifecycle only after the old native core and
@@ -3133,9 +4294,11 @@ impl SessionLifecycle {
         A: CloudApi + RealtimeApi,
         F: Future<Output = ()> + Send,
     {
+        let mut live = crate::live_requests::LiveRequestOwner::new(self.live_requests.take());
         let result = self
-            .run_until_shutdown_with_realtime_inner(api, children, shutdown)
+            .run_until_shutdown_with_realtime_inner(api, children, shutdown, &mut live)
             .await;
+        self.live_requests = live.into_receiver();
         if result.is_err() {
             if let Err(error) = children.stop_in_place().await
                 && matches!(&result, Err(SessionError::PortalHandoffUnavailable))
@@ -3175,11 +4338,12 @@ impl SessionLifecycle {
         }
     }
 
-    async fn run_until_shutdown_with_realtime_inner<A, F>(
+    async fn run_until_shutdown_with_realtime_inner<'a, A, F>(
         &mut self,
-        api: &A,
+        api: &'a A,
         children: &mut impl SessionSupervisor,
         shutdown: F,
+        live: &mut crate::live_requests::LiveRequestOwner<'a>,
     ) -> Result<(), SessionError>
     where
         A: CloudApi + RealtimeApi,
@@ -3192,7 +4356,10 @@ impl SessionLifecycle {
         heartbeat.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
         let mut shutdown = Box::pin(shutdown);
         let mut online = crate::online::OnlineOwner::default();
+        let mut pairing = crate::online::PairingOwner::default();
+        let mut invites = crate::online::InviteWatcher::default();
         let mut group_travel = crate::group_travel::GroupTravelOwner::default();
+        let mut battle = crate::battle::BattleOwner::new_process();
         let mut failures = 0_u32;
         loop {
             let started = tokio::time::Instant::now();
@@ -3203,12 +4370,19 @@ impl SessionLifecycle {
                     &mut shutdown,
                     &mut heartbeat,
                     &mut online,
+                    &mut pairing,
+                    &mut invites,
                     &mut group_travel,
+                    &mut battle,
+                    live,
                 )
                 .await
             {
                 Err(SessionError::PresenceRecovery { transport_failure }) => {
                     online.invalidate();
+                    pairing.invalidate();
+                    invites.invalidate();
+                    battle.invalidate();
                     // A routine realtime restart is recoverable for the
                     // lifetime of the fenced lease. Keep rearming with
                     // bounded jitter so a brief server outage does not
@@ -3241,6 +4415,21 @@ impl SessionLifecycle {
         clippy::too_many_lines,
         reason = "each attempt retains explicit checkpoint and cleanup ownership"
     )]
+    fn start_live_request<'a, A: CloudApi>(
+        &self,
+        api: &'a A,
+        live: &mut crate::live_requests::LiveRequestOwner<'a>,
+        step: crate::live_requests::LiveStep,
+    ) {
+        let crate::live_requests::LiveStep::Request(request) = step else {
+            return;
+        };
+        match self.auth.access_token() {
+            Some(token) => live.start(api, token.clone(), self.lease.fence(), request),
+            None => crate::live_requests::reply_unavailable(request),
+        }
+    }
+
     async fn run_realtime_attempt<'a, A, F>(
         &mut self,
         api: &'a A,
@@ -3248,7 +4437,11 @@ impl SessionLifecycle {
         shutdown: &mut Pin<Box<F>>,
         heartbeat: &mut tokio::time::Interval,
         online: &mut crate::online::OnlineOwner<'a>,
+        pairing: &mut crate::online::PairingOwner<'a>,
+        invites: &mut crate::online::InviteWatcher<'a>,
         group_travel: &mut crate::group_travel::GroupTravelOwner<'a>,
+        battle: &mut crate::battle::BattleOwner<'a>,
+        live: &mut crate::live_requests::LiveRequestOwner<'a>,
     ) -> Result<(), SessionError>
     where
         A: CloudApi + RealtimeApi,
@@ -3283,6 +4476,11 @@ impl SessionLifecycle {
                         children.control().send(&ControlCommand::OnlineStatus { session_epoch: self.lease.session_epoch.value(), status }).await?;
                     }
                 }
+                completion = pairing.next() => {
+                    if let Some(status) = pairing.finish(completion, self.lease.fence(), children.control().lifecycle_generation())? {
+                        children.control().send(&ControlCommand::PairingStatus { session_epoch: self.lease.session_epoch.value(), status }).await?;
+                    }
+                }
                 () = shutdown.as_mut() => {
                     let disposition = children
                         .shutdown(self.lease.session_epoch.value(), false)
@@ -3294,6 +4492,7 @@ impl SessionLifecycle {
                     };
                 }
                 _ = heartbeat.tick() => self.heartbeat(api).await?,
+                step = live.next() => self.start_live_request(api, live, step),
                 travel = group_travel.next_event() => {
                     match travel {
                         crate::group_travel::GroupTravelOwnerEvent::Deliver(record) => {
@@ -3314,8 +4513,18 @@ impl SessionLifecycle {
                             | ControlEvent::CompanionState(_)
                             | ControlEvent::SocialSignal(_),
                         ) => {}
+                        RawSupervisorEvent::Control(ControlEvent::ProgressObservation(observation)) => {
+                            queue_pending_progress_observation(
+                                &mut self.pending_progress,
+                                self.lease.session_epoch.value(),
+                                observation,
+                            )?;
+                        }
                         RawSupervisorEvent::Control(ControlEvent::OnlineRequest(request)) => {
                             self.start_online(api, online, &mut children.control(), request).await?;
+                        }
+                        RawSupervisorEvent::Control(ControlEvent::PairingRequest(request)) => {
+                            self.start_pairing(api, pairing, &mut children.control(), request).await?;
                         }
                         RawSupervisorEvent::Control(ControlEvent::GroupTravel(record)) => {
                             group_travel.handle(
@@ -3324,8 +4533,52 @@ impl SessionLifecycle {
                                 record,
                             )?;
                         }
+                        RawSupervisorEvent::Control(ControlEvent::TrainerBattleReserve(record)) => {
+                            if let Some(record) = battle.reserve(self.lease.fence(), children.control().lifecycle_generation(), record) {
+                                children.control().send(&ControlCommand::BattleReserveRejected { session_epoch: self.lease.session_epoch.value(), record }).await?;
+                            }
+                        }
+                        RawSupervisorEvent::Control(ControlEvent::BattleJoinResponse(record)) => {
+                            if let Some(record) = battle.respond(self.lease.fence(), children.control().lifecycle_generation(), record) {
+                                children.control().send(&ControlCommand::AbortBattle { session_epoch: self.lease.session_epoch.value(), record }).await?;
+                            }
+                        }
+                        RawSupervisorEvent::Control(ControlEvent::BattleAbortRequest(record)) => {
+                            battle.abort_request(self.lease.fence(), children.control().lifecycle_generation(), record);
+                        }
+                        RawSupervisorEvent::Control(ControlEvent::CommitApplied(record)) => {
+                            let fence = self.lease.fence();
+                            let generation = children.control().lifecycle_generation();
+                            if !battle.mark_commit_acknowledged(fence, generation, record) {
+                                return Err(SessionError::Realtime);
+                            }
+                            self.accept_battle_commit_applied(record)?;
+                        }
+                        RawSupervisorEvent::Control(ControlEvent::TradeCommitApplied(record)) => {
+                            self.accept_trade_commit_applied(record)?;
+                        }
+                        // Trade offers need the realtime loop; keep them in order.
+                        RawSupervisorEvent::Control(event @ (ControlEvent::TradeOfferRequest(_)
+                            | ControlEvent::TradeOfferDecision(_))) => {
+                            queue_pending_battle(&mut self.pending_battle, event)?;
+                        }
+                        RawSupervisorEvent::Control(event @ (ControlEvent::PartySnapshot(_)
+                            | ControlEvent::BattleReady(_)
+                            | ControlEvent::ActionIntent(_)
+                            | ControlEvent::TurnResultHash(_)
+                            | ControlEvent::BattleFinished(_))) => {
+                            if let Some(record) = battle.handle_bridge_event(self.lease.fence(), children.control().lifecycle_generation(), event) {
+                                children.control().send(&ControlCommand::AbortBattle { session_epoch: self.lease.session_epoch.value(), record }).await?;
+                            }
+                        }
                         RawSupervisorEvent::Control(ready @ ControlEvent::CheckpointReady { .. }) => {
+                            let story_token = group_travel.story_checkpoint_token(self.lease.fence());
                             self.checkpoint_with_deadline(api, &mut children.control(), ready).await?;
+                            if let Some(token) = story_token {
+                                let snapshot = self.last_finalized_snapshot()
+                                    .ok_or(SessionError::CheckpointCorrelation)?;
+                                group_travel.story_checkpoint_finalized(token, snapshot, self.lease.fence())?;
+                            }
                         }
                         RawSupervisorEvent::Control(ControlEvent::RomPresenceReset) => {
                             return Err(SessionError::Realtime);
@@ -3394,6 +4647,8 @@ impl SessionLifecycle {
             generation,
             &mut freshest,
             &mut pending_checkpoint,
+            &mut self.pending_progress,
+            &mut self.pending_battle,
             #[cfg(test)]
             self.realtime_mint_state_probe.as_deref(),
         )
@@ -3422,6 +4677,8 @@ impl SessionLifecycle {
                     generation,
                     &mut freshest,
                     &mut pending_checkpoint,
+                    &mut self.pending_progress,
+                    &mut self.pending_battle,
                     #[cfg(test)]
                     self.realtime_mint_state_probe.as_deref(),
                 )
@@ -3587,16 +4844,19 @@ impl SessionLifecycle {
                     .drain_shutdown_checkpoint_with_realtime(api, children, realtime)
                     .await;
                 children.control().disable_lifecycle();
-                let stopped = coordinator.take().unwrap().stop_and_join().await;
+                let mut finished = coordinator.take().unwrap();
+                let retained = self.retain_coordinator_progress(&mut finished);
+                let stopped = finished.stop_and_join().await;
                 let disposition = children
                     .shutdown(
                         self.lease.session_epoch.value(),
                         drain.is_ok() && stopped.is_ok(),
                     )
                     .await;
-                result = match (drain, stopped, disposition.recovery_required()) {
-                    (Err(error), _, _) => Err(error),
-                    (_, Err(_), _) | (_, _, true) => Err(SessionError::Realtime),
+                result = match (retained, drain, stopped, disposition.recovery_required()) {
+                    (Err(error), _, _, _) => Err(error),
+                    (_, Err(error), _, _) => Err(error),
+                    (_, _, Err(_), _) | (_, _, _, true) => Err(SessionError::Realtime),
                     _ => Ok(()),
                 };
                 break;
@@ -3606,10 +4866,203 @@ impl SessionLifecycle {
                 .access_token()
                 .ok_or(SessionError::Unauthorized)?
                 .clone();
+            if !online.is_pending() && !pairing.is_pending() {
+                invites.prepare(api, travel_token.clone(), self.lease.fence());
+            }
             let travel_fence = self.lease.fence();
             let travel_generation = children.control().lifecycle_generation();
             group_travel.prepare(api, travel_token, travel_fence, travel_generation);
+            if let Some(record) = battle.take_replay_abort(travel_fence, travel_generation) {
+                children
+                    .control()
+                    .send(&ControlCommand::AbortBattle {
+                        session_epoch: self.lease.session_epoch.value(),
+                        record,
+                    })
+                    .await?;
+            }
+            if let Some(record) = battle.take_replay_commit(travel_fence, travel_generation) {
+                children
+                    .control()
+                    .send(&ControlCommand::BattleCommit {
+                        session_epoch: self.lease.session_epoch.value(),
+                        record,
+                    })
+                    .await?;
+            }
+            while let Some(event) = self.pending_battle.pop_front() {
+                match event {
+                    ControlEvent::TrainerBattleReserve(record) => {
+                        if let Some(record) =
+                            battle.reserve(travel_fence, travel_generation, record)
+                        {
+                            children
+                                .control()
+                                .send(&ControlCommand::BattleReserveRejected {
+                                    session_epoch: self.lease.session_epoch.value(),
+                                    record,
+                                })
+                                .await?;
+                        }
+                    }
+                    ControlEvent::BattleJoinResponse(record) => {
+                        if let Some(record) =
+                            battle.respond(travel_fence, travel_generation, record)
+                        {
+                            children
+                                .control()
+                                .send(&ControlCommand::AbortBattle {
+                                    session_epoch: self.lease.session_epoch.value(),
+                                    record,
+                                })
+                                .await?;
+                        }
+                    }
+                    ControlEvent::BattleAbortRequest(record) => {
+                        battle.abort_request(travel_fence, travel_generation, record)
+                    }
+                    ControlEvent::CommitApplied(record) => {
+                        if !battle.mark_commit_acknowledged(travel_fence, travel_generation, record)
+                        {
+                            return Err(SessionError::Realtime);
+                        }
+                        self.accept_battle_commit_applied(record)?;
+                    }
+                    ControlEvent::TradeCommitApplied(record) => {
+                        self.accept_trade_commit_applied(record)?;
+                    }
+                    ControlEvent::TradeOfferRequest(record) => {
+                        for command in self
+                            .handle_trade_offer_request(api, record, travel_generation)
+                            .await?
+                        {
+                            children.control().send(&command).await?;
+                        }
+                    }
+                    ControlEvent::TradeOfferDecision(record) => {
+                        for command in self
+                            .handle_trade_offer_decision(api, record, travel_generation)
+                            .await?
+                        {
+                            children.control().send(&command).await?;
+                        }
+                    }
+                    event @ (ControlEvent::PartySnapshot(_)
+                    | ControlEvent::BattleReady(_)
+                    | ControlEvent::ActionIntent(_)
+                    | ControlEvent::TurnResultHash(_)
+                    | ControlEvent::BattleFinished(_)) => {
+                        if let Some(record) =
+                            battle.handle_bridge_event(travel_fence, travel_generation, event)
+                        {
+                            children
+                                .control()
+                                .send(&ControlCommand::AbortBattle {
+                                    session_epoch: self.lease.session_epoch.value(),
+                                    record,
+                                })
+                                .await?;
+                        }
+                    }
+                    _ => return Err(SessionError::Realtime),
+                }
+            }
+            // The ROM is ready here. Queued acknowledgements were applied
+            // above, so a poll cannot resurrect an acknowledged trade.
+            self.poll_ledger_if_due(api).await?;
+            if let Some(command) = self.take_ledger_delivery(travel_generation) {
+                children.control().send(&command).await?;
+            }
+            for command in self.poll_trade_offers(api, travel_generation).await? {
+                children.control().send(&command).await?;
+            }
+            let trade_wake = self.trade_offers.next_wake();
+            battle.prepare(
+                api,
+                self.auth
+                    .access_token()
+                    .ok_or(SessionError::Unauthorized)?
+                    .clone(),
+                travel_fence,
+                travel_generation,
+            );
+            battle.prepare_consensus(
+                api,
+                self.auth
+                    .access_token()
+                    .ok_or(SessionError::Unauthorized)?
+                    .clone(),
+                travel_fence,
+                travel_generation,
+            );
+            battle.prepare_commit_grant(
+                api,
+                self.auth
+                    .access_token()
+                    .ok_or(SessionError::Unauthorized)?
+                    .clone(),
+                travel_fence,
+                travel_generation,
+            );
+            battle.prepare_peer(
+                api,
+                self.auth
+                    .access_token()
+                    .ok_or(SessionError::Unauthorized)?
+                    .clone(),
+                travel_fence,
+                travel_generation,
+            );
             let input = tokio::select! {
+                completion = battle.next() => {
+                    let finished = match completion {
+                        crate::battle::BattleCompletion::Reservation(completion) => battle.finish(completion, self.lease.fence(), children.control().lifecycle_generation()),
+                        crate::battle::BattleCompletion::Consensus(completion) => battle.finish_consensus(completion, self.lease.fence(), children.control().lifecycle_generation()),
+                        crate::battle::BattleCompletion::Peer(completion) => battle.finish_peer(completion, self.lease.fence(), children.control().lifecycle_generation()),
+                        crate::battle::BattleCompletion::CommitGrant(completion) => battle.finish_commit_grant(completion, self.lease.fence(), children.control().lifecycle_generation()),
+                    };
+                    match finished {
+                        Ok(deliveries) => for delivery in deliveries {
+                            let command = match delivery {
+                                crate::battle::BattleDelivery::Offer(record) => ControlCommand::BattleJoinOffer { session_epoch: self.lease.session_epoch.value(), record },
+                                crate::battle::BattleDelivery::ReserveRejected(record) => ControlCommand::BattleReserveRejected { session_epoch: self.lease.session_epoch.value(), record },
+                                crate::battle::BattleDelivery::ConsentOutcome(record) => ControlCommand::BattleConsentOutcome { session_epoch: self.lease.session_epoch.value(), record },
+                                crate::battle::BattleDelivery::Abort(record) => ControlCommand::AbortBattle { session_epoch: self.lease.session_epoch.value(), record },
+                                crate::battle::BattleDelivery::Manifest(record) => ControlCommand::BattleManifest { session_epoch: self.lease.session_epoch.value(), record },
+                                crate::battle::BattleDelivery::Start(record) => ControlCommand::BattleStart { session_epoch: self.lease.session_epoch.value(), record },
+                                crate::battle::BattleDelivery::PeerParty(record) => ControlCommand::PeerPartyChunk { session_epoch: self.lease.session_epoch.value(), record },
+                                crate::battle::BattleDelivery::Bundle(record) => ControlCommand::TurnBundle { session_epoch: self.lease.session_epoch.value(), record },
+                                crate::battle::BattleDelivery::Pause(record) => ControlCommand::PauseForReconnect { session_epoch: self.lease.session_epoch.value(), record },
+                                crate::battle::BattleDelivery::Commit(record) => ControlCommand::BattleCommit { session_epoch: self.lease.session_epoch.value(), record },
+                            };
+                            if let Err(error) = children.control().send(&command).await { result = Err(SessionError::Control(error)); break; }
+                        },
+                        Err(error) => result = Err(error),
+                    }
+                    continue;
+                }
+                _ = tokio::time::sleep_until(invites.next_poll()), if invites.is_idle() && !online.is_pending() && !pairing.is_pending() => { continue; }
+                () = tokio::time::sleep_until(trade_wake) => { continue; }
+                invite = invites.next(), if !online.is_pending() && !pairing.is_pending() => {
+                    match invite {
+                        Ok(Some(crate::online::InviteWatcherEvent::GroupStateChanged { grouped, remote_join_possible })) => {
+                            if let Err(error) = children.control().send(&ControlCommand::GroupStateChanged {
+                                session_epoch: self.lease.session_epoch.value(), grouped, remote_join_possible,
+                            }).await { result = Err(SessionError::Control(error)); }
+                        }
+                        Ok(Some(crate::online::InviteWatcherEvent::InviteReceived(username))) => {
+                            if let Err(error) = children.control().send(&ControlCommand::GroupInviteReceived {
+                                session_epoch: self.lease.session_epoch.value(), username,
+                            }).await { result = Err(SessionError::Control(error)); }
+                        }
+                        Ok(None) | Err(crate::online::OnlineError::Unavailable | crate::online::OnlineError::Stale) => {}
+                        Err(crate::online::OnlineError::Unauthorized) => result = Err(SessionError::Unauthorized),
+                        // A changing inbox can invalidate a paginated watcher read.
+                        // Retry on the next poll without interrupting the game session.
+                        Err(crate::online::OnlineError::InvalidResponse) => {}
+                    }
+                    continue;
+                }
                 completion = online.next() => {
                     match online.finish(completion, self.lease.fence(), children.control().lifecycle_generation()) {
                         Ok(Some(status)) => {
@@ -3620,6 +5073,20 @@ impl SessionLifecycle {
                         Ok(None) => {}
                         Err(error) => result = Err(error),
                     }
+                    continue;
+                }
+                completion = pairing.next() => {
+                    match pairing.finish(completion, self.lease.fence(), children.control().lifecycle_generation()) {
+                        Ok(Some(status)) => {
+                            if let Err(error) = children.control().send(&ControlCommand::PairingStatus { session_epoch: self.lease.session_epoch.value(), status }).await { result = Err(SessionError::Control(error)); }
+                        }
+                        Ok(None) => {}
+                        Err(error) => result = Err(error),
+                    }
+                    continue;
+                }
+                step = live.next() => {
+                    self.start_live_request(api, live, step);
                     continue;
                 }
                 travel = group_travel.next_event() => {
@@ -3675,8 +5142,18 @@ impl SessionLifecycle {
                             }
                         }
                         Ok(RawSupervisorEvent::Control(ControlEvent::OnlineRequest(request))) => {
+                            invites.invalidate_poll();
                             if let Err(error) = self
                                 .start_online(api, online, &mut children.control(), request)
+                                .await
+                            {
+                                result = Err(error);
+                            }
+                        }
+                        Ok(RawSupervisorEvent::Control(ControlEvent::PairingRequest(request))) => {
+                            invites.invalidate_poll();
+                            if let Err(error) = self
+                                .start_pairing(api, pairing, &mut children.control(), request)
                                 .await
                             {
                                 result = Err(error);
@@ -3689,6 +5166,108 @@ impl SessionLifecycle {
                                 record,
                             ) {
                                 result = Err(error);
+                            }
+                        }
+                        Ok(RawSupervisorEvent::Control(ControlEvent::TrainerBattleReserve(
+                            record,
+                        ))) => {
+                            if let Some(record) = battle.reserve(
+                                self.lease.fence(),
+                                children.control().lifecycle_generation(),
+                                record,
+                            ) {
+                                if let Err(error) = children
+                                    .control()
+                                    .send(&ControlCommand::BattleReserveRejected {
+                                        session_epoch: self.lease.session_epoch.value(),
+                                        record,
+                                    })
+                                    .await
+                                {
+                                    result = Err(SessionError::Control(error));
+                                }
+                            }
+                        }
+                        Ok(RawSupervisorEvent::Control(ControlEvent::BattleJoinResponse(
+                            record,
+                        ))) => {
+                            if let Some(record) = battle.respond(
+                                self.lease.fence(),
+                                children.control().lifecycle_generation(),
+                                record,
+                            ) {
+                                if let Err(error) = children
+                                    .control()
+                                    .send(&ControlCommand::AbortBattle {
+                                        session_epoch: self.lease.session_epoch.value(),
+                                        record,
+                                    })
+                                    .await
+                                {
+                                    result = Err(SessionError::Control(error));
+                                }
+                            }
+                        }
+                        Ok(RawSupervisorEvent::Control(ControlEvent::BattleAbortRequest(
+                            record,
+                        ))) => {
+                            battle.abort_request(
+                                self.lease.fence(),
+                                children.control().lifecycle_generation(),
+                                record,
+                            );
+                        }
+                        Ok(RawSupervisorEvent::Control(ControlEvent::CommitApplied(record))) => {
+                            if !battle.mark_commit_acknowledged(
+                                self.lease.fence(),
+                                children.control().lifecycle_generation(),
+                                record,
+                            ) {
+                                result = Err(SessionError::Realtime);
+                            } else if let Err(error) = self.accept_battle_commit_applied(record) {
+                                result = Err(error);
+                            }
+                        }
+                        Ok(RawSupervisorEvent::Control(ControlEvent::TradeCommitApplied(
+                            record,
+                        ))) => {
+                            if let Err(error) = self.accept_trade_commit_applied(record) {
+                                result = Err(error);
+                            }
+                        }
+                        Ok(RawSupervisorEvent::Control(
+                            event @ (ControlEvent::TradeOfferRequest(_)
+                            | ControlEvent::TradeOfferDecision(_)),
+                        )) => {
+                            // Handled at the top of the loop with the ledger
+                            // poll, in arrival order.
+                            if let Err(error) =
+                                queue_pending_battle(&mut self.pending_battle, event)
+                            {
+                                result = Err(error);
+                            }
+                        }
+                        Ok(RawSupervisorEvent::Control(
+                            event @ (ControlEvent::PartySnapshot(_)
+                            | ControlEvent::BattleReady(_)
+                            | ControlEvent::ActionIntent(_)
+                            | ControlEvent::TurnResultHash(_)),
+                        )) => {
+                            if let Some(record) = battle.handle_bridge_event(
+                                self.lease.fence(),
+                                children.control().lifecycle_generation(),
+                                event,
+                            ) {
+                                if let Err(error) = children
+                                    .control()
+                                    .send(&ControlCommand::AbortBattle {
+                                        session_epoch: self.lease.session_epoch.value(),
+                                        record,
+                                    })
+                                    .await
+                                {
+                                    result = Err(SessionError::Control(error));
+                                }
                             }
                         }
                         Ok(RawSupervisorEvent::Control(ControlEvent::InteractRemotePlayer(
@@ -3716,9 +5295,23 @@ impl SessionLifecycle {
                                 result = Err(SessionError::Realtime);
                             }
                         }
+                        Ok(RawSupervisorEvent::Control(ControlEvent::ProgressObservation(
+                            observation,
+                        ))) => {
+                            if children.control().reset_latched()
+                                || children.control().lifecycle_generation() != generation
+                                || self
+                                    .queue_or_forward_progress(realtime, observation)
+                                    .is_err()
+                            {
+                                result = Err(SessionError::Realtime);
+                            }
+                        }
                         Ok(RawSupervisorEvent::Control(
                             ready @ ControlEvent::CheckpointReady { .. },
                         )) => {
+                            let story_token =
+                                group_travel.story_checkpoint_token(self.lease.fence());
                             match self
                                 .checkpoint_with_realtime(
                                     api,
@@ -3730,12 +5323,32 @@ impl SessionLifecycle {
                                 )
                                 .await
                             {
-                                Ok(RealtimeCheckpointOutcome::Completed) => {}
+                                Ok(RealtimeCheckpointOutcome::Completed) => {
+                                    if let Some(token) = story_token {
+                                        if let Some(snapshot) = self.last_finalized_snapshot() {
+                                            if let Err(error) = group_travel
+                                                .story_checkpoint_finalized(
+                                                    token,
+                                                    snapshot,
+                                                    self.lease.fence(),
+                                                )
+                                            {
+                                                result = Err(error);
+                                            }
+                                        } else {
+                                            result = Err(SessionError::CheckpointCorrelation);
+                                        }
+                                    }
+                                }
                                 Ok(RealtimeCheckpointOutcome::Shutdown) => {
                                     checkpoint_shutdown = true;
                                 }
                                 Err(error) => result = Err(error),
                             }
+                            // Realtime membership events may have been
+                            // buffered during the checkpoint. Cancel a poll
+                            // that began before those events were applied.
+                            invites.invalidate_poll();
                         }
                         Ok(RawSupervisorEvent::Control(ControlEvent::PortalTravelRequest {
                             session_epoch,
@@ -3770,8 +5383,10 @@ impl SessionLifecycle {
                             | RawSupervisorEvent::MgbaExited(_)),
                         ) => {
                             children.control().disable_lifecycle();
-                            let stopped = coordinator.take().unwrap().stop_and_join().await;
-                            result = if stopped.is_err() {
+                            let mut finished = coordinator.take().unwrap();
+                            let retained = self.retain_coordinator_progress(&mut finished);
+                            let stopped = finished.stop_and_join().await;
+                            result = if retained.is_err() || stopped.is_err() {
                                 Err(SessionError::Realtime)
                             } else {
                                 children
@@ -3788,13 +5403,36 @@ impl SessionLifecycle {
                     priority = RealtimeSource::Heartbeat;
                     match event {
                         Ok(RealtimeCoordinatorEvent::Ready) => {
-                            if Self::activate_realtime(&children.control(), realtime).is_err() {
+                            if Self::activate_realtime(&children.control(), realtime).is_err()
+                                || self.flush_pending_progress(realtime).is_err()
+                            {
                                 result = Err(SessionError::Realtime);
                             }
                         }
                         Ok(RealtimeCoordinatorEvent::Lifecycle(command)) => {
                             let invalid_fence = children.control().reset_latched()
                                 || children.control().lifecycle_generation() != generation;
+                            if !invalid_fence
+                                && matches!(
+                                    &command,
+                                    ControlCommand::GroupStateChanged { .. }
+                                        | ControlCommand::GroupEnded(_)
+                                )
+                            {
+                                invites.invalidate_poll();
+                                if let Some(status) = online.invalidate_for_group_change() {
+                                    if let Err(error) = children
+                                        .control()
+                                        .send(&ControlCommand::OnlineStatus {
+                                            session_epoch: self.lease.session_epoch.value(),
+                                            status,
+                                        })
+                                        .await
+                                    {
+                                        result = Err(SessionError::Control(error));
+                                    }
+                                }
+                            }
                             #[cfg(test)]
                             let enqueue_count = self.realtime_lifecycle_enqueue_burst;
                             #[cfg(not(test))]
@@ -3840,9 +5478,11 @@ impl SessionLifecycle {
             }
         }
 
-        if let Some(coordinator) = coordinator.take() {
+        if let Some(mut coordinator) = coordinator.take() {
             children.control().disable_lifecycle();
-            if coordinator.stop_and_join().await.is_err()
+            let retained = self.retain_coordinator_progress(&mut coordinator);
+            let stopped = coordinator.stop_and_join().await;
+            if (retained.is_err() || stopped.is_err())
                 && matches!(
                     &result,
                     Ok(())
@@ -3855,6 +5495,35 @@ impl SessionLifecycle {
             }
         }
         result
+    }
+
+    async fn start_pairing<'a, A: CloudApi>(
+        &self,
+        api: &'a A,
+        pairing: &mut crate::online::PairingOwner<'a>,
+        control: &mut ControlChannel,
+        request: coop_protocol::PairingRequest,
+    ) -> Result<(), SessionError> {
+        let token = self
+            .auth
+            .access_token()
+            .ok_or(SessionError::Unauthorized)?
+            .clone();
+        if let Some(status) = pairing.start(
+            api,
+            token,
+            self.lease.fence(),
+            control.lifecycle_generation(),
+            request,
+        ) {
+            control
+                .send(&ControlCommand::PairingStatus {
+                    session_epoch: self.lease.session_epoch.value(),
+                    status,
+                })
+                .await?;
+        }
+        Ok(())
     }
 
     async fn start_online<'a, A: CloudApi>(
@@ -3961,10 +5630,23 @@ impl SessionLifecycle {
                                 return Ok(true);
                             },
                     RawSupervisorEvent::Control(ControlEvent::PlayerState(_) | ControlEvent::InteractRemotePlayer(_) | ControlEvent::CompanionState(_) | ControlEvent::SocialSignal(_)) => {},
+                    RawSupervisorEvent::Control(ControlEvent::ProgressObservation(observation)) => {
+                        queue_pending_progress_observation(
+                            &mut self.pending_progress,
+                            self.lease.session_epoch.value(),
+                            observation,
+                        )?;
+                    }
                     RawSupervisorEvent::Control(ControlEvent::OnlineRequest(request)) => {
                         children.control().send(&ControlCommand::OnlineStatus {
                             session_epoch: self.lease.session_epoch.value(),
                             status: crate::online::empty_status(request.request_id, coop_protocol::OnlineResult::Unavailable),
+                        }).await?;
+                    }
+                    RawSupervisorEvent::Control(ControlEvent::PairingRequest(request)) => {
+                        children.control().send(&ControlCommand::PairingStatus {
+                            session_epoch: self.lease.session_epoch.value(),
+                            status: coop_protocol::PairingStatus { request_id: request.request_id, result: coop_protocol::PairingResult::Unavailable, code: String::new() },
                         }).await?;
                     }
                     RawSupervisorEvent::Control(ready @ ControlEvent::CheckpointReady { .. }) if !sent => {
@@ -4049,6 +5731,64 @@ impl SessionLifecycle {
         Ok(())
     }
 
+    fn queue_or_forward_progress(
+        &mut self,
+        realtime: &mut RealtimeCoordinator,
+        observation: coop_protocol::ProgressObservationV1,
+    ) -> Result<(), SessionError> {
+        if !realtime.server_ready() {
+            return queue_pending_progress_observation(
+                &mut self.pending_progress,
+                self.lease.session_epoch.value(),
+                observation,
+            );
+        }
+        match realtime.progress_observation(observation) {
+            Ok(()) => Ok(()),
+            Err(_) => {
+                /* Preserve the edge event before reporting the transport
+                 * failure. The outer attempt will rearm and flush it after
+                 * the next authenticated Ready event. */
+                queue_pending_progress_observation(
+                    &mut self.pending_progress,
+                    self.lease.session_epoch.value(),
+                    observation,
+                )?;
+                Err(SessionError::Realtime)
+            }
+        }
+    }
+
+    fn flush_pending_progress(
+        &mut self,
+        realtime: &mut RealtimeCoordinator,
+    ) -> Result<(), SessionError> {
+        if !realtime.server_ready() {
+            return Ok(());
+        }
+        while let Some(observation) = self.pending_progress.front().copied() {
+            realtime
+                .progress_observation(observation)
+                .map_err(|_| SessionError::Realtime)?;
+            self.pending_progress.pop_front();
+        }
+        Ok(())
+    }
+
+    fn retain_coordinator_progress(
+        &mut self,
+        realtime: &mut RealtimeCoordinator,
+    ) -> Result<(), SessionError> {
+        for observation in realtime.take_pending_progress() {
+            queue_pending_progress_observation(
+                &mut self.pending_progress,
+                self.lease.session_epoch.value(),
+                observation,
+            )?;
+        }
+        Ok(())
+    }
+
     async fn checkpoint_with_realtime<A, F>(
         &mut self,
         api: &A,
@@ -4065,6 +5805,7 @@ impl SessionLifecycle {
         // Flash programming emits no genuine ROM poses. Retire the transport
         // before granting flash work rather than manufacturing presence freshness.
         control.disable_lifecycle();
+        self.retain_coordinator_progress(realtime)?;
         if realtime.suspend_for_checkpoint().await.is_err() {
             return Err(Self::terminal_session_error(
                 realtime.recovery_needed(),
@@ -4186,7 +5927,10 @@ impl SessionLifecycle {
         {
             return Err(SessionError::CheckpointCorrelation);
         }
-        let (revision, terminal, shutdown_latched) = {
+        let (revision_result, terminal, shutdown_latched, checkpoint_progress, checkpoint_battle) = {
+            let expected_epoch = self.lease.session_epoch.value();
+            let mut checkpoint_progress = VecDeque::new();
+            let mut checkpoint_battle = VecDeque::new();
             let checkpoint = self.checkpoint_files(api, save_generation, deadline);
             tokio::pin!(checkpoint);
             let mut realtime_first = false;
@@ -4194,7 +5938,13 @@ impl SessionLifecycle {
             let mut shutdown_latched = false;
             loop {
                 if terminal.is_some() || shutdown_latched {
-                    break (checkpoint.await?, terminal, shutdown_latched);
+                    break (
+                        checkpoint.await,
+                        terminal,
+                        shutdown_latched,
+                        checkpoint_progress,
+                        checkpoint_battle,
+                    );
                 }
                 let input = if realtime_first {
                     tokio::select! {
@@ -4224,12 +5974,23 @@ impl SessionLifecycle {
                 match input {
                     RealtimeCheckpointWorkInput::Shutdown => shutdown_latched = true,
                     RealtimeCheckpointWorkInput::Complete(result) => {
-                        break (result?, terminal, shutdown_latched);
+                        break (
+                            result,
+                            terminal,
+                            shutdown_latched,
+                            checkpoint_progress,
+                            checkpoint_battle,
+                        );
                     }
                     RealtimeCheckpointWorkInput::Control(observation) => {
-                        if let Err(error) =
-                            Self::drop_pre_ready_control(observation, control, realtime)
-                        {
+                        if let Err(error) = Self::drop_pre_ready_control(
+                            observation,
+                            control,
+                            realtime,
+                            expected_epoch,
+                            &mut checkpoint_progress,
+                            &mut checkpoint_battle,
+                        ) {
                             terminal = Some(error);
                         }
                         realtime_first = true;
@@ -4245,6 +6006,17 @@ impl SessionLifecycle {
                 }
             }
         };
+        for observation in checkpoint_progress {
+            queue_pending_progress_observation(
+                &mut self.pending_progress,
+                self.lease.session_epoch.value(),
+                observation,
+            )?;
+        }
+        for event in checkpoint_battle {
+            queue_pending_battle(&mut self.pending_battle, event)?;
+        }
+        let revision = revision_result?;
         self.checkpoint_authorized = false;
         self.checkpoint_key = None;
 
@@ -4352,11 +6124,33 @@ impl SessionLifecycle {
                         .map_err(|_| SessionError::Realtime)?;
                     priority = RealtimeSource::Realtime;
                 }
+                CheckpointInput::Control(Ok(ControlEvent::ProgressObservation(observation))) => {
+                    self.queue_or_forward_progress(realtime, observation)?;
+                    priority = RealtimeSource::Realtime;
+                }
+                CheckpointInput::Control(Ok(
+                    event @ (ControlEvent::TrainerBattleReserve(_)
+                    | ControlEvent::BattleJoinResponse(_)
+                    | ControlEvent::BattleAbortRequest(_)
+                    | ControlEvent::PartySnapshot(_)
+                    | ControlEvent::BattleReady(_)
+                    | ControlEvent::ActionIntent(_)
+                    | ControlEvent::TurnResultHash(_)
+                    | ControlEvent::BattleFinished(_)
+                    | ControlEvent::CommitApplied(_)
+                    | ControlEvent::TradeCommitApplied(_)
+                    | ControlEvent::TradeOfferRequest(_)
+                    | ControlEvent::TradeOfferDecision(_)),
+                )) => {
+                    queue_pending_battle(&mut self.pending_battle, event)?;
+                    priority = RealtimeSource::Realtime;
+                }
                 CheckpointInput::Control(Ok(
                     ControlEvent::ArrivalVerifierReady { .. }
                     | ControlEvent::ArrivalProof(_)
                     | ControlEvent::RomPresenceReset
                     | ControlEvent::OnlineRequest(_)
+                    | ControlEvent::PairingRequest(_)
                     | ControlEvent::GroupTravel(_)
                     | ControlEvent::PortalTravelRequest { .. }
                     | ControlEvent::PresenceRearmed { .. },
@@ -4511,7 +6305,14 @@ impl SessionLifecycle {
                     priority = CutoverSource::Control;
                 }
                 RealtimeCutoverInput::Control(observation) => {
-                    Self::drop_pre_ready_control(observation, control, realtime)?;
+                    Self::drop_pre_ready_control(
+                        observation,
+                        control,
+                        realtime,
+                        self.lease.session_epoch.value(),
+                        &mut self.pending_progress,
+                        &mut self.pending_battle,
+                    )?;
                     priority = CutoverSource::Realtime;
                 }
                 RealtimeCutoverInput::Realtime(event) => {
@@ -4524,6 +6325,7 @@ impl SessionLifecycle {
                 }
                 RealtimeCutoverInput::Activate => {
                     Self::activate_realtime(control, realtime)?;
+                    self.flush_pending_progress(realtime)?;
                     return Ok(RealtimeCheckpointOutcome::Completed);
                 }
             }
@@ -4534,6 +6336,9 @@ impl SessionLifecycle {
         observation: Result<ControlEvent, ProcessError>,
         control: &ControlChannel,
         realtime: &mut RealtimeCoordinator,
+        expected_epoch: u32,
+        pending_progress: &mut VecDeque<coop_protocol::ProgressObservationV1>,
+        pending_battle: &mut VecDeque<ControlEvent>,
     ) -> Result<(), SessionError> {
         match observation.map_err(SessionError::Control)? {
             ControlEvent::PlayerState(_) => Self::update_realtime_from_control(control, realtime),
@@ -4546,10 +6351,26 @@ impl SessionLifecycle {
             ControlEvent::SocialSignal(signal) => {
                 realtime.signal(signal).map_err(|_| SessionError::Realtime)
             }
+            ControlEvent::ProgressObservation(observation) => {
+                queue_pending_progress_observation(pending_progress, expected_epoch, observation)
+            }
+            event @ (ControlEvent::TrainerBattleReserve(_)
+            | ControlEvent::BattleJoinResponse(_)
+            | ControlEvent::BattleAbortRequest(_)
+            | ControlEvent::PartySnapshot(_)
+            | ControlEvent::BattleReady(_)
+            | ControlEvent::ActionIntent(_)
+            | ControlEvent::TurnResultHash(_)
+            | ControlEvent::BattleFinished(_)
+            | ControlEvent::CommitApplied(_)
+            | ControlEvent::TradeCommitApplied(_)
+            | ControlEvent::TradeOfferRequest(_)
+            | ControlEvent::TradeOfferDecision(_)) => queue_pending_battle(pending_battle, event),
             ControlEvent::ArrivalVerifierReady { .. }
             | ControlEvent::ArrivalProof(_)
             | ControlEvent::RomPresenceReset
             | ControlEvent::OnlineRequest(_)
+            | ControlEvent::PairingRequest(_)
             | ControlEvent::GroupTravel(_)
             | ControlEvent::PortalTravelRequest { .. }
             | ControlEvent::PresenceRearmed { .. }
@@ -4567,10 +6388,14 @@ impl SessionLifecycle {
         realtime: &mut RealtimeCoordinator,
     ) -> Result<(), SessionError> {
         children.control().disable_lifecycle();
+        let retained = self.retain_coordinator_progress(realtime);
         let suspended = realtime.suspend_for_checkpoint().await;
         // Any already admitted checkpoint must still finish even when an old
         // transport failure was discovered while stopping it.
         let result = self.drain_shutdown_checkpoint(api, children).await;
+        if retained.is_err() {
+            return retained;
+        }
         if result.is_ok() && suspended.is_err() {
             return Err(SessionError::Realtime);
         }
@@ -4806,6 +6631,7 @@ impl SessionLifecycle {
         event_generation: u32,
         deadline: tokio::time::Instant,
     ) -> Result<Revision, SessionError> {
+        self.last_finalized_snapshot = None;
         let target_revision = self
             .revision
             .next()
@@ -4907,7 +6733,7 @@ impl SessionLifecycle {
             finalize_fence,
             files.clone(),
             pending_digest,
-            None,
+            self.pending_applied_commit,
         )
         .map_err(|_| SessionError::Package)?;
         let record = self.finalize_with_retry(api, finalize).await?;
@@ -4921,6 +6747,7 @@ impl SessionLifecycle {
             || record.session_epoch != self.lease.session_epoch
             || record.files != files
             || record.pending_commits_sha256 != pending_digest
+            || record.last_applied_commit != self.pending_applied_commit
         {
             return Err(SessionError::FinalizeConflict);
         }
@@ -4932,6 +6759,8 @@ impl SessionLifecycle {
         }
         self.auth.set_active_fence(self.lease.fence());
         self.workspace.discard_recovery_shadow();
+        self.commit_declared(&record)?;
+        self.last_finalized_snapshot = Some(record.clone());
         Ok(record.revision)
     }
 
@@ -4971,6 +6800,7 @@ impl SessionLifecycle {
         sav: Vec<u8>,
         expected_generation: u32,
     ) -> Result<Revision, SessionError> {
+        self.last_finalized_snapshot = None;
         if expected_generation == 0
             || self.save_generation.unwrap_or(0).checked_add(1) != Some(expected_generation)
         {
@@ -5037,7 +6867,7 @@ impl SessionLifecycle {
             ),
             files.clone(),
             pending_digest,
-            None,
+            self.pending_applied_commit,
         )
         .map_err(|_| SessionError::Package)?;
         let record = self.finalize_with_retry(api, finalize.clone()).await?;
@@ -5051,6 +6881,7 @@ impl SessionLifecycle {
             || record.session_epoch != self.lease.session_epoch
             || record.files != files
             || record.pending_commits_sha256 != pending_digest
+            || record.last_applied_commit != self.pending_applied_commit
         {
             return Err(SessionError::FinalizeConflict);
         }
@@ -5062,6 +6893,8 @@ impl SessionLifecycle {
             updates.send_replace(record.revision.value());
         }
         self.auth.set_active_fence(self.lease.fence());
+        self.commit_declared(&record)?;
+        self.last_finalized_snapshot = Some(record.clone());
         Ok(record.revision)
     }
 
@@ -5388,8 +7221,10 @@ impl SessionLifecycle {
         let request = &committed.intent.request;
         let stage = committed.stage.as_ref().ok_or(SessionError::Lease)?;
         let arrival = committed.verified_arrival.ok_or(SessionError::Lease)?;
-        if !matches!(committed.phase, PairedPhase::Committed | PairedPhase::Adopted)
-            || committed.character_id != self.lease.character_id
+        if !matches!(
+            committed.phase,
+            PairedPhase::Committed | PairedPhase::Adopted
+        ) || committed.character_id != self.lease.character_id
             || request.fence != self.lease.fence()
             || committed.intent.source_world_id != self.config.rom_world_id
             || request.source_snapshot_id
@@ -5550,7 +7385,7 @@ async fn refresh_required<A: AuthApi>(
     Ok(())
 }
 
-fn now_millis() -> u64 {
+pub(crate) fn now_millis() -> u64 {
     use std::time::{SystemTime, UNIX_EPOCH};
     u64::try_from(
         SystemTime::now()
@@ -5643,8 +7478,9 @@ mod lifecycle_tests {
     };
     use coop_protocol::{
         AnimationId, AvatarId, CanonicalUsername, DespawnReason, Direction, LocalPresenceStateV1,
-        MovementMode, PlayerState, PresenceHandle, PresenceInteractionV1, PresencePoseV1, RegionId,
-        RemotePlayerDespawnV1, RemotePlayerSpawnV1, RemotePlayerUpdateV1, WorldLocation,
+        MovementMode, PlayerState, PresenceHandle, PresenceInteractionV1, PresencePoseV1,
+        ProgressKindV1, ProgressObservationV1, RegionId, RemotePlayerDespawnV1,
+        RemotePlayerSpawnV1, RemotePlayerUpdateV1, WorldLocation,
     };
     use serde_json::json;
     use tempfile::{TempDir, tempdir};
@@ -5656,7 +7492,10 @@ mod lifecycle_tests {
     };
     use uuid::Uuid;
 
-    use super::{CloudFuture, RealtimeCheckpointOutcome};
+    use super::{
+        CloudFuture, MAX_PENDING_PROGRESS_OBSERVATIONS, RealtimeCheckpointOutcome,
+        queue_pending_progress_observation,
+    };
     #[cfg(windows)]
     use crate::SessionWorkspace;
     use crate::process::SessionSupervisor;
@@ -5677,6 +7516,9 @@ mod lifecycle_tests {
         SECTORS_PER_SLOT, sector_checksum,
     };
     use coop_sidecar::control::{CommandStatus, ControlCommand, ControlEvent};
+
+    /// Level 1 ledger end to end against the real coop-server (B7).
+    mod ledger_e2e;
 
     #[derive(Default)]
     struct TestKeychain {
@@ -5748,6 +7590,17 @@ mod lifecycle_tests {
         heartbeat_observed: tokio::sync::Notify,
         online_started: tokio::sync::Notify,
         online_delay: Mutex<Duration>,
+        story_recovery: Mutex<Option<coop_cloud::StoryTravelRecoveryView>>,
+        story_recovery_action_error: Mutex<Option<crate::group_travel::GroupTravelError>>,
+        story_recovery_abandon_error: Mutex<Option<crate::group_travel::GroupTravelError>>,
+        story_recovery_actions: Mutex<Vec<coop_cloud::StoryTravelRecoveryAction>>,
+        story_recovery_unauthorized_remaining: Mutex<usize>,
+        story_recovery_action_unauthorized_remaining: Mutex<usize>,
+        ledger_responses: Mutex<
+            VecDeque<Result<Option<crate::ledger::LedgerEntryView>, crate::ledger::LedgerError>>,
+        >,
+        ledger_requests: Mutex<Vec<(CharacterId, coop_cloud::LeaseFence)>>,
+        finalize_declarations: Mutex<Vec<Option<coop_cloud::CommitId>>>,
     }
 
     impl TestCloud {
@@ -5791,6 +7644,15 @@ mod lifecycle_tests {
                 heartbeat_observed: tokio::sync::Notify::new(),
                 online_started: tokio::sync::Notify::new(),
                 online_delay: Mutex::new(Duration::ZERO),
+                story_recovery: Mutex::new(None),
+                story_recovery_action_error: Mutex::new(None),
+                story_recovery_abandon_error: Mutex::new(None),
+                story_recovery_actions: Mutex::new(Vec::new()),
+                story_recovery_unauthorized_remaining: Mutex::new(0),
+                story_recovery_action_unauthorized_remaining: Mutex::new(0),
+                ledger_responses: Mutex::new(VecDeque::new()),
+                ledger_requests: Mutex::new(Vec::new()),
+                finalize_declarations: Mutex::new(Vec::new()),
             }
         }
 
@@ -5892,6 +7754,108 @@ mod lifecycle_tests {
     }
 
     impl CloudApi for TestCloud {
+        fn ledger_open(
+            &self,
+            _token: coop_cloud::AccessToken,
+            character_id: CharacterId,
+            fence: coop_cloud::LeaseFence,
+        ) -> crate::ledger::LedgerFuture<'_, Option<crate::ledger::LedgerEntryView>> {
+            self.ledger_requests
+                .lock()
+                .unwrap()
+                .push((character_id, fence));
+            let response = self
+                .ledger_responses
+                .lock()
+                .unwrap()
+                .pop_front()
+                .unwrap_or(Ok(None));
+            Box::pin(async move { response })
+        }
+        fn story_travel_recovery(
+            &self,
+            _token: coop_cloud::AccessToken,
+            _fence: coop_cloud::LeaseFence,
+        ) -> crate::group_travel::GroupTravelFuture<'_, Option<coop_cloud::StoryTravelRecoveryView>>
+        {
+            let mut unauthorized = self.story_recovery_unauthorized_remaining.lock().unwrap();
+            if *unauthorized > 0 {
+                *unauthorized -= 1;
+                return Box::pin(async {
+                    Err(crate::group_travel::GroupTravelError::Unauthorized)
+                });
+            }
+            let recovery = self.story_recovery.lock().unwrap().clone();
+            Box::pin(async move { Ok(recovery) })
+        }
+
+        fn story_travel_recovery_action(
+            &self,
+            _token: coop_cloud::AccessToken,
+            proposal_id: coop_cloud::GroupTravelProposalId,
+            _fence: coop_cloud::LeaseFence,
+            action: coop_cloud::StoryTravelRecoveryAction,
+        ) -> crate::group_travel::GroupTravelFuture<'_, coop_cloud::StoryTravelRecoveryResolutionView>
+        {
+            self.story_recovery_actions.lock().unwrap().push(action);
+            let mut unauthorized = self
+                .story_recovery_action_unauthorized_remaining
+                .lock()
+                .unwrap();
+            if *unauthorized > 0 {
+                *unauthorized -= 1;
+                return Box::pin(async {
+                    Err(crate::group_travel::GroupTravelError::Unauthorized)
+                });
+            }
+            let error = if action == coop_cloud::StoryTravelRecoveryAction::Abandon {
+                *self.story_recovery_abandon_error.lock().unwrap()
+            } else {
+                *self.story_recovery_action_error.lock().unwrap()
+            };
+            if error.is_none() {
+                *self.story_recovery.lock().unwrap() = None;
+            }
+            Box::pin(async move {
+                if let Some(error) = error {
+                    return Err(error);
+                }
+                Ok(coop_cloud::StoryTravelRecoveryResolutionView {
+                    api_version: ApiVersion::V1,
+                    proposal_id,
+                    outcome: match action {
+                        coop_cloud::StoryTravelRecoveryAction::Reconcile => {
+                            coop_cloud::StoryTravelRecoveryOutcome::Reconciled
+                        }
+                        coop_cloud::StoryTravelRecoveryAction::Abandon => {
+                            coop_cloud::StoryTravelRecoveryOutcome::Abandoned
+                        }
+                    },
+                })
+            })
+        }
+
+        fn partner_status(
+            &self,
+            _token: coop_cloud::AccessToken,
+        ) -> crate::online::OnlineFuture<'_, coop_cloud::PartnerStatusResponse> {
+            Box::pin(async {
+                Ok(coop_cloud::PartnerStatusResponse {
+                    api_version: ApiVersion::V1,
+                    partner: None,
+                })
+            })
+        }
+
+        fn pairing_redeem(
+            &self,
+            _token: coop_cloud::AccessToken,
+            _request: coop_cloud::RedeemPairingCodeRequest,
+        ) -> crate::online::OnlineFuture<'_, coop_cloud::RedeemPairingCodeResponse> {
+            // An expired or consumed code answers like the server's 404.
+            Box::pin(async { Err(crate::online::OnlineError::Stale) })
+        }
+
         fn online_snapshot(
             &self,
             _token: coop_cloud::AccessToken,
@@ -5902,11 +7866,14 @@ mod lifecycle_tests {
                 self.online_started.notify_one();
                 tokio::time::sleep(delay).await;
                 Ok(coop_cloud::OnlineSnapshotResponse {
-                    api_version: coop_cloud::ApiVersion::V1,
+                    api_version: ApiVersion::V1,
                     nearby: vec![],
                     incoming: vec![],
+                    outgoing: vec![],
                     incoming_next: None,
                     group: None,
+                    remote_join_possible: false,
+                    last_partner: None,
                 })
             })
         }
@@ -6103,6 +8070,10 @@ mod lifecycle_tests {
             request: SnapshotFinalizeRequest,
         ) -> CloudFuture<'a, coop_cloud::SnapshotRecord> {
             *self.finalizes.lock().unwrap() += 1;
+            self.finalize_declarations
+                .lock()
+                .unwrap()
+                .push(request.last_applied_commit);
             self.finalize_started.notify_one();
             let delay = *self.finalize_delay.lock().unwrap();
             let updates_heartbeat = *self.finalize_updates_heartbeat.lock().unwrap();
@@ -6200,7 +8171,7 @@ mod lifecycle_tests {
                 "size": 9244,
                 "magic": 1_347_111_759,
                 "abi_version": 1,
-                "game_protocol_version": 1,
+                "game_protocol_version": 5,
                 "byte_order": "little",
                 "checksum": {"algorithm": "CRC-32/IEEE", "covered_bytes": [0, 139], "stored_offset": 140},
                 "offsets": {"magic": 0, "abi_version": 4, "game_protocol_version": 6, "game_build_id": 8, "status_flags": 12, "last_sidecar_heartbeat": 16, "game_to_network": 20, "network_to_game": 4632},
@@ -6572,6 +8543,153 @@ mod lifecycle_tests {
         assert_eq!(*cloud.logouts.lock().unwrap(), 0);
     }
 
+    fn story_recovery_view(
+        lease: LeaseContract,
+        status: coop_cloud::GroupTravelProposalStatus,
+    ) -> coop_cloud::StoryTravelRecoveryView {
+        coop_cloud::StoryTravelRecoveryView {
+            api_version: ApiVersion::V1,
+            proposal_id: coop_cloud::GroupTravelProposalId::new(uuid::Uuid::from_u128(0xabc))
+                .unwrap(),
+            group_id: coop_cloud::GroupId::new(uuid::Uuid::from_u128(0xdef)).unwrap(),
+            status,
+            marker_fence: lease.fence(),
+            scene_nonce: 7,
+            marked_at: coop_cloud::UnixTimestampMillis::new(1),
+        }
+    }
+
+    #[tokio::test]
+    async fn startup_blocks_unresolved_story_scene_and_releases_lease() {
+        let (_, session, cloud) = bootstrap(false).await;
+        *cloud.story_recovery.lock().unwrap() = Some(story_recovery_view(
+            cloud.lease,
+            coop_cloud::GroupTravelProposalStatus::Suspended,
+        ));
+        let auth = AuthSession::login(
+            cloud.as_ref(),
+            &TestKeychain::default(),
+            "ash",
+            Password::new("password").unwrap(),
+        )
+        .await
+        .unwrap();
+        let result = SessionLifecycle::acquire(cloud.as_ref(), auth, session.config.clone()).await;
+        assert!(matches!(
+            result,
+            Err(SessionError::StoryTravelRecoveryPending)
+        ));
+        assert_eq!(*cloud.releases.lock().unwrap(), 1);
+        assert_eq!(*cloud.logouts.lock().unwrap(), 0);
+        assert!(cloud.story_recovery_actions.lock().unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn cancelled_story_scene_reconciles_before_resume_or_stays_blocked() {
+        let (_, mut session, cloud) = bootstrap(false).await;
+        *cloud.story_recovery.lock().unwrap() = Some(story_recovery_view(
+            cloud.lease,
+            coop_cloud::GroupTravelProposalStatus::Cancelled,
+        ));
+        assert!(
+            session
+                .reconcile_story_travel_before_resume(cloud.as_ref())
+                .await
+                .is_ok()
+        );
+        assert_eq!(
+            *cloud.story_recovery_actions.lock().unwrap(),
+            vec![coop_cloud::StoryTravelRecoveryAction::Reconcile]
+        );
+
+        *cloud.story_recovery.lock().unwrap() = Some(story_recovery_view(
+            cloud.lease,
+            coop_cloud::GroupTravelProposalStatus::Cancelled,
+        ));
+        *cloud.story_recovery_action_error.lock().unwrap() =
+            Some(crate::group_travel::GroupTravelError::Stale);
+        assert!(matches!(
+            session
+                .reconcile_story_travel_before_resume(cloud.as_ref())
+                .await,
+            Err(SessionError::StoryTravelRecoveryPending)
+        ));
+        assert_eq!(cloud.story_recovery_actions.lock().unwrap().len(), 2);
+    }
+
+    #[tokio::test]
+    async fn cancelled_story_scene_abandons_only_when_new_lease_has_unchanged_revision() {
+        let (_, mut session, cloud) = bootstrap(false).await;
+        let marker = story_recovery_view(
+            cloud.lease,
+            coop_cloud::GroupTravelProposalStatus::Cancelled,
+        );
+        *cloud.story_recovery.lock().unwrap() = Some(marker.clone());
+        *cloud.story_recovery_action_error.lock().unwrap() =
+            Some(crate::group_travel::GroupTravelError::Stale);
+        session.lease.session_id = coop_cloud::SessionId::new(uuid::Uuid::new_v4()).unwrap();
+        session.lease.session_epoch = SessionEpoch::new(2).unwrap();
+        assert!(
+            session
+                .reconcile_story_travel_before_resume(cloud.as_ref())
+                .await
+                .is_ok()
+        );
+        assert_eq!(
+            *cloud.story_recovery_actions.lock().unwrap(),
+            vec![
+                coop_cloud::StoryTravelRecoveryAction::Reconcile,
+                coop_cloud::StoryTravelRecoveryAction::Abandon,
+            ]
+        );
+
+        *cloud.story_recovery.lock().unwrap() = Some(marker.clone());
+        *cloud.story_recovery_abandon_error.lock().unwrap() =
+            Some(crate::group_travel::GroupTravelError::Stale);
+        assert!(matches!(
+            session
+                .reconcile_story_travel_before_resume(cloud.as_ref())
+                .await,
+            Err(SessionError::StoryTravelRecoveryPending)
+        ));
+        assert!(cloud.story_recovery.lock().unwrap().is_some());
+
+        session.lease.current_revision = marker.marker_fence.current_revision.next().unwrap();
+        let prior_actions = cloud.story_recovery_actions.lock().unwrap().len();
+        assert!(matches!(
+            session
+                .reconcile_story_travel_before_resume(cloud.as_ref())
+                .await,
+            Err(SessionError::StoryTravelRecoveryPending)
+        ));
+        assert_eq!(
+            cloud.story_recovery_actions.lock().unwrap().len(),
+            prior_actions + 1
+        );
+    }
+
+    #[tokio::test]
+    async fn story_recovery_refreshes_after_unauthorized_discovery_and_action() {
+        let (_, mut session, cloud) = bootstrap(false).await;
+        cloud.enable_refresh();
+        *cloud.story_recovery.lock().unwrap() = Some(story_recovery_view(
+            cloud.lease,
+            coop_cloud::GroupTravelProposalStatus::Cancelled,
+        ));
+        *cloud.story_recovery_unauthorized_remaining.lock().unwrap() = 1;
+        *cloud
+            .story_recovery_action_unauthorized_remaining
+            .lock()
+            .unwrap() = 1;
+        assert!(
+            session
+                .reconcile_story_travel_before_resume(cloud.as_ref())
+                .await
+                .is_ok()
+        );
+        assert_eq!(cloud.story_recovery_actions.lock().unwrap().len(), 2);
+    }
+
     fn write_u16(bytes: &mut [u8], offset: usize, value: u16) {
         bytes[offset..offset + 2].copy_from_slice(&value.to_le_bytes());
     }
@@ -6704,12 +8822,31 @@ mod lifecycle_tests {
                 coop_sidecar::control::ControlCommand::ArrivalChallenge { .. }
                 | coop_sidecar::control::ControlCommand::RemotePlayerSpawn(_)
                 | coop_sidecar::control::ControlCommand::OnlineStatus { .. }
+                | coop_sidecar::control::ControlCommand::PairingStatus { .. }
+                | coop_sidecar::control::ControlCommand::GroupStateChanged { .. }
+                | coop_sidecar::control::ControlCommand::GroupInviteReceived { .. }
                 | coop_sidecar::control::ControlCommand::GroupTravel { .. }
+                | coop_sidecar::control::ControlCommand::GroupEnded(_)
+                | coop_sidecar::control::ControlCommand::BattleJoinOffer { .. }
+                | coop_sidecar::control::ControlCommand::BattleReserveRejected { .. }
+                | coop_sidecar::control::ControlCommand::BattleConsentOutcome { .. }
+                | coop_sidecar::control::ControlCommand::BattleManifest { .. }
+                | coop_sidecar::control::ControlCommand::BattleCommit { .. }
+                | coop_sidecar::control::ControlCommand::TradeCommit { .. }
+                | coop_sidecar::control::ControlCommand::TradeOfferReceived { .. }
+                | coop_sidecar::control::ControlCommand::TradeOfferStatus { .. }
+                | coop_sidecar::control::ControlCommand::BattleStart { .. }
+                | coop_sidecar::control::ControlCommand::PeerPartyChunk { .. }
+                | coop_sidecar::control::ControlCommand::TurnBundle { .. }
+                | coop_sidecar::control::ControlCommand::PauseForReconnect { .. }
+                | coop_sidecar::control::ControlCommand::AbortBattle { .. }
                 | coop_sidecar::control::ControlCommand::PresenceRearm(_)
                 | coop_sidecar::control::ControlCommand::RemotePlayerUpdate(_)
                 | coop_sidecar::control::ControlCommand::RemotePlayerDespawn(_)
+                | coop_sidecar::control::ControlCommand::RemoteInteraction(_)
                 | coop_sidecar::control::ControlCommand::RemoteCompanion(_)
-                | coop_sidecar::control::ControlCommand::RemoteSocialSignal(_) => {
+                | coop_sidecar::control::ControlCommand::RemoteSocialSignal(_)
+                | coop_sidecar::control::ControlCommand::ProgressEvent(_) => {
                     panic!("checkpoint fixture must not receive presence lifecycle")
                 }
             };
@@ -6746,9 +8883,17 @@ mod lifecycle_tests {
 
         cloud.set_reconnect_epoch(2);
         let first_key = session.reconnect_key;
+        session.pending_progress.push_back(ProgressObservationV1 {
+            kind: ProgressKindV1::FirstCaught,
+            region_id: RegionId::Hoenn,
+            subject_id: 25,
+            session_epoch: 1,
+            source_sequence: 1,
+        });
         session.reconnect(cloud.as_ref()).await.unwrap();
         assert_ne!(session.reconnect_key, first_key);
         assert_eq!(session.lease.session_epoch.value(), 2);
+        assert!(session.pending_progress.is_empty());
         let request = cloud.reconnect_requests.lock().unwrap()[0];
         assert_eq!(request.idempotency_key(), first_key);
         assert_eq!(
@@ -6861,6 +9006,13 @@ mod lifecycle_tests {
             .unwrap();
         assert_eq!(revision, Revision::new(1));
         assert!(session.last_finalized_snapshot_id().is_some());
+        let finalized = session
+            .last_finalized_snapshot()
+            .expect("validated snapshot");
+        assert_eq!(finalized.revision, revision);
+        assert_eq!(finalized.parent_revision, Revision::new(0));
+        assert_eq!(finalized.character_id, session.lease.character_id);
+        assert!(!finalized.snapshot_id.as_uuid().is_nil());
         assert!(*cloud.heartbeats.lock().unwrap() >= 1);
         assert_eq!(*cloud.prepares.lock().unwrap(), 1);
         assert_eq!(cloud.uploads.lock().unwrap().len(), 2);
@@ -6934,6 +9086,228 @@ mod lifecycle_tests {
         );
         assert!(session.checkpoint_key.is_none());
         second_server.await.unwrap();
+    }
+
+    fn pending_file(session: &SessionLifecycle) -> Vec<u8> {
+        session
+            .workspace
+            .read_fixed("pending_commits.json")
+            .unwrap()
+    }
+
+    fn ledger_commit(value: u128) -> coop_cloud::CommitId {
+        coop_cloud::CommitId::new(Uuid::from_u128(value)).unwrap()
+    }
+
+    #[tokio::test]
+    async fn trade_ledger_entry_is_delivered_acknowledged_and_declared_by_the_next_finalize() {
+        use crate::ledger::tests::{incoming_raw, trade_view};
+        let (_root, mut session, cloud) = bootstrap(false).await;
+        session
+            .workspace
+            .write_atomic("character.sav", &valid_save(1))
+            .unwrap();
+        let (mut control, first_server) = control_pair_with_generation(1, 7, 1).await;
+        let ready = ControlEvent::CheckpointReady {
+            session_epoch: 1,
+            ready_sequence: 7,
+        };
+        assert_eq!(
+            session
+                .checkpoint(cloud.as_ref(), &mut control, ready.clone())
+                .await
+                .unwrap(),
+            Revision::new(1)
+        );
+        first_server.await.unwrap();
+
+        let view = trade_view(0xc0);
+        cloud
+            .ledger_responses
+            .lock()
+            .unwrap()
+            .push_back(Ok(Some(view.clone())));
+        session.ledger.request_poll();
+        session.poll_ledger_if_due(cloud.as_ref()).await.unwrap();
+        assert_eq!(
+            cloud.ledger_requests.lock().unwrap().as_slice(),
+            &[(session.lease.character_id, session.lease.fence())]
+        );
+        assert_eq!(
+            pending_file(&session),
+            b"[\"00000000-0000-0000-0000-0000000000c0\"]"
+        );
+
+        let Some(ControlCommand::TradeCommit {
+            session_epoch,
+            record,
+        }) = session.take_ledger_delivery(1)
+        else {
+            panic!("an open trade entry must become a TradeCommit");
+        };
+        assert_eq!(session_epoch, 1);
+        let mut expected = Vec::new();
+        expected.extend_from_slice(Uuid::from_u128(0xc0).as_bytes());
+        expected.extend_from_slice(&[3, 0, 0, 0]);
+        expected.extend_from_slice(&0xDEAD_BEEF_u32.to_le_bytes());
+        expected.extend_from_slice(&0x0102_0304_u32.to_le_bytes());
+        expected.extend_from_slice(&incoming_raw());
+        assert_eq!(record.encode().unwrap(), expected);
+        assert!(session.take_ledger_delivery(1).is_none());
+
+        session
+            .accept_trade_commit_applied(record.applied())
+            .unwrap();
+        assert_eq!(session.pending_applied_commit, Some(ledger_commit(0xc0)));
+        // The poll that follows the acknowledgement does not redeliver it.
+        cloud
+            .ledger_responses
+            .lock()
+            .unwrap()
+            .push_back(Ok(Some(view)));
+        session.poll_ledger_if_due(cloud.as_ref()).await.unwrap();
+        assert!(session.take_ledger_delivery(2).is_none());
+
+        std::fs::remove_file(session.workspace.path().join("character.sav")).unwrap();
+        session
+            .workspace
+            .write_atomic("character.sav", &valid_save(2))
+            .unwrap();
+        cloud.set_heartbeat_revision(Revision::new(1));
+        let (mut control, second_server) = control_pair_with_generation(1, 7, 2).await;
+        assert_eq!(
+            session
+                .checkpoint(cloud.as_ref(), &mut control, ready)
+                .await
+                .unwrap(),
+            Revision::new(2)
+        );
+        second_server.await.unwrap();
+        assert_eq!(
+            cloud.finalize_declarations.lock().unwrap().as_slice(),
+            &[None, Some(ledger_commit(0xc0))]
+        );
+        let uploads = cloud.uploads.lock().unwrap();
+        let pending_uploads: Vec<&[u8]> = uploads
+            .iter()
+            .filter(|(artifact, _)| *artifact == ArtifactIdentity::PendingCommits)
+            .map(|(_, bytes)| bytes.as_slice())
+            .collect();
+        assert_eq!(
+            pending_uploads,
+            [
+                b"[]".as_slice(),
+                b"[\"00000000-0000-0000-0000-0000000000c0\"]".as_slice()
+            ]
+        );
+        drop(uploads);
+        assert_eq!(session.pending_applied_commit, None);
+        assert_eq!(pending_file(&session), b"[]");
+        assert!(session.ledger.poll_ready(tokio::time::Instant::now()));
+    }
+
+    #[tokio::test]
+    async fn restart_redelivers_the_open_trade_named_by_pending_commits() {
+        use crate::ledger::{LedgerError, tests::trade_view};
+        let mirror = b"[\"00000000-0000-0000-0000-0000000000c0\"]";
+
+        // Restored package names the in-flight trade and it is still open.
+        let (_root, mut session, cloud) = bootstrap(false).await;
+        session.revision = Revision::new(1);
+        session.workspace.replace_pending_commits(mirror).unwrap();
+        session.ledger.request_poll();
+        cloud
+            .ledger_responses
+            .lock()
+            .unwrap()
+            .push_back(Err(LedgerError::Unavailable));
+        session.poll_ledger_if_due(cloud.as_ref()).await.unwrap();
+        // An outage keeps the mirror and backs off instead of failing.
+        assert_eq!(pending_file(&session), mirror);
+        assert!(session.take_ledger_delivery(1).is_none());
+        assert!(!session.ledger.poll_ready(tokio::time::Instant::now()));
+        session.ledger.request_poll();
+        cloud
+            .ledger_responses
+            .lock()
+            .unwrap()
+            .push_back(Ok(Some(trade_view(0xc0))));
+        session.poll_ledger_if_due(cloud.as_ref()).await.unwrap();
+        let Some(ControlCommand::TradeCommit { record, .. }) = session.take_ledger_delivery(1)
+        else {
+            panic!("the open entry must be redelivered after a restart");
+        };
+        assert_eq!(Some(record), trade_view(0xc0).trade_commit());
+        assert_eq!(pending_file(&session), mirror);
+        // A new control generation (ROM reboot) gets it once more.
+        assert!(session.take_ledger_delivery(1).is_none());
+        assert!(session.take_ledger_delivery(2).is_some());
+
+        // The mirrored commit was declared before the restart: clear it.
+        let (_root, mut session, cloud) = bootstrap(false).await;
+        session.revision = Revision::new(1);
+        session.workspace.replace_pending_commits(mirror).unwrap();
+        session.ledger.request_poll();
+        cloud.ledger_responses.lock().unwrap().push_back(Ok(None));
+        session.poll_ledger_if_due(cloud.as_ref()).await.unwrap();
+        assert!(session.take_ledger_delivery(1).is_none());
+        assert_eq!(pending_file(&session), b"[]");
+
+        // Revision zero never polls.
+        let (_root, mut session, cloud) = bootstrap(false).await;
+        session.ledger.request_poll();
+        session.poll_ledger_if_due(cloud.as_ref()).await.unwrap();
+        assert!(cloud.ledger_requests.lock().unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn wally_trainer_win_stays_on_the_battle_commit_path() {
+        use crate::ledger::tests::{trade_view, wally_view};
+        let (_root, mut session, cloud) = bootstrap(false).await;
+        session.revision = Revision::new(1);
+        session.ledger.request_poll();
+        cloud
+            .ledger_responses
+            .lock()
+            .unwrap()
+            .push_back(Ok(Some(wally_view(0xc1))));
+        session.poll_ledger_if_due(cloud.as_ref()).await.unwrap();
+        assert!(session.take_ledger_delivery(1).is_none());
+        assert_eq!(pending_file(&session), b"[]");
+
+        // The BattleCommit acknowledgement declares the Wally commit and
+        // re-polls; the same TRAINER_WIN entry is still not a trade.
+        let battle_ack = coop_protocol::CommitAppliedRecord {
+            battle_id: coop_protocol::BattleId(*Uuid::from_u128(0xba77).as_bytes()),
+            commit_id: coop_protocol::BattleId(*Uuid::from_u128(0xc1).as_bytes()),
+            trainer_region: coop_protocol::RegionId::Hoenn,
+            trainer_ordinal: 518,
+            source_revision: 1,
+        };
+        session.accept_battle_commit_applied(battle_ack).unwrap();
+        assert_eq!(session.pending_applied_commit, Some(ledger_commit(0xc1)));
+        assert!(session.ledger.poll_ready(tokio::time::Instant::now()));
+        cloud
+            .ledger_responses
+            .lock()
+            .unwrap()
+            .push_back(Ok(Some(wally_view(0xc1))));
+        session.poll_ledger_if_due(cloud.as_ref()).await.unwrap();
+        assert!(session.take_ledger_delivery(2).is_none());
+        assert_eq!(pending_file(&session), b"[]");
+
+        // No trade was delivered, so a trade acknowledgement is a violation,
+        // and a second outcome cannot displace the undeclared one.
+        let trade = trade_view(0xc0).trade_commit().unwrap();
+        assert!(matches!(
+            session.accept_trade_commit_applied(trade.applied()),
+            Err(SessionError::Realtime)
+        ));
+        assert!(matches!(
+            session.record_applied_commit(ledger_commit(0xc0)),
+            Err(SessionError::Realtime)
+        ));
+        assert_eq!(session.pending_applied_commit, Some(ledger_commit(0xc1)));
     }
 
     #[tokio::test]
@@ -7504,7 +9878,22 @@ mod lifecycle_tests {
             let mut byte = [0_u8; 1];
             stream.read_exact(&mut byte).await.unwrap();
             if byte[0] == b'\n' {
-                return serde_json::from_slice(&line).unwrap();
+                let command = serde_json::from_slice(&line).unwrap();
+                line.clear();
+                // The invite watcher republishes the fake cloud's ungrouped
+                // membership on every poll so a reset ROM can recover it.
+                // Those heartbeats interleave with the commands under test.
+                if matches!(
+                    command,
+                    ControlCommand::GroupStateChanged {
+                        grouped: false,
+                        remote_join_possible: false,
+                        ..
+                    }
+                ) {
+                    continue;
+                }
+                return command;
             }
             line.push(byte[0]);
         }
@@ -7705,6 +10094,94 @@ mod lifecycle_tests {
             .await
             .expect("realtime task joined")
             .unwrap();
+    }
+
+    #[tokio::test]
+    async fn live_requests_are_served_by_a_running_realtime_session() {
+        assert_live_requests_are_served(false).await;
+    }
+
+    #[tokio::test]
+    async fn live_requests_are_served_by_a_running_realtime_portal_session() {
+        assert_live_requests_are_served(true).await;
+    }
+
+    async fn assert_live_requests_are_served(portal: bool) {
+        let (_root, mut session, cloud) = bootstrap(false).await;
+        let (live, requests) = crate::live_requests::live_request_channel();
+        session.serve_live_requests(requests);
+        let control_listener = TcpListener::bind(("127.0.0.1", 0)).await.unwrap();
+        let control_address = control_listener.local_addr().unwrap();
+        // The ROM never becomes presence-ready here, so the requests are
+        // served by the pre-ready loop of the realtime run.
+        let control_server = tokio::spawn(async move {
+            let (stream, _) = control_listener.accept().await.unwrap();
+            stream
+        });
+        let stream = tokio::net::TcpStream::connect(control_address)
+            .await
+            .unwrap();
+        let control = ControlChannel::from_stream_for_test(stream);
+        let _peer = control_server.await.unwrap();
+        let mut children = SupervisedChildren::for_test(
+            long_running_test_child(),
+            long_running_test_child(),
+            control,
+        );
+        let (shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel::<()>();
+        let host = tokio::spawn(async move {
+            let (reply, answer) = tokio::sync::oneshot::channel();
+            live.send(crate::live_requests::LiveRequest::PartnerStatus(reply))
+                .await
+                .unwrap();
+            let status = answer.await.unwrap();
+            let (reply, answer) = tokio::sync::oneshot::channel();
+            live.send(crate::live_requests::LiveRequest::RedeemPairingCode {
+                code: coop_cloud::PairingCode::new("ABC-234").unwrap(),
+                reply,
+            })
+            .await
+            .unwrap();
+            let redeemed = answer.await.unwrap();
+            drop(shutdown_tx);
+            (status, redeemed)
+        });
+        let _ = timeout(Duration::from_secs(5), async {
+            let shutdown = async {
+                let _ = shutdown_rx.await;
+            };
+            if portal {
+                session
+                    .run_until_shutdown_with_realtime_portal(
+                        cloud.as_ref(),
+                        &mut children,
+                        shutdown,
+                    )
+                    .await
+                    .map(|_| ())
+            } else {
+                session
+                    .run_until_shutdown_with_realtime(cloud.as_ref(), &mut children, shutdown)
+                    .await
+            }
+        })
+        .await
+        .expect("live requests do not stall the session");
+        let (status, redeemed) = timeout(Duration::from_secs(1), host)
+            .await
+            .expect("host received both replies")
+            .unwrap();
+        assert_eq!(
+            status,
+            Ok(coop_cloud::PartnerStatusResponse {
+                api_version: ApiVersion::V1,
+                partner: None,
+            })
+        );
+        assert_eq!(
+            redeemed,
+            Err(crate::live_requests::LiveRequestError::Refused)
+        );
     }
 
     #[tokio::test]
@@ -8688,7 +11165,9 @@ mod lifecycle_tests {
         let mut shutdown = Box::pin(std::future::pending::<()>());
         let mut heartbeat = tokio::time::interval(Duration::from_secs(60));
         let mut online = crate::online::OnlineOwner::default();
+        let mut invites = crate::online::InviteWatcher::default();
         let mut group_travel = crate::group_travel::GroupTravelOwner::default();
+        let mut battle = crate::battle::BattleOwner::default();
         let result = timeout(
             Duration::from_secs(3),
             session.run_realtime_attempt(
@@ -8697,7 +11176,11 @@ mod lifecycle_tests {
                 &mut shutdown,
                 &mut heartbeat,
                 &mut online,
+                &mut crate::online::PairingOwner::default(),
+                &mut invites,
                 &mut group_travel,
+                &mut battle,
+                &mut crate::live_requests::LiveRequestOwner::new(None),
             ),
         )
         .await
@@ -10388,6 +12871,36 @@ mod lifecycle_tests {
                 .expose_secret(),
             refresh_before
         );
+    }
+
+    #[test]
+    fn pending_progress_queue_is_epoch_fenced_and_deduplicated() {
+        let mut queue = VecDeque::new();
+        let observation = ProgressObservationV1 {
+            kind: ProgressKindV1::FirstCaught,
+            region_id: RegionId::Hoenn,
+            subject_id: 25,
+            session_epoch: 7,
+            source_sequence: 11,
+        };
+
+        queue_pending_progress_observation(&mut queue, 7, observation).unwrap();
+        queue_pending_progress_observation(&mut queue, 7, observation).unwrap();
+        assert_eq!(queue.len(), 1);
+        assert!(queue_pending_progress_observation(&mut queue, 8, observation).is_err());
+
+        queue.clear();
+        queue.resize(MAX_PENDING_PROGRESS_OBSERVATIONS, observation);
+        let newest = ProgressObservationV1 {
+            kind: ProgressKindV1::BadgeEarned,
+            region_id: RegionId::Kanto,
+            subject_id: 3,
+            session_epoch: 7,
+            source_sequence: 12,
+        };
+        queue_pending_progress_observation(&mut queue, 7, newest).unwrap();
+        assert_eq!(queue.len(), MAX_PENDING_PROGRESS_OBSERVATIONS);
+        assert_eq!(queue.back(), Some(&newest));
     }
 
     #[test]

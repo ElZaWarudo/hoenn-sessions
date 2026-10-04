@@ -4566,7 +4566,6 @@ static void CreateInGameTradePokemonInternal(u8 whichPlayerMon, u8 whichInGameTr
     u32 level = GetLevelFromBoxMonExp(boxmon);
 
     struct Mail mail;
-    metloc_u8_t metLocation = METLOC_IN_GAME_TRADE;
     u8 mailNum;
     struct Pokemon *pokemon = &gParties[B_TRAINER_1][0];
 
@@ -4589,7 +4588,7 @@ static void CreateInGameTradePokemonInternal(u8 whichPlayerMon, u8 whichInGameTr
     SetMonData(pokemon, MON_DATA_SMART, &inGameTrade->conditions[3]);
     SetMonData(pokemon, MON_DATA_TOUGH, &inGameTrade->conditions[4]);
     SetMonData(pokemon, MON_DATA_SHEEN, &inGameTrade->sheen);
-    SetMonData(pokemon, MON_DATA_MET_LOCATION, &metLocation);
+    SetMonMetLocation(pokemon, MET_LOCATION_V2_IN_GAME_TRADE);
 
     mailNum = 0;
     if (inGameTrade->heldItem != ITEM_NONE)

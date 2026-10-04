@@ -36,7 +36,10 @@ struct CoopArrivalProofRuntime
     struct CoopSha256 sha;
 };
 
-static EWRAM_DATA u8 sFlashSector[COOP_ARRIVAL_FLASH_SECTOR_SIZE];
+STATIC_ASSERT(COOP_ARRIVAL_FLASH_SECTOR_SIZE % COOP_ARRIVAL_FLASH_READ_CHUNK_SIZE == 0,
+              CoopArrivalFlashChunkDividesSector);
+
+static EWRAM_DATA u8 sFlashChunk[COOP_ARRIVAL_FLASH_READ_CHUNK_SIZE];
 static EWRAM_DATA struct CoopArrivalProofRuntime sArrivalProof;
 
 #if TESTING
@@ -211,16 +214,27 @@ static bool8 IsZeroBytes(const u8 *bytes, u32 length)
     return TRUE;
 }
 
-static void ReadArrivalFlashSector(u16 sector)
+static void ReadArrivalFlashChunk(u16 sector, u32 offset)
 {
 #if TESTING
     if (sTestReadFlash != NULL)
     {
-        sTestReadFlash(sector, 0, sFlashSector, sizeof(sFlashSector));
+        sTestReadFlash(sector, offset, sFlashChunk, sizeof(sFlashChunk));
         return;
     }
 #endif
-    ReadFlash(sector, 0, sFlashSector, sizeof(sFlashSector));
+    ReadFlash(sector, offset, sFlashChunk, sizeof(sFlashChunk));
+}
+
+static void HashArrivalFlashSector(u16 sector)
+{
+    u32 offset;
+
+    for (offset = 0; offset < COOP_ARRIVAL_FLASH_SECTOR_SIZE; offset += sizeof(sFlashChunk))
+    {
+        ReadArrivalFlashChunk(sector, offset);
+        Sha256Update(&sArrivalProof.sha, sFlashChunk, sizeof(sFlashChunk));
+    }
 }
 
 bool8 CoopArrivalProof_BeginChallenge(const u8 *nonce, u16 length)
@@ -294,8 +308,7 @@ void CoopArrivalProof_Poll(void)
         return;
     }
 
-    ReadArrivalFlashSector(sArrivalProof.next_sector);
-    Sha256Update(&sArrivalProof.sha, sFlashSector, sizeof(sFlashSector));
+    HashArrivalFlashSector(sArrivalProof.next_sector);
     sArrivalProof.next_sector++;
     if (sArrivalProof.next_sector == COOP_ARRIVAL_FLASH_SECTOR_COUNT)
     {

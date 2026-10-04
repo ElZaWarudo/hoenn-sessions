@@ -84,7 +84,14 @@ class BerryPlotTests(unittest.TestCase):
 
     def test_no_host_growth_object_collides(self):
         header = (ROOT / "include/constants/berry.h").read_text()
-        constants = {name: int(value) for name, value in re.findall(r"#define\s+(BERRY_TREE_\w+)\s+(\d+)\b", header)}
+        # Cormoria's donor-named trees (Cormoria_BERRY_TREE_*) are host
+        # trees too; they live in their own append-only range after Johto.
+        constants = {name: int(value) for name, value in re.findall(r"#define\s+((?:Cormoria_)?BERRY_TREE_\w+)\s+(\d+)\b", header)}
+        cormoria = {value for name, value in constants.items() if name.startswith("Cormoria_")}
+        first = int(re.search(r"#define CORMORIA_BERRY_PLOTS_FIRST (\d+)", header).group(1))
+        last = int(re.search(r"#define CORMORIA_BERRY_PLOTS_LAST (\d+)", header).group(1))
+        self.assertEqual(cormoria, set(range(first, last + 1)))
+        self.assertGreater(first, max(x["runtime_id"] for x in self.plots))
         johto_constants = {x["runtime_constant"]: x["runtime_id"] for x in self.plots}
         occupied = set()
         materialized_johto = set()
@@ -101,6 +108,7 @@ class BerryPlotTests(unittest.TestCase):
         self.assertEqual(materialized_johto, {x["runtime_id"] for x in self.plots})
         count = int(re.search(r"#define BERRY_TREES_COUNT (\d+)", header).group(1))
         self.assertTrue(all(0 <= x["runtime_id"] < count for x in self.plots))
+        self.assertLess(last, count)
 
     def test_donor_seeding_constants_and_runtime_table_agree(self):
         donor = (DONOR / "data/scripts/new_game.inc").read_text()

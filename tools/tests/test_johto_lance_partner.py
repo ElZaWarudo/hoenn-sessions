@@ -70,7 +70,17 @@ EVs: 252 Atk / 252 SpA / 6 SpD
         self.assertTrue(before.endswith(expected_steven + "\n"))
 
         trainers = (ROOT / "include/constants/trainers.h").read_text(encoding="utf-8")
-        self.assertRegex(trainers, r"TRAINER_PIC_SILVER,\s+TRAINER_PIC_JOHTO_PARTNER_LANCE,\s+TRAINER_PIC_CORMORIA_GABRIELLE,\s+TRAINER_PIC_COUNT,")
+        # The partner pics stay contiguous right after Silver. The only thing
+        # allowed between Gabrielle and the count is the pinned Cormoria
+        # presentation pic block (6be11d394e), which holds pic IDs only.
+        self.assertRegex(
+            trainers,
+            r"TRAINER_PIC_SILVER,\s+TRAINER_PIC_JOHTO_PARTNER_LANCE,\s+TRAINER_PIC_CORMORIA_GABRIELLE,\n"
+            r"/\* BEGIN PINNED CORMORIA TRAINER PRESENTATION PIC_IDS \*/\n"
+            r"(?:    TRAINER_PIC_[A-Z0-9_]+,\n)+"
+            r"/\* END PINNED CORMORIA TRAINER PRESENTATION PIC_IDS \*/\n"
+            r"    TRAINER_PIC_COUNT,",
+        )
 
     def test_lance_source_party_is_exact_and_has_no_invented_items(self):
         self.assertRegex(self.lance, r"Name: LANCE\s+Class: Elite Four\s+Pic: Johto Partner Lance\s+Gender: Male\s+Music: Elite Four\s+AI: Basic Trainer\s+Multi Party: Half")

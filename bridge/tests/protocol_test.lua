@@ -2,6 +2,18 @@ package.path = "bridge/?.lua;" .. package.path
 
 local protocol = require("protocol")
 
+local wire_types = {}
+for name, value in pairs(protocol.types) do
+  assert(not wire_types[value], "duplicate bridge message ID: " .. name)
+  wire_types[value] = name
+end
+assert(protocol.types.PAIRING_REQUEST == 0x0012)
+assert(protocol.types.PROGRESS_OBSERVATION == 0x0013)
+assert(protocol.types.PORTAL_TRAVEL_REQUEST == 0x0018)
+assert(protocol.types.ARRIVAL_PROOF == 0x0019)
+assert(protocol.types.REMOTE_INTERACTION == 0x0111)
+assert(protocol.types.ARRIVAL_CHALLENGE == 0x011C)
+
 assert(protocol.crc32("123456789") == 0xCBF43926)
 
 local ready, error_value = protocol.encode({
@@ -91,6 +103,93 @@ for _, route in ipairs({1, 2, 5, 6}) do
   }, "outbound")
   assert(rejected == nil)
 end
+local function expected_fly_era(route)
+  if route == 7 or (route >= 18 and route <= 31) or route >= 63 then return 3 end
+  if route <= 17 then return 4 end
+  if (route >= 33 and route <= 43) or route >= 61 then return 1 end
+  if route <= 53 then return 2 end
+  return 5
+end
+for route = 7, 65 do
+  if route ~= 32 then
+    local request = assert(protocol.encode_group_travel({
+      kind = 1, route = route, request_id = route, proposal_id = string.rep("\0", 16),
+      departure = 5,
+    }, "outbound"))
+    local decoded_request = assert(protocol.decode_group_travel(request, "outbound"))
+    assert(decoded_request.era == expected_fly_era(route))
+    assert(decoded_request.destination == route)
+    assert(decoded_request.departure == 5)
+    local frame = assert(protocol.encode({
+      type = protocol.types.GROUP_TRAVEL_CLIENT, sequence = route, payload = request,
+    }))
+    assert(protocol.decode(frame, "outbound"))
+    assert(protocol.decode_group_travel(request:sub(1, 6) .. "\1" .. request:sub(8), "outbound") == nil)
+    assert(protocol.decode_group_travel(request:sub(1, 2) .. "\0" .. request:sub(4), "outbound") == nil)
+  end
+end
+local reverse_routes = {
+  [66] = {1, 14, 2}, [67] = {2, 14, 2},
+  [68] = {1, 12, 1}, [69] = {2, 12, 1},
+  [70] = {1, 66, 4}, [71] = {2, 66, 4},
+  [72] = {3, 72, 2}, [73] = {3, 73, 2}, [74] = {3, 74, 2}, [75] = {3, 75, 2},
+  [76] = {3, 72, 2}, [77] = {3, 73, 2}, [78] = {3, 74, 2}, [79] = {3, 75, 2},
+  [80] = {3, 80, 2}, [81] = {3, 80, 2}, [82] = {3, 80, 2},
+  [83] = {3, 81, 2}, [84] = {3, 80, 2},
+  [85] = {3, 72, 2}, [86] = {3, 76, 2}, [87] = {3, 73, 2},
+  [88] = {3, 74, 2}, [89] = {3, 75, 2}, [90] = {3, 75, 2},
+  [91] = {3, 80, 2},
+  [92] = {3, 94, 2}, [93] = {3, 94, 2},
+  [94] = {3, 80, 2}, [95] = {3, 81, 2},
+  [97] = {3, 82, 2}, [98] = {3, 83, 2}, [99] = {3, 19, 2},
+}
+for route = 66, 99 do
+  if route ~= 96 then
+    local fields = reverse_routes[route]
+    local request = assert(protocol.encode_group_travel({
+      kind = 1, route = route, era = fields[1], destination = fields[2],
+      departure = fields[3], request_id = route,
+      proposal_id = string.rep("\0", 16),
+    }, "outbound"))
+    assert(assert(protocol.decode_group_travel(request, "outbound")).route == route)
+    assert(protocol.decode_group_travel(request:sub(1, 6) .. string.char(3) .. request:sub(8), "outbound") == nil)
+  end
+end
+for route = 100, 159 do
+  local request = assert(protocol.encode_group_travel({
+    kind = 1, route = route, departure = 2, request_id = route,
+    proposal_id = string.rep("\0", 16),
+  }, "outbound"))
+  local decoded = assert(protocol.decode_group_travel(request, "outbound"))
+  assert(decoded.route == route and decoded.departure == 2)
+  assert(protocol.decode_group_travel(request:sub(1, 6) .. string.char(5)
+    .. request:sub(8), "outbound") == nil)
+end
+for _, route in ipairs({0, 32, 92, 93, 96, 160, 161, 255}) do
+  assert(protocol.encode_group_travel({
+    kind = 1, route = route, request_id = 1, proposal_id = string.rep("\0", 16),
+    departure = 5,
+  }, "outbound") == nil)
+  local raw = string.pack("<I1I1I1I1I1I1I1I1I4c16I4", 1, route, 3, route, 0, 0, 5, 0,
+    1, string.rep("\0", 16), 0)
+  assert(protocol.decode_group_travel(raw, "outbound") == nil)
+end
+local offer = assert(protocol.encode_group_travel({
+  kind = 2, route = 65, request_id = 77, proposal_id = proposal,
+  departure = 5, remaining_seconds = 24,
+}, "inbound"))
+assert(assert(protocol.decode_group_travel(offer, "inbound")).remaining_seconds == 24)
+local offer_frame = assert(protocol.encode({
+  type = protocol.types.GROUP_TRAVEL_SERVER, sequence = 77, payload = offer,
+}))
+assert(protocol.decode(offer_frame, "inbound"))
+assert(protocol.decode_group_travel(offer, "outbound") == nil)
+assert(protocol.decode_group_travel(offer:sub(1, 28) .. "\31" .. offer:sub(30), "inbound") == nil)
+assert(protocol.decode_group_travel(offer:sub(1, 29) .. "\1" .. offer:sub(31), "inbound") == nil)
+assert(protocol.encode_group_travel({
+  kind = 3, route = 65, request_id = 77, proposal_id = proposal,
+  departure = 5, remaining_seconds = 1,
+}, "inbound") == nil)
 local commit = assert(protocol.encode_group_travel({
   kind = 3, route = 6, request_id = 9, proposal_id = proposal, result = 0, reason = 0,
   departure = 4,
@@ -109,10 +208,36 @@ assert(protocol.decode(travel_frame, "outbound") == nil)
 assert(protocol.is_outbound(protocol.types.COMPANION_STATE))
 assert(protocol.is_outbound(protocol.types.SOCIAL_SIGNAL))
 assert(protocol.is_outbound(protocol.types.PORTAL_TRAVEL_REQUEST))
+assert(protocol.is_outbound(protocol.types.BATTLE_ABORT_REQUEST))
+assert(protocol.is_outbound(protocol.types.BATTLE_READY))
 assert(not protocol.is_outbound(protocol.types.REMOTE_COMPANION))
 assert(not protocol.is_inbound(protocol.types.SOCIAL_SIGNAL))
 assert(protocol.is_inbound(protocol.types.REMOTE_COMPANION))
 assert(protocol.is_inbound(protocol.types.REMOTE_SOCIAL_SIGNAL))
+assert(protocol.is_inbound(protocol.types.BATTLE_RESERVE_REJECTED))
+assert(protocol.is_inbound(protocol.types.BATTLE_START))
+assert(protocol.is_inbound(protocol.types.GROUP_ENDED))
+assert(protocol.is_inbound(protocol.types.TRADE_COMMIT))
+assert(protocol.is_inbound(protocol.types.TRADE_OFFER_RECEIVED))
+assert(protocol.is_inbound(protocol.types.TRADE_OFFER_STATUS))
+assert(protocol.types.TRADE_OFFER_RECEIVED == 0x011A)
+assert(protocol.types.TRADE_OFFER_STATUS == 0x011B)
+assert(not protocol.is_inbound(0x011D))
+assert(not protocol.is_outbound(protocol.types.TRADE_OFFER_STATUS))
+assert(protocol.is_outbound(protocol.types.TRADE_OFFER_REQUEST))
+assert(protocol.is_outbound(protocol.types.TRADE_OFFER_DECISION))
+assert(protocol.types.TRADE_OFFER_REQUEST == 0x0016)
+assert(protocol.types.TRADE_OFFER_DECISION == 0x0017)
+assert(not protocol.is_outbound(0x001A))
+assert(not protocol.is_inbound(protocol.types.TRADE_OFFER_REQUEST))
+assert(protocol.PROTOCOL_VERSION == 5)
+assert(not protocol.is_outbound(protocol.types.BATTLE_RESERVE_REJECTED))
+local reserve_rejected = assert(protocol.encode({
+  type = protocol.types.BATTLE_RESERVE_REJECTED, sequence = 4,
+  session_epoch = 1, payload = string.char(1, 2, 3, 4),
+}))
+assert(protocol.decode(reserve_rejected, "inbound"))
+assert(protocol.decode(reserve_rejected, "outbound") == nil)
 
 local companion_frame = assert(protocol.encode({
   type = protocol.types.COMPANION_STATE, sequence = 3, session_epoch = 1,

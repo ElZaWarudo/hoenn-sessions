@@ -38,14 +38,21 @@ static const u8 s56ByteSha256[COOP_ARRIVAL_PROOF_HASH_SIZE] =
 };
 
 static u16 sReadCount;
+static u32 sReadOffset;
 
+/* sReadCount counts whole sectors; chunks must cover each sector in order. */
 static void ReadPatternFlash(u16 sector, u32 offset, u8 *destination, u32 size)
 {
     EXPECT_EQ(sector, sReadCount);
-    EXPECT_EQ(offset, 0);
-    EXPECT_EQ(size, COOP_ARRIVAL_FLASH_SECTOR_SIZE);
+    EXPECT_EQ(offset, sReadOffset);
+    EXPECT_EQ(size, COOP_ARRIVAL_FLASH_READ_CHUNK_SIZE);
     memset(destination, 0xa5, size);
-    sReadCount++;
+    sReadOffset += size;
+    if (sReadOffset == COOP_ARRIVAL_FLASH_SECTOR_SIZE)
+    {
+        sReadOffset = 0;
+        sReadCount++;
+    }
 }
 
 static void QueueChallenge(const u8 nonce[COOP_ARRIVAL_CHALLENGE_NONCE_SIZE], u32 sequence)
@@ -92,6 +99,7 @@ TEST("Coop arrival verifier hashes exactly one flash sector per frame and emits 
     EXPECT(!CoopNetBridge_EnqueueGameToNetwork(COOP_BRIDGE_MESSAGE_ROM_READY, NULL, 0));
 
     sReadCount = 0;
+    sReadOffset = 0;
     gFlashMemoryPresent = TRUE;
     CoopArrivalProof_TestSetFlashReadCallback(ReadPatternFlash);
     CoopArrivalProof_OnContinueSelected();

@@ -3,6 +3,9 @@
 set -euo pipefail
 cd -- "$(dirname -- "$0")"
 export COOP_DOMAIN=coop.example.com COOP_FIREBASE_BUCKET=example.firebasestorage.app COOP_IMAGE=hoenn-coop:verification
+# Placeholder catalog settings satisfy compose's required-variable checks only.
+export COOP_PHASE2_RELEASE_CATALOG_PATH=/srv/hoenn/game/verification/release_catalog.json
+export COOP_PHASE2_RELEASE_CATALOG_SHA256=0000000000000000000000000000000000000000000000000000000000000000
 docker compose config --quiet
 bash -n backup.sh init-secrets.sh init-database.sh
 
@@ -75,6 +78,13 @@ PY
     chmod 644 "$testdir/secrets/database_url"
     printf 'postgresql://coop:isolated-deployment-test@127.0.0.1:5432/coop' >"$testdir/secrets/database_url"
     chmod 444 "$testdir/secrets/database_url" "$testdir/secrets/firebase-service-account.json"
+    # Structurally valid, synthetic release catalog: production refuses to
+    # start without a trusted catalog whose bytes match the pinned digest.
+    catalog="$testdir/hoenn/game/verification/release_catalog.json"
+    mkdir -p "$(dirname -- "$catalog")"
+    printf '%s\n' '{"schema_version":1,"worlds":[{"world_id":1,"build":{"game_build_id":"deploy-verification","rom_sha256":"0000000000000000000000000000000000000000000000000000000000000001","mgba_version":"0.10.5","bridge_abi":1,"protocol_version":1}}]}' >"$catalog"
+    chmod -R a+rX "$testdir/hoenn"
+    catalog_sha256=$(sha256sum "$catalog" | cut -d' ' -f1)
     secret_mounts=()
     for secret in database_url firebase-service-account.json signing_key invite_pepper bootstrap_invite; do
         secret_mounts+=(--mount "type=bind,source=$testdir/secrets/$secret,target=/run/secrets/$secret,readonly")
@@ -82,11 +92,15 @@ PY
     docker run -d --name "${container}-server" --network "container:$container" \
         --read-only --cap-drop ALL --security-opt no-new-privileges:true \
         "${secret_mounts[@]}" \
+        --mount "type=bind,source=$testdir/hoenn,target=/srv/hoenn,readonly" \
         -e COOP_SERVER_MODE=postgres-firebase -e COOP_SERVER_BIND_ADDR=0.0.0.0:3000 \
         -e COOP_DATABASE_URL_FILE=/run/secrets/database_url -e COOP_FIREBASE_BUCKET=example.firebasestorage.app \
         -e COOP_FIREBASE_SERVICE_ACCOUNT_FILE=/run/secrets/firebase-service-account.json \
         -e COOP_SIGNING_KEY_FILE=/run/secrets/signing_key -e COOP_INVITE_PEPPER_FILE=/run/secrets/invite_pepper \
         -e COOP_BOOTSTRAP_INVITE_FILE=/run/secrets/bootstrap_invite -e COOP_UPLOAD_BASE_URL=https://coop.example.com \
+        -e COOP_RELEASE_ROOT=/srv/hoenn \
+        -e COOP_PHASE2_RELEASE_CATALOG_PATH=/srv/hoenn/game/verification/release_catalog.json \
+        -e COOP_PHASE2_RELEASE_CATALOG_SHA256="$catalog_sha256" \
         "$COOP_VERIFY_IMAGE" >/dev/null
     for _ in {1..30}; do
         if docker exec "${container}-server" curl -fsS --max-time 2 http://127.0.0.1:3000/health/ready >/dev/null 2>&1; then break; fi

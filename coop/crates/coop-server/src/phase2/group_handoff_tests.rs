@@ -3,7 +3,17 @@ fn paired_handoff_fixture() -> (
     [AuthenticatedActor; 2],
     coop_cloud::GroupRomHandoffIntent,
 ) {
-    let (app, first, _, _, first_snapshot_id) = handoff_fixture();
+    let (app, actors, intent, _) = paired_handoff_fixture_with_clock();
+    (app, actors, intent)
+}
+
+fn paired_handoff_fixture_with_clock() -> (
+    Phase2App,
+    [AuthenticatedActor; 2],
+    coop_cloud::GroupRomHandoffIntent,
+    Arc<FixedClock>,
+) {
+    let (app, first, _, _, first_snapshot_id, clock) = handoff_fixture_with_clock();
     app.add_invitation("paired-second-invite").unwrap();
     let second_registered = app
         .register(
@@ -170,7 +180,7 @@ fn paired_handoff_fixture() -> (
         members: ordered.1,
         idempotency_key: id(IdempotencyKey::new),
     };
-    (app, ordered.0, intent)
+    (app, ordered.0, intent, clock)
 }
 
 #[test]
@@ -252,6 +262,96 @@ fn paired_prepare_stages_both_saves_without_advancing_heads_and_replays_exactly(
         app.prepare(actors[0], save_request),
         Err(Phase2Error::Conflict)
     ));
+}
+
+#[test]
+fn paired_handoff_is_refused_while_either_member_holds_a_battle_reservation() {
+    let (app, actors, intent) = paired_handoff_fixture();
+    let set_battle = |member: Option<CharacterId>| {
+        app.store
+            .write_transaction(|state| {
+                state.active_battle_by_member.clear();
+                if let Some(member) = member {
+                    state
+                        .active_battle_by_member
+                        .insert(member, uuid::Uuid::from_u128(77));
+                }
+                Ok::<(), Phase2Error>(())
+            })
+            .unwrap();
+    };
+    for actor in actors {
+        set_battle(Some(actor.character_id));
+        assert!(matches!(
+            group_handoff::prepare_pair(&app.store, actors, &intent),
+            Err(Phase2Error::Conflict)
+        ));
+        app.store
+            .read_transaction(|state| {
+                assert!(!state.group_rom_handoff_stages.contains_key(&intent.group_id));
+                Ok::<(), Phase2Error>(())
+            })
+            .unwrap();
+    }
+    // A reservation taken after staging also blocks arrival, so nothing commits.
+    set_battle(None);
+    group_handoff::join(&app.store, actors[0], &paired_join_request(&intent, 0)).unwrap();
+    let second =
+        group_handoff::join(&app.store, actors[1], &paired_join_request(&intent, 1)).unwrap();
+    let coop_cloud::GroupRomHandoffStatus::Staged {
+        idempotency_key, ..
+    } = second
+    else {
+        panic!("expected staged handoff")
+    };
+    let first = group_handoff::status(
+        &app.store,
+        actors[0],
+        &coop_cloud::GroupRomHandoffStatusRequest {
+            api_version: coop_cloud::ApiVersion::V1,
+            group_id: intent.group_id,
+            fence: intent.members[0].fence,
+            idempotency_key,
+        },
+    )
+    .unwrap();
+    set_battle(Some(actors[1].character_id));
+    assert!(matches!(
+        group_handoff::arrive(
+            &app.store,
+            actors[0],
+            &paired_arrival_request(&app, &intent, 0, &first),
+        ),
+        Err(Phase2Error::Conflict)
+    ));
+    app.store
+        .read_transaction(|state| {
+            for (index, actor) in actors.iter().enumerate() {
+                assert_eq!(
+                    state.characters[&actor.character_id].revision,
+                    intent.members[index].fence.current_revision
+                );
+            }
+            Ok::<(), Phase2Error>(())
+        })
+        .unwrap();
+    set_battle(None);
+    group_handoff::arrive(
+        &app.store,
+        actors[0],
+        &paired_arrival_request(&app, &intent, 0, &first),
+    )
+    .unwrap();
+    assert!(matches!(
+        group_handoff::arrive(
+            &app.store,
+            actors[1],
+            &paired_arrival_request(&app, &intent, 1, &second),
+        )
+        .unwrap(),
+        coop_cloud::GroupRomHandoffStatus::Committed { .. }
+    ));
+    assert_group_active(&app, intent.group_id, actors);
 }
 
 #[test]
@@ -830,4 +930,364 @@ fn paired_stage_owns_expiry_and_expired_stage_aborts_without_promoting_sources()
             Ok::<(), Phase2Error>(())
         })
         .unwrap();
+}
+
+/// Drives one paired ROM handoff through both arrivals to its atomic commit.
+fn commit_paired_handoff(
+    app: &Phase2App,
+    actors: [AuthenticatedActor; 2],
+    intent: &coop_cloud::GroupRomHandoffIntent,
+) {
+    group_handoff::join(&app.store, actors[0], &paired_join_request(intent, 0)).unwrap();
+    let second =
+        group_handoff::join(&app.store, actors[1], &paired_join_request(intent, 1)).unwrap();
+    let coop_cloud::GroupRomHandoffStatus::Staged {
+        idempotency_key, ..
+    } = second
+    else {
+        panic!("expected staged handoff")
+    };
+    let first = group_handoff::status(
+        &app.store,
+        actors[0],
+        &coop_cloud::GroupRomHandoffStatusRequest {
+            api_version: coop_cloud::ApiVersion::V1,
+            group_id: intent.group_id,
+            fence: intent.members[0].fence,
+            idempotency_key,
+        },
+    )
+    .unwrap();
+    group_handoff::arrive(
+        &app.store,
+        actors[0],
+        &paired_arrival_request(app, intent, 0, &first),
+    )
+    .unwrap();
+    assert!(matches!(
+        group_handoff::arrive(
+            &app.store,
+            actors[1],
+            &paired_arrival_request(app, intent, 1, &second),
+        )
+        .unwrap(),
+        coop_cloud::GroupRomHandoffStatus::Committed { .. }
+    ));
+}
+
+fn assert_group_active(
+    app: &Phase2App,
+    group_id: coop_cloud::GroupId,
+    actors: [AuthenticatedActor; 2],
+) {
+    app.store
+        .read_transaction(|state| {
+            assert_eq!(state.groups[&group_id].status, storage::GroupStatus::Active);
+            for actor in actors {
+                assert_eq!(
+                    state.active_group_by_member.get(&actor.character_id),
+                    Some(&group_id)
+                );
+            }
+            Ok::<(), Phase2Error>(())
+        })
+        .unwrap();
+}
+
+fn acquire_destination(
+    app: &Phase2App,
+    actor: AuthenticatedActor,
+    destination: coop_protocol::RomWorldId,
+) -> coop_cloud::LeaseContract {
+    let response = app
+        .acquire_world(
+            actor,
+            AcquireLeaseRequest::new(
+                actor.character_id,
+                id(ClientInstanceId::new),
+                id(IdempotencyKey::new),
+            ),
+        )
+        .unwrap();
+    assert_eq!(response.active_world_id, destination);
+    response.lease
+}
+
+#[test]
+fn paired_handoff_commit_keeps_group_until_destination_reacquire_then_normal_rules_resume() {
+    let (app, actors, intent, clock) = paired_handoff_fixture_with_clock();
+    // Commit part-way through the source leases' TTL so the handoff window
+    // provably outlasts the released source leases' own reconnect grace.
+    clock.advance(storage::LEASE_TTL_MS - 10_000);
+    commit_paired_handoff(&app, actors, &intent);
+    let committed_at = app.store.now();
+    let source_grace = app
+        .store
+        .read_transaction(|state| {
+            for actor in actors {
+                let lease = &state.leases[&actor.character_id];
+                assert!(lease.released);
+                let pending = state.rom_handoff_reacquire[&actor.character_id];
+                assert_eq!(
+                    pending.released_session,
+                    lease.contract.stable_runtime_session()
+                );
+                assert_eq!(
+                    pending.reacquire_by,
+                    committed_at + storage::ROM_HANDOFF_REACQUIRE_GRACE_MS
+                );
+            }
+            Ok::<_, Phase2Error>(
+                actors
+                    .map(|actor| state.leases[&actor.character_id].grace_until)
+                    .into_iter()
+                    .max()
+                    .unwrap(),
+            )
+        })
+        .unwrap();
+    // Watchdog-cadence sweeps, then one sweep beyond every released source
+    // lease's own reconnect grace: travelling members are not leaving.
+    for _ in 0..3 {
+        clock.advance(5_000);
+        assert!(sessions::expire_groups(&app.store).unwrap().is_empty());
+        assert_group_active(&app, intent.group_id, actors);
+    }
+    clock.set(source_grace + 1);
+    assert!(app.store.now() <= committed_at + storage::ROM_HANDOFF_REACQUIRE_GRACE_MS);
+    assert!(sessions::expire_groups(&app.store).unwrap().is_empty());
+    assert_group_active(&app, intent.group_id, actors);
+
+    let leases = actors.map(|actor| acquire_destination(&app, actor, intent.destination_world_id));
+    app.store
+        .read_transaction(|state| {
+            assert!(state.rom_handoff_reacquire.is_empty());
+            Ok::<(), Phase2Error>(())
+        })
+        .unwrap();
+    assert!(sessions::expire_groups(&app.store).unwrap().is_empty());
+    assert_group_active(&app, intent.group_id, actors);
+    // The lapsed window is irrelevant once the destination lease is held.
+    clock.set(committed_at + storage::ROM_HANDOFF_REACQUIRE_GRACE_MS + 1);
+    assert!(sessions::expire_groups(&app.store).unwrap().is_empty());
+    assert_group_active(&app, intent.group_id, actors);
+
+    // A genuine release on the destination closes the group under the
+    // ordinary rule, with the end notice fenced to the surviving partner.
+    app.release(
+        actors[0],
+        ReleaseLeaseRequest::new(leases[0].fence(), id(IdempotencyKey::new)),
+    )
+    .unwrap();
+    let ended = sessions::expire_groups(&app.store).unwrap();
+    assert_eq!(ended.len(), 1);
+    assert_eq!(ended[0].expired_member, actors[0].character_id);
+    assert_eq!(ended[0].partner, actors[1].character_id);
+    assert_eq!(
+        ended[0].partner_session,
+        Some(leases[1].stable_runtime_session())
+    );
+    assert_eq!(
+        sessions::pending_group_end_for_session(&app.store, leases[1].stable_runtime_session())
+            .unwrap(),
+        Some(intent.group_id)
+    );
+}
+
+#[test]
+fn paired_handoff_commit_closes_group_with_partner_notice_when_member_never_reacquires() {
+    let (app, actors, intent, clock) = paired_handoff_fixture_with_clock();
+    commit_paired_handoff(&app, actors, &intent);
+    let deadline = app.store.now() + storage::ROM_HANDOFF_REACQUIRE_GRACE_MS;
+    clock.set(deadline - 10_000);
+    let returned = acquire_destination(&app, actors[0], intent.destination_world_id);
+    // The deadline itself is still inside the window.
+    clock.set(deadline);
+    assert!(sessions::expire_groups(&app.store).unwrap().is_empty());
+    assert_group_active(&app, intent.group_id, actors);
+
+    clock.set(deadline + 1);
+    let ended = sessions::expire_groups(&app.store).unwrap();
+    assert_eq!(ended.len(), 1);
+    assert_eq!(ended[0].group_id, intent.group_id);
+    assert_eq!(ended[0].expired_member, actors[1].character_id);
+    assert_eq!(ended[0].partner, actors[0].character_id);
+    assert_eq!(
+        ended[0].partner_session,
+        Some(returned.stable_runtime_session())
+    );
+    app.store
+        .read_transaction(|state| {
+            assert_eq!(
+                state.groups[&intent.group_id].status,
+                storage::GroupStatus::Closed
+            );
+            for actor in actors {
+                assert!(
+                    !state
+                        .active_group_by_member
+                        .contains_key(&actor.character_id)
+                );
+            }
+            assert!(state.rom_handoff_reacquire.is_empty());
+            assert_eq!(
+                state.group_end_notices[&actors[0].character_id].session,
+                returned.stable_runtime_session()
+            );
+            Ok::<(), Phase2Error>(())
+        })
+        .unwrap();
+    assert_eq!(
+        sessions::pending_group_end_for_session(&app.store, returned.stable_runtime_session())
+            .unwrap(),
+        Some(intent.group_id)
+    );
+    // A late destination acquire cannot revive the closed group.
+    acquire_destination(&app, actors[1], intent.destination_world_id);
+    assert!(sessions::expire_groups(&app.store).unwrap().is_empty());
+    app.store
+        .read_transaction(|state| {
+            assert!(
+                !state
+                    .active_group_by_member
+                    .contains_key(&actors[1].character_id)
+            );
+            Ok::<(), Phase2Error>(())
+        })
+        .unwrap();
+}
+
+#[test]
+fn genuine_release_without_handoff_closes_group_on_next_sweep() {
+    let (app, actors, intent) = paired_handoff_fixture();
+    app.release(
+        actors[0],
+        ReleaseLeaseRequest::new(intent.members[0].fence, id(IdempotencyKey::new)),
+    )
+    .unwrap();
+    let ended = sessions::expire_groups(&app.store).unwrap();
+    assert_eq!(ended.len(), 1);
+    assert_eq!(ended[0].expired_member, actors[0].character_id);
+    assert_eq!(ended[0].partner, actors[1].character_id);
+    let partner_session = app
+        .store
+        .read_transaction(|state| {
+            Ok::<_, Phase2Error>(
+                state.leases[&actors[1].character_id]
+                    .contract
+                    .stable_runtime_session(),
+            )
+        })
+        .unwrap();
+    assert_eq!(ended[0].partner_session, Some(partner_session));
+    app.store
+        .read_transaction(|state| {
+            assert_eq!(
+                state.groups[&intent.group_id].status,
+                storage::GroupStatus::Closed
+            );
+            assert!(state.rom_handoff_reacquire.is_empty());
+            Ok::<(), Phase2Error>(())
+        })
+        .unwrap();
+}
+
+#[test]
+fn grouped_member_solo_handoff_is_refused_and_never_marks_or_ends_the_group() {
+    let (app, actors, intent, clock) = paired_handoff_fixture_with_clock();
+    let member = &intent.members[0];
+    let prepare = RomHandoffPrepareRequest {
+        api_version: coop_cloud::ApiVersion::V1,
+        character_id: actors[0].character_id,
+        session_id: member.fence.session_id,
+        session_epoch: member.fence.session_epoch,
+        client_instance_id: member.fence.client_instance_id,
+        expected_revision: member.fence.current_revision,
+        source_snapshot_id: member.source_snapshot_id,
+        portal_id: intent.portal_id.clone(),
+        idempotency_key: id(IdempotencyKey::new),
+    };
+    assert!(matches!(
+        app.prepare_rom_handoff(actors[0], &prepare),
+        Err(Phase2Error::Conflict)
+    ));
+    // A stage prepared before grouping cannot commit once grouped either.
+    let members = actors.map(|actor| actor.character_id);
+    app.store
+        .write_transaction(|state| {
+            for character_id in members {
+                state.active_group_by_member.remove(&character_id);
+            }
+            Ok::<(), Phase2Error>(())
+        })
+        .unwrap();
+    let staged = app.prepare_rom_handoff(actors[0], &prepare).unwrap();
+    app.store
+        .write_transaction(|state| {
+            for character_id in members {
+                state
+                    .active_group_by_member
+                    .insert(character_id, intent.group_id);
+            }
+            Ok::<(), Phase2Error>(())
+        })
+        .unwrap();
+    assert!(matches!(
+        app.commit_rom_handoff(
+            actors[0],
+            &RomHandoffCommitRequest {
+                api_version: coop_cloud::ApiVersion::V1,
+                character_id: actors[0].character_id,
+                session_id: member.fence.session_id,
+                session_epoch: member.fence.session_epoch,
+                client_instance_id: member.fence.client_instance_id,
+                expected_revision: member.fence.current_revision,
+                stage_id: staged.stage_id,
+                destination_save_sha256: staged.destination_save_sha256,
+                idempotency_key: prepare.idempotency_key,
+            },
+        ),
+        Err(Phase2Error::Conflict)
+    ));
+    clock.advance(5_000);
+    assert!(sessions::expire_groups(&app.store).unwrap().is_empty());
+    assert_group_active(&app, intent.group_id, actors);
+    app.store
+        .read_transaction(|state| {
+            assert!(!state.leases[&actors[0].character_id].released);
+            assert!(state.rom_handoff_reacquire.is_empty());
+            Ok::<(), Phase2Error>(())
+        })
+        .unwrap();
+}
+
+// States persisted before the post-handoff marker existed must still decode,
+// and the marker itself must survive a checkpoint round trip.
+#[test]
+fn checkpoint_handoff_reacquire_marker_round_trips_and_is_optional() {
+    let (app, actors, intent) = paired_handoff_fixture();
+    commit_paired_handoff(&app, actors, &intent);
+    let state = app
+        .store
+        .read_transaction(|state| Ok::<_, Phase2Error>(state.clone()))
+        .unwrap();
+    let mut bytes = Vec::new();
+    ciborium::into_writer(&state, &mut bytes).expect("checkpoint");
+    let decoded: storage::State = ciborium::from_reader(bytes.as_slice()).expect("decodes");
+    assert_eq!(decoded.rom_handoff_reacquire, state.rom_handoff_reacquire);
+    assert_eq!(decoded.rom_handoff_reacquire.len(), 2);
+
+    let mut value = ciborium::Value::serialized(&state).expect("state value");
+    let ciborium::Value::Map(fields) = &mut value else {
+        panic!("state is a map");
+    };
+    let before = fields.len();
+    fields.retain(
+        |(key, _)| !matches!(key, ciborium::Value::Text(name) if name == "rom_handoff_reacquire"),
+    );
+    assert_eq!(fields.len(), before - 1);
+    let mut legacy = Vec::new();
+    ciborium::into_writer(&value, &mut legacy).expect("legacy checkpoint");
+    let decoded: storage::State = ciborium::from_reader(legacy.as_slice()).expect("decodes");
+    assert!(decoded.rom_handoff_reacquire.is_empty());
 }

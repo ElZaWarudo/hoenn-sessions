@@ -14,7 +14,35 @@ MEMORY
 
 SECTIONS {
 
-    .ewram ORIGIN(EWRAM) : AT (__ewram_lma)
+    /* The test allocator uses the first 0x19500 bytes of gHeap. Independent
+     * fixtures use its remaining tail, and the runner clears the whole overlay
+     * before each test. The playable ROM keeps its original heap layout. */
+    __test_ewram_overlay_start = ORIGIN(EWRAM);
+    OVERLAY ORIGIN(EWRAM) : NOCROSSREFS
+    {
+        .test_heap                   { src/malloc.o(.sbss) }
+        .test_johto_save             { . = . + 0x19500; test/johto/[s]ave.o(.sbss) }
+        .test_coop_presence_runtime  { . = . + 0x19500; test/coop/[p]resence_runtime.o(.sbss) }
+        .test_coop_net_bridge        { . = . + 0x19500; test/coop/[n]et_bridge.o(.sbss) }
+        .test_coop_battle_runtime     { . = . + 0x19500; test/coop/[b]attle_runtime.o(.sbss) }
+        .test_johto_field_moves      { . = . + 0x19500; test/johto/[f]ield_moves.o(.sbss) }
+        .test_johto_bug_contest_save { . = . + 0x19500; test/johto/[b]ug_contest_save.o(.sbss) }
+        .test_johto_bug_settlement   { . = . + 0x19500; test/johto/[b]ug_contest_settlement.o(.sbss) }
+        .test_johto_bug_contest      { . = . + 0x19500; test/johto/[b]ug_contest.o(.sbss) }
+        .test_johto_trainer_slides   { . = . + 0x19500; test/johto/[t]rainer_slide_bounds.o(.sbss) }
+        .test_johto_berry_plots      { . = . + 0x19500; test/johto/[b]erry_plots.o(.sbss) }
+        .test_johto_berry_lifetime   { . = . + 0x19500; test/johto/[b]erry_lifetime.o(.sbss) }
+        .test_johto_berry_harvest    { . = . + 0x19500; test/johto/[b]erry_harvest.o(.sbss) }
+        .test_johto_headbutt         { . = . + 0x19500; test/johto/[h]eadbutt.o(.sbss) }
+        .test_coop_save              { . = . + 0x19500; test/coop/[s]ave.o(.sbss) }
+        .test_sprite                 { . = . + 0x19500; test/sprite.o(.sbss) }
+        /* TESTING-only 4 KiB sprite scratch (sPuzzleTestSprites); the puzzle
+         * state pointer beside it is per-test too. Keeps the test ELF in EWRAM. */
+        .test_sliding_puzzle         { . = . + 0x19500; src/[s]liding_puzzle.o(.sbss) }
+    } > EWRAM
+    __test_ewram_overlay_end = .;
+
+    .ewram : AT (__ewram_lma)
     ALIGN(4)
     {
         __ewram_start = .;
@@ -22,31 +50,6 @@ SECTIONS {
         . = ALIGN(4);
         __ewram_end = .;
     } > EWRAM
-
-    /* Test fixture storage is zeroed before every test and only one test can
-     * run at a time. Overlay the largest independent fixtures so the test ROM
-     * stays within the GBA's physical EWRAM limit. */
-    __test_ewram_overlay_start = .;
-    OVERLAY : NOCROSSREFS
-    {
-        /* Exact-match wildcards select linked fixtures without loading objects
-         * omitted by TEST_SRCS. */
-        .test_johto_save             { test/johto/[s]ave.o(.sbss) }
-        .test_coop_presence_runtime  { test/coop/[p]resence_runtime.o(.sbss) }
-        .test_coop_net_bridge        { test/coop/[n]et_bridge.o(.sbss) }
-        .test_johto_field_moves      { test/johto/[f]ield_moves.o(.sbss) }
-        .test_johto_bug_contest_save { test/johto/[b]ug_contest_save.o(.sbss) }
-        .test_johto_bug_settlement   { test/johto/[b]ug_contest_settlement.o(.sbss) }
-        .test_johto_bug_contest      { test/johto/[b]ug_contest.o(.sbss) }
-        .test_johto_trainer_slides   { test/johto/[t]rainer_slide_bounds.o(.sbss) }
-        .test_johto_berry_plots      { test/johto/[b]erry_plots.o(.sbss) }
-        .test_johto_berry_lifetime   { test/johto/[b]erry_lifetime.o(.sbss) }
-        .test_johto_berry_harvest    { test/johto/[b]erry_harvest.o(.sbss) }
-        .test_johto_headbutt         { test/johto/[h]eadbutt.o(.sbss) }
-        .test_coop_save              { test/coop/[s]ave.o(.sbss) }
-        .test_sprite                 { test/[s]prite.o(.sbss) }
-    } > EWRAM
-    __test_ewram_overlay_end = .;
 
     .ewram.sbss (NOLOAD) :
     ALIGN(4)

@@ -675,9 +675,36 @@ gSpecials::
 	def_special DoSlidingPuzzle, requests_effects=1
 	def_special HaircutBrother1, requests_effects=1
 	def_special Special_CoopGroupTravelBegin
+	def_special Special_CoopGroupTravelIsGrouped
 	def_special Special_CoopGroupTravelGetOffer
 	def_special Special_CoopGroupTravelRespond
 	def_special Special_CoopGroupTravelCancel
+	def_special Special_CoopSeagallopRoute
+	def_special Special_CoopBattleConsentGetOffer
+	def_special Special_CoopBattleConsentMarkPrompt
+	def_special Special_CoopBattleConsentGetOutcome
+	def_special Special_CoopBattleConsentRespond
+	def_special Special_CoopBattleConsentBeginWally
+	def_special Special_CoopBattleConsentGetWallyResult
+	def_special Special_CoopBattleConsentBeginBrock
+	def_special Special_CoopBattleConsentGetBrockResult
+	def_special Special_CoopGroupTravelFirstBrineySceneComplete
+	def_special Special_CoopGroupTravelFirstBrineyReceiptComplete
+	def_special Special_CoopGroupTravelBillSceneComplete
+	def_special Special_CoopGroupTravelBillSceneRunning
+	def_special Special_CoopTradeBeginOffer
+	def_special Special_CoopTradeBufferOffer
+	def_special Special_CoopTradeRespond
+	def_special Special_CoopTradeWait
+	def_special Special_CoopTradeBufferResult
+	def_special Special_CoopTradeFinish
+	def_special Special_CoopFriendlyBufferRules
+	def_special Special_CoopFriendlyBeginResponderPicks
+	def_special Special_CoopFriendlyBufferPick
+	def_special Special_CoopFriendlyPickMon
+	def_special Special_CoopFriendlyWait
+	def_special Special_CoopFriendlyBufferResult
+	def_special Special_CoopFriendlyFinish
 #if ROM_WORLD == 2
 	def_special StartGacha
 	def_special StartBlackJack

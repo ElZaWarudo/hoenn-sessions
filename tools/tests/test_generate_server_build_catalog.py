@@ -4,10 +4,11 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import unittest
 from pathlib import Path
 
-from tools.coop.generate_server_build_catalog import generate
+from tools.coop.generate_server_build_catalog import SERVER_GAME_PROTOCOL_VERSIONS, generate
 from tools.tests import test_rom_release_catalog as release_tests
 
 
@@ -93,11 +94,45 @@ class ServerBuildCatalogTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "incomplete bridge build identity"):
             self._generate()
 
+    def _set_protocol(self, value: object) -> None:
+        for world in self.fixture.catalog["worlds"]:
+            path = self.fixture.root / world["bridge_path"]
+            manifest = json.loads(path.read_text(encoding="utf-8"))
+            manifest["net_bridge"]["game_protocol_version"] = value
+            self._save_bridge(world, manifest)
+
+    def test_accepts_exactly_the_server_protocol_range(self) -> None:
+        for protocol in sorted(SERVER_GAME_PROTOCOL_VERSIONS):
+            with self.subTest(protocol=protocol):
+                self._set_protocol(protocol)
+                catalog = json.loads(self._generate()[0])
+                self.assertEqual([world["build"]["protocol_version"] for world in catalog["worlds"]],
+                                 [protocol] * 3)
+
+    def test_rejects_protocols_the_server_rejects(self) -> None:
+        for protocol in (0, 6, 7, 65535, -1, True, 5.0, "5", None):
+            with self.subTest(protocol=protocol):
+                self._set_protocol(protocol)
+                with self.assertRaisesRegex(ValueError, "invalid bridge build identity"):
+                    self._generate()
+
+    def test_protocol_range_mirrors_server_protocol_version(self) -> None:
+        # The server parses catalog builds via coop-cloud ProtocolVersion::new.
+        source = (Path(__file__).resolve().parents[2] / "coop" / "crates" / "coop-cloud"
+                  / "src" / "ids.rs").read_text(encoding="utf-8")
+        body = re.search(r"impl ProtocolVersion \{.*?pub fn new\(value: u16\)[^{]*\{(.*?)\n    \}",
+                         source, re.S)
+        self.assertIsNotNone(body, "coop-cloud ProtocolVersion::new not found")
+        ranges = re.findall(r"matches!\(value, (\d+)\.\.=(\d+)\)", body.group(1))
+        self.assertEqual(len(ranges), 1, "ProtocolVersion::new range shape changed; re-mirror it")
+        low, high = map(int, ranges[0])
+        self.assertEqual(SERVER_GAME_PROTOCOL_VERSIONS, frozenset(range(low, high + 1)))
+
     def test_rejects_wrong_rom_or_protocol(self) -> None:
         world = self.fixture.catalog["worlds"][2]
         path = self.fixture.root / world["bridge_path"]
         manifest = json.loads(path.read_text(encoding="utf-8"))
-        manifest["net_bridge"]["game_protocol_version"] = 2
+        manifest["net_bridge"]["game_protocol_version"] = max(SERVER_GAME_PROTOCOL_VERSIONS) + 1
         self._save_bridge(world, manifest)
         with self.assertRaisesRegex(ValueError, "invalid bridge build identity"):
             self._generate()

@@ -398,8 +398,15 @@ class Win32Adapter:
             time.sleep(.01)
         return True
 
-    def click_window_pixel(self, handle: int, x: int, y: int) -> None:
-        """Click a known pixel in one focused desktop window for fixture UI."""
+    def click_window_pixel(self, handle: int, x: int, y: int, *, settle: float = 0.0) -> None:
+        """Click a known pixel in one focused desktop window for fixture UI.
+
+        ``settle`` hovers the pointer first so an idle immediate-mode UI (egui
+        repaints only on input) renders a hover frame before the press; a
+        move+press+release coalesced into one idle frame can be dropped.
+        """
+        if not 0 <= settle <= 1:
+            raise ValueError("click settle outside bounded range")
         rect = wintypes.RECT()
         if not self.user32.GetWindowRect(handle, ctypes.byref(rect)):
             raise WindowControlError("GetWindowRect failed")
@@ -411,6 +418,17 @@ class Win32Adapter:
                                            wintypes.DWORD, wintypes.DWORD, ctypes.c_void_p]
         if not self.user32.SetCursorPos(rect.left + x, rect.top + y):
             raise WindowControlError("SetCursorPos failed")
+        if settle:
+            time.sleep(settle)
+            # Never press on whatever replaced the target during the hover.
+            if self.foreground() != handle:
+                raise WindowControlError("desktop window lost foreground before click")
+            current = wintypes.RECT()
+            if (not self.user32.GetWindowRect(handle, ctypes.byref(current))
+                    or (current.left, current.top) != (rect.left, rect.top)):
+                raise WindowControlError("desktop window moved before click")
+            if not self.user32.SetCursorPos(rect.left + x, rect.top + y):
+                raise WindowControlError("SetCursorPos failed")
         self.user32.mouse_event(0x0002, 0, 0, 0, None)  # left down
         time.sleep(0.08)
         self.user32.mouse_event(0x0004, 0, 0, 0, None)  # left up
@@ -486,7 +504,8 @@ class Win32Adapter:
             self.user32.ReleaseDC(0, screen)
 
 
-def click_desktop(pid: int, x: int, y: int, adapter: Win32Adapter) -> None:
+def click_desktop(pid: int, x: int, y: int, adapter: Win32Adapter, *,
+                  settle: float = 0.0) -> None:
     matches = [w for w in adapter.windows() if w.pid == pid and w.visible
                and w.title == "Hoenn Sessions"]
     if len(matches) != 1:
@@ -499,7 +518,10 @@ def click_desktop(pid: int, x: int, y: int, adapter: Win32Adapter) -> None:
         if time.monotonic() >= deadline:
             raise WindowControlError(f"desktop window {target.handle} did not become foreground")
         time.sleep(0.05)
-    adapter.click_window_pixel(target.handle, x, y)
+    if settle:
+        adapter.click_window_pixel(target.handle, x, y, settle=settle)
+    else:
+        adapter.click_window_pixel(target.handle, x, y)
 
 
 def wait_desktop_window(pid: int, adapter: WindowAdapter, *, timeout: float = 20) -> Window:

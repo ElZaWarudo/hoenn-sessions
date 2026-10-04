@@ -38,7 +38,7 @@ final class BridgeConnection implements AutoCloseable {
             Socket s=new Socket();synchronized(networkLock){if(closed){s.close();return;}socket=s;}
             s.connect(new InetSocketAddress("127.0.0.1",port),3000);s.setSoTimeout(3000);s.setTcpNoDelay(true);
             OutputStream output=s.getOutputStream();InputStream input=s.getInputStream();
-            output.write(("{\"secret\":\""+secret+"\",\"bridge_abi\":1,\"protocol_version\":1}\n").getBytes(java.nio.charset.StandardCharsets.US_ASCII));
+            output.write(("{\"secret\":\""+secret+"\",\"bridge_abi\":"+BridgeFrame.BRIDGE_ABI+",\"protocol_version\":"+BridgeFrame.PROTOCOL_VERSION+"}\n").getBytes(java.nio.charset.StandardCharsets.US_ASCII));
             ByteArrayOutputStream line=new ByteArrayOutputStream();int c;
             while((c=input.read())!=-1){line.write(c);if(line.size()>256)throw new IOException();if(c==10)break;}
             if(!line.toString("US-ASCII").equals("{\"ok\":true}\n"))throw new SecurityException();
@@ -98,9 +98,13 @@ final class BridgeConnection implements AutoCloseable {
     private void checkFrame(BridgeFrame message,boolean inboundFrame){checkFrame(message,epoch,inboundFrame,arrivalVerifier);}
     static void checkFrame(BridgeFrame message,long epoch,boolean inboundFrame,boolean arrivalVerifier){
         if(arrivalVerifier ? epoch!=0 : epoch<=0 || epoch>0xffffffffL)throw new SecurityException("Modo del bridge inválido");
-        if(message.epoch!=epoch)throw new SecurityException("Epoch del bridge inválido");
-        if(arrivalVerifier ? (inboundFrame ? message.type!=0x111 : message.type!=1 && message.type!=0x13)
-                : (inboundFrame ? message.type==0x111 : message.type==0x13))throw new SecurityException("Mensaje del bridge fuera de modo");
+        // Boot ROM_READY precedes the server epoch grant. The sidecar owns
+        // replay/readiness latching; no other zero-epoch gameplay frame is valid.
+        boolean bootReady=!arrivalVerifier && !inboundFrame && message.type==1
+                && message.sequence==1 && message.epoch==0 && message.payload.length==0;
+        if(!bootReady && message.epoch!=epoch)throw new SecurityException("Epoch del bridge inválido");
+        if(arrivalVerifier ? (inboundFrame ? message.type!=0x11c : message.type!=1 && message.type!=0x19)
+                : (inboundFrame ? message.type==0x11c : message.type==0x19))throw new SecurityException("Mensaje del bridge fuera de modo");
     }
     @Override public void close(){
         synchronized(networkLock){closed=true;Socket s=socket;if(s!=null)try{s.close();}catch(IOException ignored){}}

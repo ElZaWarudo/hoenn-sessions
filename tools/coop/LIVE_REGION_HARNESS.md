@@ -18,7 +18,7 @@ py -3 tools/coop/live_region_harness.py $Plan server-check
 py -3 tools/coop/live_region_harness.py $Plan launch
 py -3 tools/coop/live_region_harness.py $Plan start --pids $DesktopPidsJson
 py -3 tools/coop/live_region_harness.py $Plan drive --leg $Leg --pids $GamePidsJson
-py -3 tools/coop/live_group_evidence.py $Plan --leg $Leg --group-id $GroupId --output-dir $ServerEvidenceDir
+py -3 tools/coop/live_group_evidence.py $Plan --leg $Leg --group-proof $GroupProofJson --output-dir $ServerEvidenceDir
 py -3 tools/coop/live_region_harness.py $Plan discover --leg $Leg --output $EvidenceJson
 py -3 tools/coop/live_region_harness.py $Plan verify --leg $Leg --evidence $EvidenceJson
 py -3 tools/coop/live_region_harness.py $Plan journey
@@ -46,8 +46,11 @@ so they are never copied into checkpoints or printed. The discovered staged
 save must match the journal digest and a valid Flash1M image before `verify`.
 
 After the signed game clients exit, `live_group_evidence.py` can authenticate
-both test accounts and collect the server's current save, latest older save in
-the destination world, and group view. Set `COOP_HARNESS_USERNAME_A`,
+both test accounts and collect the server's current save and latest older save
+in the destination world. It no longer reads a group after Stop: Stop releases
+both leases, which genuinely ends the group under main's rule. Its
+`--group-proof` input is the record captured while both clients were live (see
+the pairing-code flow below); a bare group id is refused. Set `COOP_HARNESS_USERNAME_A`,
 `COOP_HARNESS_USERNAME_B`, and `COOP_HARNESS_PASSWORD` in the process environment;
 do not put credentials in a plan. The probe verifies each downloaded save
 against its authenticated snapshot manifest and releases each temporary lease
@@ -57,8 +60,8 @@ own; HTTP 409 is a stopped boundary, not an invitation to overwrite a live
 session.
 
 For each leg, the evidence JSON has `players.a` and `players.b`, each with
-`source`, `staged`, `template`, and `journal` paths, plus an authenticated
-`group` response. `verify` checks the exact character, source world, portal,
+`source`, `staged`, `template`, and `journal` paths, plus the live pre-Stop
+`group` record. `verify` checks the exact character, source world, portal,
 destination world, journal stage digest, Flash1M sectors and V2 CRC, every
 descriptor-owned shared and world-local field, and group membership/region.
 For a first arrival, the destination world-local oracle is the signed arrival
@@ -104,8 +107,11 @@ order. Each leg needs `inputs` for the ferry and `arrival_inputs` for cold
 Continue covering both players, using the same bounded key-action format.
 It checks the replacement emulator's actual ROM argument against the catalog
 hash, sends the arrival inputs, retains both destination screenshots, closes
-the runtime through the signed desktop's Stop control, collects authenticated group/save evidence, and
-verifies preservation before starting the next leg. Screenshots are witnesses
+the runtime through the signed desktop's Stop control, collects authenticated save evidence, and
+verifies preservation before starting the next leg. `journey` still hands the
+collector a journal group id, so it now stops at collection (fail closed) until
+it captures the pre-Stop partner proof; use `live_roundtrip.py` and
+`live_run_leg.py` for grouped legs. Screenshots are witnesses
 for inspection; the tool does not recognize harbor imagery automatically.
 Lease collection waits up to 15 seconds for acquire-world HTTP 409 with the
 same idempotency key, without takeover; other errors stop immediately. Normal
@@ -570,7 +576,8 @@ A fresh single-command roundtrip and final-code campaign remain unverified.
 
 
 `live_roundtrip.py` composes the accepted factories, seed admission, signed
-client preparation, public group setup, outbound attestation and guarded return.
+client preparation, per-session pairing-code groups, outbound attestation and
+guarded return.
 Its fresh live orchestration is still under acceptance; completed v7o evidence
 above remains separate. Supply two distinct environment usernames, the local
 test password and one unused registration invitation when using `--register`;
@@ -581,12 +588,48 @@ python -B tools/coop/live_roundtrip.py --authoring-plan <plan.json> --mgba-confi
 ```
 
 The factory configuration declares `adapter: hoenn-debug-v1`,
-`source_world_id: 1`, `group_mode: api-preformed`, explicit
-`preformed_group_inputs`, and six `outputs` cache directories: harbor, population,
-mail, pc_mail, third_mail and daycare. The configured legs select destination
-world and portals; another destination ROM can reuse this orchestration. Other
-authoring ABIs require an adapter. Do not reuse invitation-menu controls after
-API group formation.
+`source_world_id: 1`, `group_mode: desktop-pairing-code`, explicit
+`pairing_group_inputs` (cold Continue plus ferry controls only), and six
+`outputs` cache directories: harbor, population, mail, pc_mail, third_mail and
+daycare. The configured legs select destination world and portals; another
+destination ROM can reuse this orchestration. Other authoring ABIs require an
+adapter. Do not add in-game invitation-menu controls: the group is formed
+through the desktop Join box below.
+
+Group formation follows main. A group lives while both members hold leases
+and ends when they genuinely leave; Stop releases both leases, so every client
+session (outbound, then return) forms its own group:
+
+1. With no client running, `require_ungrouped` reads token-only
+   `GET /v1/group/partner` for both actors and refuses an Active group. `a`'s
+   pairing code is issued through `POST /v1/groups/pairing-codes` under a short
+   harness lease (`a` is ungrouped, so the release ends nothing). The code is
+   valid for 10 minutes and single use; receipts keep only its SHA-256.
+2. Both signed desktops launch and press Play. The harness then types the code
+   into `b`'s "Join a partner by code" box and presses Join. The box is located
+   visually at the window's DPI and must be unique, empty and focused before
+   any key, and must visibly hold the code before Join. Join is pressed at most
+   three times and only while the code is still in the box; a desktop that
+   clears the box without a server group fails. No password is typed and the
+   failure capture shows only the desktop status.
+3. Before any ferry input, token-only `/v1/group/partner` must show both actors
+   Active with each other, both online, in a source-world presence region.
+4. After both arrivals and cold Continue, before Stop, the same read must show
+   both still Active with each other in the destination region (live presence
+   zone when present, otherwise the saved zone). Both committed crossing
+   journals must name one group id; that id, the two proofs and the region form
+   the `group` evidence (`outbound-group-proof.json`, `server-evidence/group.json`).
+5. The return session repeats 1 to 4. Its journal group id must differ from the
+   outbound one: the oracle is a fresh Active group of exactly these two
+   characters formed for the return session, proved before and after crossing.
+
+The partner read exposes no group id, so pre-crossing identity rests on the
+single consumed code plus the uninterrupted Active proof for this pair; the id
+itself comes from the journals. A closed group, a wrong or missing partner, an
+offline partner or a wrong region stops the leg before Stop and evidence.
+The former API invite/accept pre-formation (`form_group`, `api-preformed`) is
+removed: it released its leases, so main closed the group before launch, and no
+other caller used it.
 
 Optional `signed_cache_source` validates an existing signed generation and
 hardlinks only its immutable signed artifacts and completion/envelope records
@@ -641,3 +684,15 @@ both actual validators with current helpers, without API or launch:
 Neither receipt proves fresh single-command completion. Main has since advanced
 to `17153772bc77c9abac15600a13930ac37e280040`; synchronize the preserved source
 candidate before the next paired build, keeping the existing fixture unchanged.
+
+The source merge now uses protocol5 and moves portal/proof/challenge to
+`0x0018`/`0x0019`/`0x011C`, preserving main's pairing/trade/battle IDs.
+Protocol63, cloud/sidecar228, Java9, campaign/catalog42 and schema2-save70 scoped tests pass;
+these prove their pinned source boundaries, not a new signed-ROM journey.
+Server gameplay reconciliation and full Android/native execution remain
+pending. Save tests preserve complete non-party data and regional provenance
+through direct schema2 trades; synthetic fixtures do not prove live trading.
+Keep the v7m pair immutable and finish the focused v7p return only
+after the live storage and current-head gates pass. Build one new paired family
+after integrated source checks, then perform its fresh campaign/platform
+acceptance. No legacy-save migration is included.

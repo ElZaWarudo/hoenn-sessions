@@ -55,6 +55,8 @@ foreach ($required in @(
         'Id="PrivatePilotConfig"',
         'Id="ThirdPartyNotices"',
         'Id="StartMenuShortcut"',
+        'Id="JoinLinkProtocol"',
+        'Software\Classes\hoenn-sessions',
         'hoenn-sessions-bootstrapper.exe',
         'hoenn-sessions-onboarding.exe',
         'bootstrap-config.private-pilot.json',
@@ -63,7 +65,7 @@ foreach ($required in @(
         throw "WiX package is missing required invariant: $required"
     }
 }
-foreach ($component in @('StableBootstrap', 'OnboardingFallback', 'PrivatePilotConfig', 'ThirdPartyNotices')) {
+foreach ($component in @('StableBootstrap', 'OnboardingFallback', 'PrivatePilotConfig', 'ThirdPartyNotices', 'JoinLinkProtocol')) {
     $pattern = '(?s)<Component Id="' + [Regex]::Escape($component) + '".*?</Component>'
     $match = [Regex]::Match($package, $pattern)
     if (-not $match.Success -or

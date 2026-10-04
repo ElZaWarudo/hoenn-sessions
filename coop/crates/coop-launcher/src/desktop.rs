@@ -82,6 +82,8 @@ pub enum StartFailure {
     Unavailable,
     /// The runtime did not become ready.
     NotReady,
+    /// A first-voyage scene marker must be reconciled before resume.
+    StoryTravelRecoveryPending,
 }
 
 /// Why the controller has entered a blocked state.
@@ -944,6 +946,9 @@ impl State {
                 }
                 BlockReason::Start(StartFailure::NotReady) => {
                     "The installed game or emulator failed its startup checks. Restart Hoenn Sessions to check for updates."
+                }
+                BlockReason::Start(StartFailure::StoryTravelRecoveryPending) => {
+                    "Your first boat trip needs recovery before play can resume. Check recovery options to see what is safe."
                 }
                 BlockReason::Start(StartFailure::Unavailable) => {
                     "Your game session could not start. Retry to continue."

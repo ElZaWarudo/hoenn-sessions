@@ -2,7 +2,9 @@
 """Test-only cached two-actor ROM authoring and signed roundtrip orchestration.
 
 Region/portal legs come from the plan. Fixture authoring currently requires the
-explicit Hoenn debug/Main ABI. Interrupted mutation phases stop for focused
+explicit Hoenn debug/Main ABI. Each client session forms its group the way main
+does: a's pairing code is issued while no client runs, then b types it into its
+live signed desktop's Join box. Interrupted mutation phases stop for focused
 recovery; a completed run rechecks retained proof without API or client launch.
 """
 from __future__ import annotations
@@ -57,7 +59,7 @@ def immutable(path: Path, value: dict) -> Path:
 def inputs(plan_path: Path, config: Path, cache_roots: dict, register: bool) -> tuple[dict, dict]:
     base = harness._read_json(plan_path, "roundtrip authoring plan")
     if (cache_roots.get("adapter") != "hoenn-debug-v1" or cache_roots.get("source_world_id") != 1
-            or cache_roots.get("group_mode") != "api-preformed"):
+            or cache_roots.get("group_mode") != "desktop-pairing-code"):
         raise harness.HarnessFailure("roundtrip authoring adapter/source world is unsupported")
     outputs = cache_roots.get("outputs", {})
     if set(outputs) != set(STAGES) or any(not Path(p).is_absolute() for p in outputs.values()):
@@ -65,9 +67,9 @@ def inputs(plan_path: Path, config: Path, cache_roots: dict, register: bool) -> 
     if len(base.get("legs", [])) != 2:
         raise harness.HarnessFailure("roundtrip requires exactly two configured legs")
     first, back = base["legs"]
-    travel = cache_roots.get("preformed_group_inputs")
+    travel = cache_roots.get("pairing_group_inputs")
     if not isinstance(travel, list):
-        raise harness.HarnessFailure("roundtrip requires an explicit preformed-group outbound input recipe")
+        raise harness.HarnessFailure("roundtrip requires an explicit pairing-group outbound input recipe")
     base = copy.deepcopy(base)
     base["legs"][0]["inputs"] = travel
     first, back = base["legs"]
@@ -87,7 +89,7 @@ def inputs(plan_path: Path, config: Path, cache_roots: dict, register: bool) -> 
     _, prefix = presence_prefix(base, first["name"])
     if any(a["key"] not in {"up", "down", "left", "right", "gba_a", "gba_b"}
            for a in travel[len(prefix):]):
-        raise harness.HarnessFailure("preformed-group recipe permits only ferry controls after Continue")
+        raise harness.HarnessFailure("pairing-group recipe permits only ferry controls after Continue")
     # Conservative closure: every live helper may participate in admission,
     # Windows control, caching, lineage, projection, or evidence validation.
     folder = Path(__file__).parent
@@ -99,7 +101,7 @@ def inputs(plan_path: Path, config: Path, cache_roots: dict, register: bool) -> 
              "config_sha256": harness.digest(config), "adapter": cache_roots["adapter"], "source_world_id": cache_roots["source_world_id"],
              "group_mode": cache_roots["group_mode"],
              "cache_roots": {k: str(Path(v).resolve()) for k, v in outputs.items()},
-             "preformed_group_inputs": travel,
+             "pairing_group_inputs": travel,
              "signed_cache_source": str(Path(source_cache).resolve()) if source_cache is not None else None,
              "dependencies": dependencies, "templates": templates, "pillow_version": harbor.PILLOW_VERSION,
              "signed": {k: base[k] for k in ("release_id", "envelope_sha256", "catalog_sha256", "server_catalog_sha256")},
@@ -227,7 +229,7 @@ def seed_plan(plan: dict, root: Path, register: bool) -> dict:
     return plan_receipt(path, actors=actors)
 
 
-def initial_heads(plan: dict, actors: dict, expected_group: dict | None = None) -> dict:
+def initial_heads(plan: dict, actors: dict) -> dict:
     """Validate seeded Main heads under bounded read leases before launch."""
     _, parsed = harness._health_url(plan)
     if parsed.hostname not in ("localhost", "127.0.0.1", "::1"):
@@ -264,10 +266,6 @@ def initial_heads(plan: dict, actors: dict, expected_group: dict | None = None) 
             if hashlib.sha256(body).hexdigest() != player["source_sha256"]:
                 raise harness.HarnessFailure("roundtrip raw head differs")
             checked[name] = {"sha256": player["source_sha256"], "revision": revision, "snapshot_id": current[0]["snapshot_id"]}
-            if expected_group is not None:
-                status, body = groups._call(server, "GET", "/v1/groups/" + expected_group["group_id"], token=token, lease=lease)
-                actual = harness._sanitize_group_evidence(json.loads(groups._expect(status, body, 200, "roundtrip initial group")))
-                if actual != expected_group: raise harness.HarnessFailure("roundtrip initial group differs")
         finally:
             original = sys.exc_info()[1]
             try:
@@ -280,83 +278,6 @@ def initial_heads(plan: dict, actors: dict, expected_group: dict | None = None) 
                 if original is None: raise
                 original.add_note(f"Roundtrip head release also failed: {cleanup}")
     return checked
-
-
-def form_group(plan: dict, actors: dict, root: Path) -> dict:
-    """Use public fenced invite/accept APIs; uncertain mutation is never replayed."""
-    heads = initial_heads(plan, actors)
-    _, parsed = harness._health_url(plan)
-    server = f"{parsed.scheme}://{parsed.netloc}"
-    leases, tokens = {}, {}
-    request_ids = {"invite": str(uuid.uuid4()), "accept": str(uuid.uuid4())}
-    immutable(root / "group-request-ids.json", request_ids)
-    try:
-        for player in plan["players"]:
-            name, character = player["name"], player["character_id"]
-            status, body = groups._call(server, "POST", "/v1/auth/login", payload={"api_version": 1,
-                "username": os.environ["COOP_HARNESS_USERNAME_" + name.upper()], "password": os.environ["COOP_HARNESS_PASSWORD"]})
-            login = json.loads(groups._expect(status, body, 200, "roundtrip group login"))
-            if login["character_id"] != character: raise harness.HarnessFailure("roundtrip group actor differs")
-            tokens[name] = login["access_token"]
-            leases[name] = groups._acquire_after_release(server, {"api_version": 1, "character_id": character,
-                "client_instance_id": str(uuid.uuid4()), "idempotency_key": str(uuid.uuid4())}, tokens[name], 0)
-            if leases[name]["current_revision"] != heads[name]["revision"]:
-                raise harness.HarnessFailure("roundtrip group head changed")
-            # Under the concurrent leases, require the same exact manifest
-            # pinned by the preceding released read, not generation heuristics.
-            status, body = groups._call(server, "GET", f"/v1/characters/{character}/snapshots", token=tokens[name], lease=leases[name])
-            snapshots = json.loads(groups._expect(status, body, 200, "roundtrip group head"))["snapshots"]
-            current = [s for s in snapshots if s["revision"] == heads[name]["revision"]]
-            if (len(current) != 1 or current[0]["snapshot_id"] != heads[name]["snapshot_id"]
-                    or current[0]["rom_world_id"] != plan["legs"][0]["source_world_id"]
-                    or [f["sha256"] for f in current[0]["files"] if f["artifact"] == "character.sav"] != [heads[name]["sha256"]]):
-                raise harness.HarnessFailure("roundtrip group manifest changed")
-        players = {p["name"]: p for p in plan["players"]}
-        def fence(name, key):
-            return {"api_version": 1, "character_id": players[name]["character_id"], "idempotency_key": key,
-                    **{k: leases[name][k] for k in ("session_id", "current_revision", "session_epoch", "client_instance_id")}}
-        status, body = groups._call(server, "POST", "/v1/groups/invitations", token=tokens["a"], lease=leases["a"],
-            payload={**fence("a", request_ids["invite"]), "invitee_character_id": players["b"]["character_id"]})
-        invitation = json.loads(groups._expect(status, body, 201, "roundtrip invite"))
-        if (invitation.get("inviter_character_id") != players["a"]["character_id"]
-                or invitation.get("invitee_character_id") != players["b"]["character_id"]):
-            raise harness.HarnessFailure("roundtrip invitation actors differ")
-        invitation_id = str(uuid.UUID(invitation["invitation_id"]))
-        immutable(root / "group-invitation.json", {k: invitation[k] for k in
-                  ("api_version", "invitation_id", "inviter_character_id", "invitee_character_id", "expires_at") if k in invitation})
-        status, body = groups._call(server, "POST", f"/v1/groups/invitations/{invitation_id}/accept", token=tokens["b"], lease=leases["b"],
-            payload=fence("b", request_ids["accept"]))
-        accepted = json.loads(groups._expect(status, body, 200, "roundtrip accept"))["group"]
-        group = harness._sanitize_group_evidence(accepted)
-        group_id = str(uuid.UUID(group["group_id"]))
-        catalog = harness._read_json(Path(plan["release_dir"]) / "release_catalog.json", "roundtrip group catalog")
-        world = next(w for w in catalog["worlds"] if w["world_id"] == plan["legs"][0]["source_world_id"])
-        if (len(group["members"]) != 2 or {m["character_id"] for m in group["members"]} != {p["character_id"] for p in plan["players"]}
-                or group["world_zone"]["region"] not in world["presence_regions"]):
-            raise harness.HarnessFailure("roundtrip accepted group/zone differs")
-        for name in ("a", "b"):
-            status, body = groups._call(server, "GET", "/v1/groups/" + group_id, token=tokens[name], lease=leases[name])
-            inspected = json.loads(groups._expect(status, body, 200, "roundtrip inspect group"))
-            if harness._sanitize_group_evidence(inspected) != group or inspected["world_zone"] != accepted["world_zone"]:
-                raise harness.HarnessFailure("roundtrip group inspect differs")
-        return {"group": group, "world_zone": accepted["world_zone"], "heads": heads,
-                "invitation_id": invitation_id, "request_ids": request_ids}
-    finally:
-        original, errors = sys.exc_info()[1], []
-        for name, lease in leases.items():
-            try:
-                status, body = groups._call(server, "POST", "/v1/sessions/release", token=tokens[name], lease=lease,
-                    payload={"api_version": 1, "character_id": next(p["character_id"] for p in plan["players"] if p["name"] == name),
-                             "idempotency_key": str(uuid.uuid4()), **{k: lease[k] for k in
-                             ("session_id", "current_revision", "session_epoch", "client_instance_id")}})
-                groups._expect(status, body, 200, "roundtrip group release")
-            except Exception as error: errors.append(error)
-        if errors:
-            if original is None:
-                original = errors.pop(0)
-                for error in errors: original.add_note(f"Group lease release also failed: {error}")
-                raise original
-            for error in errors: original.add_note(f"Group lease release also failed: {error}")
 
 
 def cleanup(plan: dict, desktops: dict, receipt: Path) -> None:
@@ -379,28 +300,39 @@ def cleanup(plan: dict, desktops: dict, receipt: Path) -> None:
         for error in failures: original.add_note(f"Roundtrip cleanup also failed: {error}")
 
 
-def outbound(plan: dict, actors: dict, root: Path, group: dict) -> dict:
+def presence_regions(plan: dict, world_id: int) -> list:
+    catalog = harness._read_json(Path(plan["release_dir"]) / "release_catalog.json", "roundtrip group catalog")
+    return next(w for w in catalog["worlds"] if w["world_id"] == world_id)["presence_regions"]
+
+
+def outbound(plan: dict, actors: dict, root: Path) -> dict:
     leg = plan["legs"][0]
-    heads = initial_heads(plan, actors, group)
+    heads = initial_heads(plan, actors)
+    # Fresh accounts: a's code is issued while no client runs (a is ungrouped,
+    # so its short harness lease ends nothing); b redeems it in the live UI.
+    ungrouped = groups.require_ungrouped(plan, "outbound pre-pairing")
+    code = groups.create_pairing_code(plan, "outbound")
+    immutable(root / "outbound-pairing.json", {"ungrouped": ungrouped, **{k: code[k] for k in
+              ("code_sha256", "expires_at_unix_ms", "inviter_character_id")}})
     desktops = harness.launch(plan)
     try:
         pids = harness.start_games(plan, desktops)
         bind_games(plan, leg, pids)
         selected.bind_loaded_sources(plan, pids, desktops, {"players": heads})
+        before = groups.pair_desktops(plan, desktops, code, presence_regions(plan, leg["source_world_id"]), "outbound")
         harness.drive(plan, leg["name"], pids)
         arrived = harness.wait_arrival_games(plan, leg, pids)
         harness.continue_arrivals(plan, leg, arrived)
-        group_ids = set()
-        for player in plan["players"]:
-            journals = harness._journal_candidates(Path(player["profile_localappdata"]), leg, player["character_id"])
-            if not journals: raise harness.HarnessFailure("roundtrip partial outbound crossing")
-            group_ids.add(journals[0][2]["intent"]["request"]["group_id"])
-        if group_ids != {group["group_id"]}:
-            raise harness.HarnessFailure("roundtrip outbound group differs")
+        group_id = groups.journal_group_id(plan, leg)
+        # The group must survive the crossing: Active with the same partner in
+        # the destination region while both clients are still live.
+        after = groups.partner_proof(plan, presence_regions(plan, leg["destination_world_id"]), "outbound post-arrival")
+        record = groups.group_record(plan, leg, group_id, before, after)
+        immutable(root / "outbound-group-proof.json", record)
         harness.stop_runtime(plan, desktops)
         _, run_dir = harness._paths(plan)
         output = capture_directory(run_dir, leg["name"], "server-evidence")
-        collected = groups.collect(plan, leg["name"], next(iter(group_ids)), output, lease_wait_seconds=15)
+        collected = groups.collect(plan, leg["name"], record, output, lease_wait_seconds=15)
         evidence_plan = dict(plan, group_evidence=collected["group"], evidence_roots=[str(output), *plan.get("evidence_roots", [])])
         evidence_plan["legs"] = [dict(item, group_evidence=collected["group"]) if item["name"] == leg["name"] else item for item in plan["legs"]]
         harness.discover_evidence(evidence_plan, leg["name"])
@@ -498,10 +430,9 @@ def run(plan_path: Path, config: Path, cache_roots: dict, output: Path, *, regis
             authored = harness._read_json(Path(a["plan_path"]), "roundtrip authored plan")
             s = phase(root, key, "seeded", lambda: seed_plan(authored, root, register))
             signed = harness._read_json(Path(s["plan_path"]), "roundtrip signed plan")
-            g = phase(root, key, "grouped", lambda: form_group(signed, s["actors"], root))
             phase(root, key, "preloaded", lambda: preload_signed_cache(signed, Path(cache_roots["signed_cache_source"]) if cache_roots.get("signed_cache_source") is not None else None))
             phase(root, key, "prepared", lambda: prepare.prepare(signed))
-            o = phase(root, key, "outbound", lambda: outbound(signed, s["actors"], root, g["group"]))
+            o = phase(root, key, "outbound", lambda: outbound(signed, s["actors"], root))
             attested = harness._read_json(Path(o["plan_path"]), "roundtrip attested plan")
             r = phase(root, key, "returned", lambda: return_leg(attested, root))
             complete_check(attested, root, r["report"])

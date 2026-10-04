@@ -106,7 +106,15 @@ class JohtoSceneryTest(unittest.TestCase):
         manifest = load("data/johto/asset_manifest.json")
         registration = load("data/johto/scenery_registration.json")
         layouts = load("data/layouts/layouts.json")
-        self.assertEqual(len(layouts["layouts"]), 1192)
+        # Rows 0..1191 are the host table plus these 168 Kanto rows. Cormoria
+        # (6be11d394e) appends its own ledger strictly after them, in ledger
+        # order, so nothing here is renumbered.
+        cormoria = load("data/cormoria/region_manifest.json")["layouts"]
+        self.assertEqual(len(layouts["layouts"]), 1192 + len(cormoria))
+        self.assertEqual(
+            [(row["id"], row["name"], row.get("rom_world")) for row in layouts["layouts"][1192:]],
+            [(row["target_id"], row["target_name"], "cormoria") for row in cormoria],
+        )
         self.assertEqual(scenery._identity(layouts["layouts"][:1024]), scenery.HOST_LAYOUT_TABLE_SHA256)
         self.assertEqual(scenery._identity(layouts["layouts"][:785]), scenery.HOST_LAYOUT_PREFIX_SHA256)
         for index, selected in enumerate(manifest["layouts"][239:]):

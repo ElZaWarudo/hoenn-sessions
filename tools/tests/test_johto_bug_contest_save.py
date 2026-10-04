@@ -69,9 +69,20 @@ class JohtoBugContestSaveFenceTests(unittest.TestCase):
         authorized = self.menu[authorized_start:authorized_end]
         self.assertLess(save_callback.index("JohtoBugContest_IsSerializationBlocked"), save_callback.index("CoopNetBridge_RequestCheckpoint"))
         self.assertLess(authorized.index("JohtoBugContest_IsSerializationBlocked"), authorized.index("IncrementGameStat"))
-        request = self.bridge[self.bridge.index("enum CoopCheckpointRequestResult CoopNetBridge_RequestCheckpoint"):self.bridge.index("bool8 CoopNetBridge_ConsumeCheckpointGrant")]
-        self.assertLess(request.index("JohtoBugContest_IsSerializationBlocked"), request.index("!sCoopNetRuntime.cloud_epoch_accepted"))
-        self.assertIn("COOP_CHECKPOINT_REQUEST_REJECTED", request)
+        # Ordinary checkpoints and portal travel share one static request
+        # path; the contest fence must run there before the epoch gate and
+        # before anything is enqueued.
+        helper_start = self.bridge.index("static enum CoopCheckpointRequestResult RequestCheckpoint(const char *portal_id)\n{")
+        public_start = self.bridge.index("enum CoopCheckpointRequestResult CoopNetBridge_RequestCheckpoint(void)\n{", helper_start)
+        public_end = self.bridge.index("bool8 CoopNetBridge_ConsumeCheckpointGrant", public_start)
+        request = self.bridge[helper_start:public_start]
+        public = self.bridge[public_start:public_end]
+        guard = request.index("if (JohtoBugContest_IsSerializationBlocked())\n        return COOP_CHECKPOINT_REQUEST_REJECTED;")
+        self.assertLess(guard, request.index("!sCoopNetRuntime.cloud_epoch_accepted"))
+        self.assertLess(guard, request.index("CoopNetBridge_EnqueueGameToNetwork("))
+        self.assertEqual(self.bridge.count("JohtoBugContest_IsSerializationBlocked()"), 1)
+        self.assertIn("enum CoopCheckpointRequestResult CoopNetBridge_RequestCheckpoint(void)\n{\n    return RequestCheckpoint(NULL);\n}", public)
+        self.assertIn("return RequestCheckpoint(portal_id);", public)
 
     def test_c_fixture_uses_real_lifecycle_and_noop_flash_oracles(self):
         for token in (

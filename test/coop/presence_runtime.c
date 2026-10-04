@@ -1,27 +1,49 @@
 #include "global.h"
+#include "battle_setup.h"
+#include "coop/battle_consent.h"
 #include "coop/net_bridge.h"
 #include "coop/presence_runtime.h"
 #include "coop/region.h"
 #include "coop/save.h"
 #include "constants/region_map_sections.h"
+#include "data.h"
 #include "event_data.h"
 #include "event_scripts.h"
 #include "event_object_movement.h"
 #include "field_camera.h"
 #include "field_control_avatar.h"
+#include "field_effect.h"
+#include "field_effect_helpers.h"
+#include "field_message_box.h"
 #include "fieldmap.h"
+#include "follower_helper.h"
 #include "load_save.h"
 #include "main.h"
+#include "menu.h"
 #include "overworld.h"
 #include "palette.h"
+#include "pokemon.h"
+#include "region_map.h"
 #include "script.h"
 #include "sprite.h"
+#include "string_util.h"
+#include "text.h"
+#include "trainer_see.h"
+#include "window.h"
+#include "constants/battle_setup.h"
+#include "constants/maps.h"
+#include "constants/opponents.h"
+#include "constants/field_effects.h"
 #include "constants/flags.h"
 #include "constants/map_types.h"
 #include "constants/metatile_labels.h"
 #include "constants/metatile_behaviors.h"
 #include "metatile_behavior.h"
 #include "test/test.h"
+
+/* Remote presence locations are validated against the running ROM's map
+ * headers. Tests whose fixtures use Hoenn maps are gated to the Main ROM
+ * (ROM_WORLD == 1); the Cormoria ROM does not link those headers. */
 
 _Static_assert(COOP_PRESENCE_RUNTIME_SAMPLE_INTERVAL == 6,
                "presence samples use the ten-Hz six-frame cadence");
@@ -50,7 +72,11 @@ _Static_assert(COOP_PRESENCE_INTERACTION_SIZE == 20,
 
 extern void CoopPresenceRuntime_RetireRemoteObjectOnReturnToField(u8 objectEventId);
 extern bool8 CoopPresenceRuntime_TestTrySetupDiveDownScript(void);
+extern u8 CoopPresenceRuntime_TestNameWindow(void);
+extern u8 CoopPresenceRuntime_TestInteractionMenuTask(void);
+extern bool8 CoopPresenceRuntime_TestChooseInteraction(s8 selection);
 
+#if ROM_WORLD == 1
 static struct CoopPresenceSpawn RuntimeSpawn(u64 handle, u32 sequence)
 {
     struct CoopPresenceSpawn spawn = {
@@ -84,13 +110,16 @@ static struct CoopPresenceSpawn RuntimeSpawn(u64 handle, u32 sequence)
     };
     return spawn;
 }
+#endif // ROM_WORLD == 1
 
 static EWRAM_DATA struct MapLayout sRuntimeTestMapLayout;
 static EWRAM_DATA u16 sRuntimeTestMapData[32 * 32];
+#if ROM_WORLD == 1
 static EWRAM_DATA struct MapEvents sRuntimeTestMapEvents;
 static EWRAM_DATA struct ObjectEventTemplate sRuntimeTestObjectTemplates[1];
 static EWRAM_DATA struct MapConnection sRuntimeTestDiveConnection;
 static EWRAM_DATA struct MapConnections sRuntimeTestMapConnections;
+#endif // ROM_WORLD == 1
 
 extern const struct Tileset gTileset_General;
 extern const struct Tileset gTileset_Petalburg;
@@ -307,6 +336,11 @@ static void EndRuntimeFixture(const struct RuntimeFixtureBackup *backup)
         if ((SpriteTileAllocBitmapOp(i, 2) != 0) != (expected != 0))
             SpriteTileAllocBitmapOp(i, expected != 0);
     }
+    /* Transport teardown can publish a field notice after the fixture has
+     * restored the overworld. Retire its printer and task before the runner
+     * checks for leaked resources. */
+    StopFieldMessage();
+    DeactivateAllTextPrinters();
 }
 
 TEST("Cloud Coop presence sequence domains remain wrap-safe")
@@ -319,6 +353,7 @@ TEST("Cloud Coop presence sequence domains remain wrap-safe")
     EXPECT(!CoopPresence_SequenceIsNewer(8, 9));
 }
 
+#if ROM_WORLD == 1
 TEST("Cloud Coop presence runtime keeps the bounded V1 contract")
 {
     struct ObjectEvent remote = {0};
@@ -350,7 +385,45 @@ TEST("Cloud Coop presence runtime keeps the bounded V1 contract")
     EXPECT(!CoopPresenceRuntime_IsRemoteObject(&remote));
     CoopPresenceRuntime_Reset();
 }
+#endif // ROM_WORLD == 1
 
+TEST("Cloud Coop group ended notice displays without a partner sprite")
+{
+    const u8 groupId[16] = {1};
+    const u8 nextGroupId[16] = {2};
+    bool8 scriptWasEnabled = ScriptContext_IsEnabled();
+
+    BeginRuntimeFixture(&sRuntimeFixtureBackup);
+    // The test runner uses the script context; field notices wait for it to yield.
+    if (scriptWasEnabled)
+        ScriptContext_Stop();
+    InitFieldMessageBox();
+    CoopPresenceRuntime_Init();
+    EXPECT(!CoopPresenceReducer_IsActive(CoopPresenceRuntime_GetReducer()));
+    EXPECT(!CoopPresenceRuntime_QueueGroupEnded(groupId, 15));
+    EXPECT(CoopPresenceRuntime_QueueGroupEnded(groupId, sizeof(groupId)));
+    CoopPresenceRuntime_Update();
+    EXPECT_EQ(GetFieldMessageBoxMode(), FIELD_MESSAGE_BOX_AUTO_SCROLL);
+    EXPECT(CoopPresenceRuntime_QueueGroupEnded(groupId, sizeof(groupId)));
+    HideFieldMessageBox();
+    CoopPresenceRuntime_Update();
+    EXPECT_EQ(GetFieldMessageBoxMode(), FIELD_MESSAGE_BOX_HIDDEN);
+    CoopPresenceRuntime_SetSessionEpoch(1);
+    EXPECT(CoopPresenceRuntime_QueueGroupEnded(nextGroupId, sizeof(nextGroupId)));
+    CoopPresenceRuntime_SetSessionEpoch(2);
+    CoopPresenceRuntime_Update();
+    EXPECT_EQ(GetFieldMessageBoxMode(), FIELD_MESSAGE_BOX_HIDDEN);
+    // New epoch must not inherit the old UUID tombstone or blocked notice.
+    EXPECT(CoopPresenceRuntime_QueueGroupEnded(nextGroupId, sizeof(nextGroupId)));
+    CoopPresenceRuntime_Update();
+    EXPECT_EQ(GetFieldMessageBoxMode(), FIELD_MESSAGE_BOX_AUTO_SCROLL);
+    HideFieldMessageBox();
+    if (scriptWasEnabled)
+        ScriptContext_Enable();
+    EndRuntimeFixture(&sRuntimeFixtureBackup);
+}
+
+#if ROM_WORLD == 1
 TEST("Cloud Coop presence runtime queues exact lifecycle frames atomically")
 {
     struct CoopPresenceSpawn spawn = RuntimeSpawn(2, 7);
@@ -413,6 +486,7 @@ TEST("Cloud Coop presence runtime queues exact lifecycle frames atomically")
     CoopPresenceRuntime_TransportLost();
     EXPECT(!CoopPresenceReducer_IsActive(CoopPresenceRuntime_GetReducer()));
 }
+#endif // ROM_WORLD == 1
 
 TEST("Cloud Coop presence runtime keeps publication gated by a ready epoch")
 {
@@ -428,6 +502,7 @@ TEST("Cloud Coop presence runtime keeps publication gated by a ready epoch")
     EXPECT(!CoopPresenceRuntime_GetLocalState(&state));
 }
 
+#if ROM_WORLD == 1
 TEST("Cloud Coop presence runtime executes hidden stale and warp lifecycle paths")
 {
     struct CoopPresenceSpawn spawn = RuntimeSpawn(3, 1);
@@ -1199,6 +1274,8 @@ TEST("Cloud Coop field input preserves vanilla interaction precedence")
     EXPECT_EQ(ProcessPlayerFieldInput(&input), FIELD_INPUT_RESULT_SCRIPT_STARTED);
     EXPECT(CoopBridgeQueue_IsEmpty(&gCoopNetBridge.game_to_network));
     ScriptContext_Stop();
+    StopFieldMessage();
+    DeactivateAllTextPrinters();
 
     /* Reset the complete runtime fixture before proving the remote-only path.
      * This keeps the script context and local object teardown independent of
@@ -1298,3 +1375,975 @@ TEST("Cloud Coop dive action takes precedence over remote overlap")
 
     EndRuntimeFixture(&sRuntimeFixtureBackup);
 }
+#endif // ROM_WORLD == 1
+
+/* Partner experience fixtures.  The fixture's own map is group 1, number 3;
+ * the edge neighbours are real Hoenn maps so the reducer's region
+ * validation and the connection projection read genuine map headers. */
+#define RUNTIME_LOCAL_MAP (3 | (1 << 8))
+#define RUNTIME_NORTH_MAP MAP_ROUTE101
+#define RUNTIME_SOUTH_MAP MAP_ROUTE102
+#define RUNTIME_EAST_MAP MAP_ROUTE103
+#define RUNTIME_WEST_MAP MAP_OLDALE_TOWN
+#define RUNTIME_DIVE_MAP MAP_ROUTE105
+#define RUNTIME_UNCONNECTED_MAP MAP_ROUTE106
+#define RUNTIME_SOUTH_OFFSET 2
+#define RUNTIME_EAST_OFFSET 1
+#define RUNTIME_NAME_LABEL_FRAMES 90
+
+#if ROM_WORLD == 1
+static EWRAM_DATA struct MapConnection sRuntimeTestEdgeConnections[5];
+static EWRAM_DATA struct Pokemon sRuntimeTestPartyBackup[PARTY_SIZE];
+
+static void InstallRuntimeEdgeConnections(void)
+{
+    sRuntimeTestEdgeConnections[0] = (struct MapConnection){
+        .direction = CONNECTION_NORTH, .offset = 0,
+        .mapGroup = MAP_GROUP(RUNTIME_NORTH_MAP), .mapNum = MAP_NUM(RUNTIME_NORTH_MAP),
+    };
+    sRuntimeTestEdgeConnections[1] = (struct MapConnection){
+        .direction = CONNECTION_SOUTH, .offset = RUNTIME_SOUTH_OFFSET,
+        .mapGroup = MAP_GROUP(RUNTIME_SOUTH_MAP), .mapNum = MAP_NUM(RUNTIME_SOUTH_MAP),
+    };
+    sRuntimeTestEdgeConnections[2] = (struct MapConnection){
+        .direction = CONNECTION_EAST, .offset = RUNTIME_EAST_OFFSET,
+        .mapGroup = MAP_GROUP(RUNTIME_EAST_MAP), .mapNum = MAP_NUM(RUNTIME_EAST_MAP),
+    };
+    sRuntimeTestEdgeConnections[3] = (struct MapConnection){
+        .direction = CONNECTION_WEST, .offset = 0,
+        .mapGroup = MAP_GROUP(RUNTIME_WEST_MAP), .mapNum = MAP_NUM(RUNTIME_WEST_MAP),
+    };
+    sRuntimeTestEdgeConnections[4] = (struct MapConnection){
+        .direction = CONNECTION_DIVE, .offset = 0,
+        .mapGroup = MAP_GROUP(RUNTIME_DIVE_MAP), .mapNum = MAP_NUM(RUNTIME_DIVE_MAP),
+    };
+    sRuntimeTestMapConnections = (struct MapConnections){
+        .count = ARRAY_COUNT(sRuntimeTestEdgeConnections),
+        .connections = sRuntimeTestEdgeConnections,
+    };
+    gMapHeader.connections = &sRuntimeTestMapConnections;
+}
+
+static const struct MapLayout *RuntimeMapLayout(u16 map)
+{
+    return Overworld_GetMapHeaderByGroupAndId(MAP_GROUP(map), MAP_NUM(map))->mapLayout;
+}
+
+static struct CoopPresenceLocalState RuntimeStateAt(u16 map, s16 x, s16 y)
+{
+    struct CoopPresenceLocalState state = RuntimeSpawn(1, 1).state;
+
+    state.pose.location.map_group = MAP_GROUP(map);
+    state.pose.location.map_number = MAP_NUM(map);
+    state.pose.location.x = x;
+    state.pose.location.y = y;
+    state.pose.warp_sequence = 1;
+    return state;
+}
+
+static void QueueRuntimeSpawnAt(u64 handle, u32 sequence, u16 map, s16 x, s16 y)
+{
+    struct CoopPresenceSpawn spawn = RuntimeSpawn(handle, sequence);
+    u8 bytes[COOP_PRESENCE_SPAWN_SIZE];
+
+    spawn.state = RuntimeStateAt(map, x, y);
+    EXPECT(CoopPresence_EncodeSpawn(&spawn, bytes, sizeof(bytes)));
+    EXPECT(CoopPresenceRuntime_QueueBridgeFrame(
+        COOP_BRIDGE_MESSAGE_REMOTE_PLAYER_SPAWN, bytes, sizeof(bytes)));
+}
+
+static void QueueRuntimeUpdateAt(u64 handle, u32 sequence, u16 map, s16 x, s16 y)
+{
+    struct CoopPresenceUpdate update = {
+        .handle = handle,
+        .server_sequence = sequence,
+        .state = RuntimeStateAt(map, x, y),
+    };
+    u8 bytes[COOP_PRESENCE_UPDATE_SIZE];
+
+    EXPECT(CoopPresence_EncodeUpdate(&update, bytes, sizeof(bytes)));
+    EXPECT(CoopPresenceRuntime_QueueBridgeFrame(
+        COOP_BRIDGE_MESSAGE_REMOTE_PLAYER_UPDATE, bytes, sizeof(bytes)));
+}
+
+static void QueueRuntimeSignal(u64 handle, u32 sequence, u8 kind, u8 emote, s16 x, s16 y)
+{
+    struct CoopPresenceRemoteSignal signal = {
+        .handle = handle,
+        .server_sequence = sequence,
+        .kind = kind,
+        .emote = emote,
+        .x = x,
+        .y = y,
+    };
+    u8 bytes[COOP_PRESENCE_REMOTE_SIGNAL_SIZE];
+
+    EXPECT(CoopPresence_EncodeRemoteSignal(&signal, bytes, sizeof(bytes)));
+    EXPECT(CoopPresenceRuntime_QueueBridgeFrame(
+        COOP_BRIDGE_MESSAGE_REMOTE_SOCIAL_SIGNAL, bytes, sizeof(bytes)));
+}
+
+static void QueueRuntimeCompanion(u64 handle, u32 sequence, u16 species, u8 form, u8 flags)
+{
+    struct CoopPresenceRemoteCompanion companion = {
+        .handle = handle,
+        .server_sequence = sequence,
+        .species = species,
+        .form = form,
+        .flags = flags,
+    };
+    u8 bytes[COOP_PRESENCE_REMOTE_COMPANION_SIZE];
+
+    EXPECT(CoopPresence_EncodeRemoteCompanion(&companion, bytes, sizeof(bytes)));
+    EXPECT(CoopPresenceRuntime_QueueBridgeFrame(
+        COOP_BRIDGE_MESSAGE_REMOTE_COMPANION, bytes, sizeof(bytes)));
+}
+
+static void QueueRuntimeInteraction(u64 handle, u32 sequence)
+{
+    u8 bytes[COOP_PRESENCE_REMOTE_INTERACTION_SIZE] = {0};
+    u32 i;
+
+    for (i = 0; i < 8; i++)
+        bytes[COOP_PRESENCE_REMOTE_INTERACTION_HANDLE_OFFSET + i] = (u8)(handle >> (i * 8));
+    for (i = 0; i < 4; i++)
+        bytes[COOP_PRESENCE_REMOTE_INTERACTION_SERVER_SEQUENCE_OFFSET + i] =
+            (u8)(sequence >> (i * 8));
+    EXPECT(CoopPresenceRuntime_QueueBridgeFrame(
+        COOP_BRIDGE_MESSAGE_REMOTE_INTERACTION, bytes, sizeof(bytes)));
+}
+
+static u8 FindRuntimeObject(u8 localId)
+{
+    u8 i;
+
+    for (i = 0; i < OBJECT_EVENTS_COUNT; i++)
+    {
+        if (gObjectEvents[i].active && gObjectEvents[i].localId == localId)
+            return i;
+    }
+    return OBJECT_EVENTS_COUNT;
+}
+#endif // ROM_WORLD == 1
+
+static void SnapshotRuntimeSprites(bool8 *inUse)
+{
+    u32 i;
+
+    for (i = 0; i < MAX_SPRITES; i++)
+        inUse[i] = gSprites[i].inUse;
+}
+
+static u8 FindNewRuntimeSprite(const bool8 *before)
+{
+    u32 i;
+
+    for (i = 0; i < MAX_SPRITES; i++)
+    {
+        if (!before[i] && gSprites[i].inUse)
+            return i;
+    }
+    return MAX_SPRITES;
+}
+
+#if ROM_WORLD == 1
+static u32 CountNewSparkleSprites(const bool8 *before)
+{
+    u32 i;
+    u32 count = 0;
+
+    for (i = 0; i < MAX_SPRITES; i++)
+    {
+        if (!before[i] && gSprites[i].inUse
+         && gSprites[i].callback == UpdateSparkleFieldEffect)
+            count++;
+    }
+    return count;
+}
+#endif // ROM_WORLD == 1
+
+/* Field effects never run their sprite callbacks in the test runner, so
+ * retire the sparkle and emote sprites (and their active-list entries) that
+ * the runtime started since the snapshot. */
+static void DestroyNewRuntimeSprites(const bool8 *before)
+{
+    u32 i;
+
+    for (i = 0; i < MAX_SPRITES; i++)
+    {
+        if (!before[i] && gSprites[i].inUse)
+            DestroySprite(&gSprites[i]);
+    }
+    while (FieldEffectActiveListContains(FLDEFF_SPARKLE))
+        FieldEffectActiveListRemove(FLDEFF_SPARKLE);
+    while (FieldEffectActiveListContains(FLDEFF_EMOTE))
+        FieldEffectActiveListRemove(FLDEFF_EMOTE);
+}
+
+static void BeginPartnerFixture(void)
+{
+    BeginRuntimeFixture(&sRuntimeFixtureBackup);
+    CoopSave_InitializeCurrent();
+    CoopNetBridge_Init();
+    CoopPresenceRuntime_SetSessionEpoch(23);
+}
+
+#if ROM_WORLD == 1
+static void ExpectRuntimeNotice(const u8 *expected)
+{
+    EXPECT_EQ(GetFieldMessageBoxMode(), FIELD_MESSAGE_BOX_AUTO_SCROLL);
+    EXPECT_EQ(StringCompare(gStringVar4, expected), 0);
+    HideFieldMessageBox();
+}
+
+TEST("Cloud Coop partner ping shows only on the receiver's current map until it expires")
+{
+    bool8 before[MAX_SPRITES];
+    u32 frame;
+    s16 x = 0;
+    s16 y = 0;
+
+    BeginPartnerFixture();
+    InstallRuntimeEdgeConnections();
+    QueueRuntimeSpawnAt(51, 1, RUNTIME_SOUTH_MAP, 4, 0);
+    CoopPresenceRuntime_Update();
+    EXPECT(CoopPresenceReducer_IsVisible(CoopPresenceRuntime_GetReducer()));
+    SnapshotRuntimeSprites(before);
+
+    /* A ping belongs to the partner's own map: from the connected route it
+     * is never drawn on the receiver's town, not even after the partner
+     * walks over. */
+    QueueRuntimeSignal(51, 1, COOP_PRESENCE_SIGNAL_PING, COOP_PRESENCE_EMOTE_NONE, 3, 4);
+    CoopPresenceRuntime_Update();
+    EXPECT(!CoopPresenceRuntime_GetPingMarker(&x, &y));
+    QueueRuntimeUpdateAt(51, 2, RUNTIME_LOCAL_MAP, 4, 6);
+    CoopPresenceRuntime_Update();
+    EXPECT(!CoopPresenceRuntime_GetPingMarker(&x, &y));
+
+    /* A ping from the shared map is shown at its exact map-local tile. */
+    QueueRuntimeSignal(51, 2, COOP_PRESENCE_SIGNAL_PING, COOP_PRESENCE_EMOTE_NONE, 6, 7);
+    CoopPresenceRuntime_Update();
+    EXPECT(CoopPresenceRuntime_GetPingMarker(&x, &y));
+    EXPECT_EQ(x, 6);
+    EXPECT_EQ(y, 7);
+    for (frame = 1; frame < COOP_PRESENCE_RUNTIME_PING_TTL_FRAMES; frame++)
+    {
+        CoopPresenceRuntime_AdvanceFrame();
+        EXPECT(CoopPresenceRuntime_GetPingMarker(&x, &y));
+    }
+    CoopPresenceRuntime_AdvanceFrame();
+    EXPECT(!CoopPresenceRuntime_GetPingMarker(&x, &y));
+
+    DestroyNewRuntimeSprites(before);
+    EndRuntimeFixture(&sRuntimeFixtureBackup);
+}
+
+TEST("Cloud Coop partner ping sparkles every sixty frames until it expires")
+{
+    bool8 before[MAX_SPRITES];
+    u32 elapsed;
+
+    BeginPartnerFixture();
+    SpawnHeldFixtureRemote(52, 1, 1);
+    SnapshotRuntimeSprites(before);
+    QueueRuntimeSignal(52, 1, COOP_PRESENCE_SIGNAL_PING, COOP_PRESENCE_EMOTE_NONE, 6, 7);
+    for (elapsed = 0; elapsed <= COOP_PRESENCE_RUNTIME_PING_TTL_FRAMES + 60; elapsed++)
+    {
+        if (elapsed != 0)
+            CoopPresenceRuntime_AdvanceFrame();
+        CoopPresenceRuntime_Update();
+        EXPECT_EQ(CountNewSparkleSprites(before),
+                  (elapsed % 60 == 0 && elapsed < COOP_PRESENCE_RUNTIME_PING_TTL_FRAMES) ? 1 : 0);
+        DestroyNewRuntimeSprites(before);
+    }
+    EXPECT(!FieldEffectActiveListContains(FLDEFF_SPARKLE));
+
+    EndRuntimeFixture(&sRuntimeFixtureBackup);
+}
+
+TEST("Cloud Coop partner name label shows on L for ninety frames and yields to menus and messages")
+{
+    bool8 scriptWasEnabled = ScriptContext_IsEnabled();
+    u16 heldKeys = gMain.heldKeysRaw;
+    u16 newKeys = gMain.newKeysRaw;
+    u32 sequence = 1;
+    u32 frame;
+
+    BeginPartnerFixture();
+    InitStandardTextBoxWindows();
+    InitFieldMessageBox();
+    SpawnHeldFixtureRemote(53, sequence, 1);
+
+    /* L chorded with a direction is an emote, never a name request. */
+    gMain.heldKeysRaw = 0;
+    gMain.newKeysRaw = L_BUTTON | DPAD_UP;
+    CoopPresenceRuntime_Update();
+    EXPECT_EQ(CoopPresenceRuntime_TestNameWindow(), WINDOW_NONE);
+
+    gMain.newKeysRaw = L_BUTTON;
+    CoopPresenceRuntime_Update();
+    EXPECT_NE(CoopPresenceRuntime_TestNameWindow(), WINDOW_NONE);
+    gMain.newKeysRaw = 0;
+    for (frame = 1; frame < RUNTIME_NAME_LABEL_FRAMES; frame++)
+    {
+        CoopPresenceRuntime_AdvanceFrame();
+        /* Keep the partner fresh so only the label timer can expire. */
+        if (frame % 30 == 0)
+            QueueRuntimeUpdateAt(53, ++sequence, RUNTIME_LOCAL_MAP, 4, 6);
+        CoopPresenceRuntime_Update();
+        EXPECT_NE(CoopPresenceRuntime_TestNameWindow(), WINDOW_NONE);
+    }
+    CoopPresenceRuntime_AdvanceFrame();
+    QueueRuntimeUpdateAt(53, ++sequence, RUNTIME_LOCAL_MAP, 4, 6);
+    CoopPresenceRuntime_Update();
+    EXPECT_EQ(CoopPresenceRuntime_TestNameWindow(), WINDOW_NONE);
+
+    /* A field message hides a visible label and blocks a new one. */
+    gMain.newKeysRaw = L_BUTTON;
+    CoopPresenceRuntime_Update();
+    EXPECT_NE(CoopPresenceRuntime_TestNameWindow(), WINDOW_NONE);
+    gMain.newKeysRaw = 0;
+    EXPECT(ShowFieldAutoScrollMessage(COMPOUND_STRING("Test.")));
+    CoopPresenceRuntime_Update();
+    EXPECT_EQ(CoopPresenceRuntime_TestNameWindow(), WINDOW_NONE);
+    gMain.newKeysRaw = L_BUTTON;
+    CoopPresenceRuntime_Update();
+    EXPECT_EQ(CoopPresenceRuntime_TestNameWindow(), WINDOW_NONE);
+    HideFieldMessageBox();
+    StopFieldMessage();
+    DeactivateAllTextPrinters();
+
+    /* The partner interaction menu hides the label and keeps it hidden. */
+    CoopPresenceRuntime_Update();
+    EXPECT_NE(CoopPresenceRuntime_TestNameWindow(), WINDOW_NONE);
+    gMain.newKeysRaw = 0;
+    if (scriptWasEnabled)
+        ScriptContext_Stop();
+    QueueRuntimeInteraction(53, 1);
+    CoopPresenceRuntime_Update();
+    EXPECT(ArePlayerFieldControlsLocked());
+    EXPECT_EQ(CoopPresenceRuntime_TestNameWindow(), WINDOW_NONE);
+    gMain.newKeysRaw = L_BUTTON;
+    CoopPresenceRuntime_Update();
+    EXPECT_EQ(CoopPresenceRuntime_TestNameWindow(), WINDOW_NONE);
+
+    gMain.heldKeysRaw = heldKeys;
+    gMain.newKeysRaw = newKeys;
+    if (scriptWasEnabled)
+        ScriptContext_Enable();
+    EndRuntimeFixture(&sRuntimeFixtureBackup);
+    FreeAllWindowBuffers();
+}
+
+TEST("Cloud Coop partner notices announce hidden disconnect and reconnect")
+{
+    bool8 scriptWasEnabled = ScriptContext_IsEnabled();
+
+    BeginPartnerFixture();
+    // Field notices wait for the runner's script context to yield.
+    if (scriptWasEnabled)
+        ScriptContext_Stop();
+    InitFieldMessageBox();
+    SpawnHeldFixtureRemote(54, 1, 1);
+    EXPECT_EQ(GetFieldMessageBoxMode(), FIELD_MESSAGE_BOX_HIDDEN);
+
+    QueueRuntimeDespawn(54, 2, COOP_PRESENCE_DESPAWN_HIDDEN);
+    CoopPresenceRuntime_Update();
+    ExpectRuntimeNotice(COMPOUND_STRING("Partner went out of sight."));
+
+    SpawnHeldFixtureRemote(54, 3, 1);
+    EXPECT_EQ(GetFieldMessageBoxMode(), FIELD_MESSAGE_BOX_HIDDEN);
+    QueueRuntimeDespawn(54, 4, COOP_PRESENCE_DESPAWN_DISCONNECTED);
+    CoopPresenceRuntime_Update();
+    ExpectRuntimeNotice(COMPOUND_STRING("Partner disconnected."));
+
+    /* Returning inside the hold after the notice was read announces it. */
+    SpawnHeldFixtureRemote(54, 5, 1);
+    ExpectRuntimeNotice(COMPOUND_STRING("Partner reconnected."));
+
+    if (scriptWasEnabled)
+        ScriptContext_Enable();
+    EndRuntimeFixture(&sRuntimeFixtureBackup);
+}
+
+TEST("Cloud Coop quick reconnect cancels an unshown disconnect notice")
+{
+    bool8 scriptWasEnabled = ScriptContext_IsEnabled();
+
+    BeginPartnerFixture();
+    InitFieldMessageBox();
+    /* An enabled script context defers field notices, standing in for any
+     * busy field state between the disconnect and the reconnect. */
+    ScriptContext_Enable();
+    UnlockPlayerFieldControls();
+    SpawnHeldFixtureRemote(55, 1, 1);
+    QueueRuntimeDespawn(55, 2, COOP_PRESENCE_DESPAWN_DISCONNECTED);
+    CoopPresenceRuntime_Update();
+    EXPECT_EQ(GetFieldMessageBoxMode(), FIELD_MESSAGE_BOX_HIDDEN);
+    SpawnHeldFixtureRemote(55, 3, 1);
+
+    ScriptContext_Stop();
+    CoopPresenceRuntime_Update();
+    EXPECT_EQ(GetFieldMessageBoxMode(), FIELD_MESSAGE_BOX_HIDDEN);
+
+    if (scriptWasEnabled)
+        ScriptContext_Enable();
+    EndRuntimeFixture(&sRuntimeFixtureBackup);
+}
+
+TEST("Cloud Coop partner notices announce leaving the map and the destination")
+{
+    bool8 scriptWasEnabled = ScriptContext_IsEnabled();
+    const struct MapHeader *destination;
+    u8 mapName[32];
+    u8 expected[64];
+
+    BeginPartnerFixture();
+    if (scriptWasEnabled)
+        ScriptContext_Stop();
+    InitFieldMessageBox();
+    InstallRuntimeEdgeConnections();
+
+    SpawnHeldFixtureRemote(56, 1, 1);
+    QueueRuntimeDespawn(56, 2, COOP_PRESENCE_DESPAWN_PARTITION_LEFT);
+    CoopPresenceRuntime_Update();
+    ExpectRuntimeNotice(COMPOUND_STRING("Partner left this area."));
+
+    /* Walking onto a connected named map reports where the partner went. */
+    SpawnHeldFixtureRemote(56, 3, 1);
+    EXPECT_EQ(GetFieldMessageBoxMode(), FIELD_MESSAGE_BOX_HIDDEN);
+    QueueRuntimeUpdateAt(56, 4, RUNTIME_SOUTH_MAP, 4, 0);
+    CoopPresenceRuntime_Update();
+    destination = Overworld_GetMapHeaderByGroupAndId(MAP_GROUP(RUNTIME_SOUTH_MAP),
+                                                     MAP_NUM(RUNTIME_SOUTH_MAP));
+    GetMapNameGeneric(mapName, destination->regionMapSectionId);
+    StringCopy(expected, COMPOUND_STRING("Partner went to "));
+    StringAppend(expected, mapName);
+    StringAppend(expected, COMPOUND_STRING("."));
+    ExpectRuntimeNotice(expected);
+
+    if (scriptWasEnabled)
+        ScriptContext_Enable();
+    EndRuntimeFixture(&sRuntimeFixtureBackup);
+}
+#endif // ROM_WORLD == 1
+
+TEST("Cloud Coop L plus a direction sends the matching emote")
+{
+    static const struct
+    {
+        u16 key;
+        u8 emote;
+        u8 emotion;
+    } chords[] = {
+        {DPAD_UP, COOP_PRESENCE_EMOTE_EXCLAIM, FOLLOWER_EMOTION_SURPRISE},
+        {DPAD_RIGHT, COOP_PRESENCE_EMOTE_QUESTION, FOLLOWER_EMOTION_CURIOUS},
+        {DPAD_DOWN, COOP_PRESENCE_EMOTE_HEART, FOLLOWER_EMOTION_LOVE},
+        {DPAD_LEFT, COOP_PRESENCE_EMOTE_MUSIC, FOLLOWER_EMOTION_MUSIC},
+    };
+    struct FieldInput input;
+    struct CoopBridgeMessage message;
+    struct CoopPresenceLocalSignal signal;
+    bool8 before[MAX_SPRITES];
+    u16 heldKeys = gMain.heldKeysRaw;
+    u16 newKeys = gMain.newKeysRaw;
+    u32 i;
+    u32 frame;
+    u8 spriteId;
+
+    BeginPartnerFixture();
+    for (i = 0; i < ARRAY_COUNT(chords); i++)
+    {
+        while (!CoopBridgeQueue_IsEmpty(&gCoopNetBridge.game_to_network))
+            EXPECT(CoopNetBridge_DequeueGameToNetwork(&message));
+        SnapshotRuntimeSprites(before);
+        FieldClearPlayerInput(&input);
+        gMain.heldKeysRaw = L_BUTTON | chords[i].key;
+        gMain.newKeysRaw = chords[i].key;
+        EXPECT_EQ(ProcessPlayerFieldInput(&input), FIELD_INPUT_RESULT_CONSUMED_NO_LOCK);
+
+        EXPECT(CoopNetBridge_DequeueGameToNetwork(&message));
+        EXPECT_EQ(message.type, COOP_BRIDGE_MESSAGE_SOCIAL_SIGNAL);
+        EXPECT(CoopPresence_DecodeLocalSignal(message.payload, message.length, &signal));
+        EXPECT_EQ(signal.kind, COOP_PRESENCE_SIGNAL_EMOTE);
+        EXPECT_EQ(signal.emote, chords[i].emote);
+        EXPECT(CoopBridgeQueue_IsEmpty(&gCoopNetBridge.game_to_network));
+
+        /* The sender sees the same bubble over their own avatar. */
+        spriteId = FindNewRuntimeSprite(before);
+        EXPECT_NE(spriteId, MAX_SPRITES);
+        EXPECT_EQ(gSprites[spriteId].animNum, chords[i].emotion);
+        EXPECT_EQ(gSprites[spriteId].data[0], LOCALID_PLAYER);
+        DestroyNewRuntimeSprites(before);
+
+        for (frame = 0; frame < COOP_PRESENCE_RUNTIME_SIGNAL_COOLDOWN; frame++)
+            CoopPresenceRuntime_AdvanceFrame();
+    }
+    gMain.heldKeysRaw = heldKeys;
+    gMain.newKeysRaw = newKeys;
+
+    EndRuntimeFixture(&sRuntimeFixtureBackup);
+}
+
+#if ROM_WORLD == 1
+static void ExpectEdgeRemote(u16 map, s16 x, s16 y, s16 pos_x, s16 pos_y,
+                             s16 expected_x, s16 expected_y)
+{
+    u8 object;
+
+    BeginPartnerFixture();
+    InstallRuntimeEdgeConnections();
+    /* Move the camera so the projected tile is inside the view window. */
+    gSaveBlock1Ptr->pos.x = pos_x;
+    gSaveBlock1Ptr->pos.y = pos_y;
+    QueueRuntimeSpawnAt(61, 1, map, x, y);
+    CoopPresenceRuntime_Update();
+    EXPECT(CoopPresenceReducer_IsVisible(CoopPresenceRuntime_GetReducer()));
+    object = FindRuntimeObject(COOP_PRESENCE_RUNTIME_OBJECT_LOCAL_ID);
+    EXPECT_NE(object, OBJECT_EVENTS_COUNT);
+    EXPECT_EQ(gObjectEvents[object].currentCoords.x, expected_x);
+    EXPECT_EQ(gObjectEvents[object].currentCoords.y, expected_y);
+    EndRuntimeFixture(&sRuntimeFixtureBackup);
+}
+
+TEST("Cloud Coop connected-map partners project across every edge")
+{
+    /* BeginRuntimeFixture installs a 20x20 local layout. */
+    s16 width = 20;
+    s16 height = 20;
+
+    ExpectEdgeRemote(RUNTIME_NORTH_MAP, 4, RuntimeMapLayout(RUNTIME_NORTH_MAP)->height - 1,
+                     MAP_OFFSET + 4, 0,
+                     MAP_OFFSET + 4, MAP_OFFSET - 1);
+    ExpectEdgeRemote(RUNTIME_SOUTH_MAP, 4, 0,
+                     MAP_OFFSET + 4, MAP_OFFSET + 5,
+                     MAP_OFFSET + 4 + RUNTIME_SOUTH_OFFSET, MAP_OFFSET + height);
+    ExpectEdgeRemote(RUNTIME_EAST_MAP, 0, 5,
+                     MAP_OFFSET + 4, MAP_OFFSET + 5,
+                     MAP_OFFSET + width, MAP_OFFSET + 5 + RUNTIME_EAST_OFFSET);
+    ExpectEdgeRemote(RUNTIME_WEST_MAP, RuntimeMapLayout(RUNTIME_WEST_MAP)->width - 1, 5,
+                     4, MAP_OFFSET + 5,
+                     MAP_OFFSET - 1, MAP_OFFSET + 5);
+}
+
+TEST("Cloud Coop unconnected and dive-linked partner maps stay hidden")
+{
+    BeginPartnerFixture();
+    InstallRuntimeEdgeConnections();
+
+    QueueRuntimeSpawnAt(62, 1, RUNTIME_UNCONNECTED_MAP, 4, 0);
+    CoopPresenceRuntime_Update();
+    EXPECT(!CoopPresenceReducer_IsActive(CoopPresenceRuntime_GetReducer()));
+    EXPECT_EQ(FindRuntimeObject(COOP_PRESENCE_RUNTIME_OBJECT_LOCAL_ID), OBJECT_EVENTS_COUNT);
+
+    /* A dive link is a warp, not a seamless edge the partner is visible across. */
+    QueueRuntimeSpawnAt(62, 2, RUNTIME_DIVE_MAP, 4, 5);
+    CoopPresenceRuntime_Update();
+    EXPECT(!CoopPresenceReducer_IsActive(CoopPresenceRuntime_GetReducer()));
+    EXPECT_EQ(FindRuntimeObject(COOP_PRESENCE_RUNTIME_OBJECT_LOCAL_ID), OBJECT_EVENTS_COUNT);
+
+    EndRuntimeFixture(&sRuntimeFixtureBackup);
+}
+
+TEST("Cloud Coop partner nearby needs a fresh visible partner within range")
+{
+    u32 frame;
+
+    BeginPartnerFixture();
+    /* The player stands on local tile (4, 5). */
+    gSaveBlock1Ptr->pos.x = 4;
+    gSaveBlock1Ptr->pos.y = 5;
+    EXPECT(!CoopPresenceRuntime_IsPartnerNearby(12));
+    QueueRuntimeSpawnAt(71, 1, RUNTIME_LOCAL_MAP, 9, 7);
+    CoopPresenceRuntime_Update();
+    EXPECT(CoopPresenceReducer_IsVisible(CoopPresenceRuntime_GetReducer()));
+    EXPECT(CoopPresenceRuntime_IsPartnerNearby(12));
+    /* Chebyshev distance: five columns, two rows. */
+    EXPECT(CoopPresenceRuntime_IsPartnerNearby(5));
+    EXPECT(!CoopPresenceRuntime_IsPartnerNearby(4));
+
+    /* A trainer script locks the field and retires the partner sprite; the
+     * reducer still knows where the partner stands. */
+    LockPlayerFieldControls();
+    CoopPresenceRuntime_Update();
+    EXPECT_EQ(FindRuntimeObject(COOP_PRESENCE_RUNTIME_OBJECT_LOCAL_ID), OBJECT_EVENTS_COUNT);
+    EXPECT(CoopPresenceRuntime_IsPartnerNearby(12));
+    UnlockPlayerFieldControls();
+
+    /* Fifteen columns away is outside the projected view window. */
+    QueueRuntimeUpdateAt(71, 2, RUNTIME_LOCAL_MAP, 19, 5);
+    CoopPresenceRuntime_Update();
+    EXPECT(CoopPresenceReducer_IsVisible(CoopPresenceRuntime_GetReducer()));
+    EXPECT(!CoopPresenceRuntime_IsPartnerNearby(12));
+
+    /* A partner that stops reporting goes stale. */
+    QueueRuntimeUpdateAt(71, 3, RUNTIME_LOCAL_MAP, 6, 5);
+    CoopPresenceRuntime_Update();
+    EXPECT(CoopPresenceRuntime_IsPartnerNearby(12));
+    for (frame = 0; frame < COOP_PRESENCE_RUNTIME_STALE_FRAMES - 1; frame++)
+        CoopPresenceRuntime_AdvanceFrame();
+    EXPECT(CoopPresenceRuntime_IsPartnerNearby(12));
+    CoopPresenceRuntime_AdvanceFrame();
+    EXPECT(!CoopPresenceRuntime_IsPartnerNearby(12));
+
+    /* Transport loss drops the partner at once. */
+    QueueRuntimeUpdateAt(71, 4, RUNTIME_LOCAL_MAP, 6, 5);
+    CoopPresenceRuntime_Update();
+    EXPECT(CoopPresenceRuntime_IsPartnerNearby(12));
+    CoopPresenceRuntime_TransportLost();
+    EXPECT(!CoopPresenceRuntime_IsPartnerNearby(12));
+    EndRuntimeFixture(&sRuntimeFixtureBackup);
+}
+
+TEST("Cloud Coop partner nearby spans edge connections but not unconnected maps")
+{
+    BeginPartnerFixture();
+    InstallRuntimeEdgeConnections();
+    gSaveBlock1Ptr->pos.x = MAP_OFFSET + 4;
+    gSaveBlock1Ptr->pos.y = MAP_OFFSET + 5;
+    /* East map tile (0, 5) projects nine columns east, one row south. */
+    QueueRuntimeSpawnAt(73, 1, RUNTIME_EAST_MAP, 0, 5);
+    CoopPresenceRuntime_Update();
+    EXPECT(CoopPresenceRuntime_IsPartnerNearby(12));
+    EXPECT(CoopPresenceRuntime_IsPartnerNearby(9));
+    EXPECT(!CoopPresenceRuntime_IsPartnerNearby(8));
+    EndRuntimeFixture(&sRuntimeFixtureBackup);
+
+    BeginPartnerFixture();
+    InstallRuntimeEdgeConnections();
+    QueueRuntimeSpawnAt(74, 1, RUNTIME_UNCONNECTED_MAP, 4, 0);
+    CoopPresenceRuntime_Update();
+    EXPECT(!CoopPresenceRuntime_IsPartnerNearby(12));
+    QueueRuntimeSpawnAt(74, 2, RUNTIME_DIVE_MAP, 4, 5);
+    CoopPresenceRuntime_Update();
+    EXPECT(!CoopPresenceRuntime_IsPartnerNearby(12));
+    EndRuntimeFixture(&sRuntimeFixtureBackup);
+}
+
+TEST("Cloud Coop trainer encounter eligibility follows live partner presence")
+{
+    struct CoopBridgeMessage message;
+    u8 grouped[2] = {1, 0};
+    TrainerBattleParameter savedParams = gTrainerBattleParameter;
+    u8 savedApproaching = gNoOfApproachingTrainers;
+    u32 frame;
+
+    BeginRuntimeFixture(&sRuntimeFixtureBackup);
+    CoopSave_InitializeCurrent();
+    CoopNetBridge_Init();
+    while (CoopNetBridge_DequeueGameToNetwork(&message))
+        ;
+    EXPECT(CoopBridgeMessage_Seal(&message, COOP_BRIDGE_MESSAGE_SESSION_READY,
+                                  1, 17, NULL, 0));
+    EXPECT(CoopNetBridge_EnqueueNetworkToGame(&message));
+    CoopNetBridge_Poll();
+    EXPECT(CoopBridgeMessage_Seal(&message, COOP_BRIDGE_MESSAGE_GROUP_STATE_CHANGED,
+                                  2, 17, grouped, sizeof(grouped)));
+    EXPECT(CoopNetBridge_EnqueueNetworkToGame(&message));
+    CoopNetBridge_Poll();
+    while (CoopNetBridge_DequeueGameToNetwork(&message))
+        ;
+    EXPECT(CoopNetBridge_IsGrouped());
+    gSaveBlock1Ptr->pos.x = 4;
+    gSaveBlock1Ptr->pos.y = 5;
+    InitTrainerBattleParameter();
+    TRAINER_BATTLE_PARAM.mode = TRAINER_BATTLE_SINGLE;
+    TRAINER_BATTLE_PARAM.opponentA = TRAINER_CALVIN_1;
+    gNoOfApproachingTrainers = 1;
+
+    /* No partner in the area yet. */
+    EXPECT(!CoopTrainerEncounter_IsEligible(TRAINER_CALVIN_1));
+    QueueRuntimeSpawnAt(72, 1, RUNTIME_LOCAL_MAP, 6, 5);
+    CoopPresenceRuntime_Update();
+    EXPECT(CoopTrainerEncounter_IsEligible(TRAINER_CALVIN_1));
+    /* Partner too far. */
+    QueueRuntimeUpdateAt(72, 2, RUNTIME_LOCAL_MAP, 19, 5);
+    CoopPresenceRuntime_Update();
+    EXPECT(!CoopTrainerEncounter_IsEligible(TRAINER_CALVIN_1));
+    /* Partner back, then stale. */
+    QueueRuntimeUpdateAt(72, 3, RUNTIME_LOCAL_MAP, 6, 5);
+    CoopPresenceRuntime_Update();
+    EXPECT(CoopTrainerEncounter_IsEligible(TRAINER_CALVIN_1));
+    for (frame = 0; frame < COOP_PRESENCE_RUNTIME_STALE_FRAMES; frame++)
+        CoopPresenceRuntime_AdvanceFrame();
+    EXPECT(!CoopTrainerEncounter_IsEligible(TRAINER_CALVIN_1));
+    /* Partner on a map with no edge connection to this one. */
+    QueueRuntimeUpdateAt(72, 4, RUNTIME_UNCONNECTED_MAP, 4, 0);
+    CoopPresenceRuntime_Update();
+    EXPECT(!CoopTrainerEncounter_IsEligible(TRAINER_CALVIN_1));
+
+    gTrainerBattleParameter = savedParams;
+    gNoOfApproachingTrainers = savedApproaching;
+    EndRuntimeFixture(&sRuntimeFixtureBackup);
+}
+
+TEST("Cloud Coop connected group partner takes the sole remote slot")
+{
+    const struct CoopPresenceRemote *remote;
+    u8 object;
+
+    BeginPartnerFixture();
+    InstallRuntimeEdgeConnections();
+    SpawnHeldFixtureRemote(63, 1, 1);
+
+    /* A cross-map spawn only reaches an active group partner, so it evicts
+     * the same-map stranger holding the ROM's single remote slot. */
+    QueueRuntimeSpawnAt(64, 1, RUNTIME_SOUTH_MAP, 4, 0);
+    CoopPresenceRuntime_Update();
+    remote = CoopPresenceReducer_GetRemote(CoopPresenceRuntime_GetReducer());
+    EXPECT(remote != NULL);
+    EXPECT(remote->handle == 64);
+    object = FindRuntimeObject(COOP_PRESENCE_RUNTIME_OBJECT_LOCAL_ID);
+    EXPECT_NE(object, OBJECT_EVENTS_COUNT);
+    EXPECT_EQ(gObjectEvents[object].currentCoords.x, MAP_OFFSET + 4 + RUNTIME_SOUTH_OFFSET);
+    EXPECT_EQ(gObjectEvents[object].currentCoords.y,
+              MAP_OFFSET + sRuntimeTestMapLayout.height);
+
+    /* A same-map newcomer cannot displace the connected partner. */
+    QueueRuntimeSpawnAt(65, 1, RUNTIME_LOCAL_MAP, 4, 6);
+    CoopPresenceRuntime_Update();
+    remote = CoopPresenceReducer_GetRemote(CoopPresenceRuntime_GetReducer());
+    EXPECT(remote != NULL);
+    EXPECT(remote->handle == 64);
+
+    EndRuntimeFixture(&sRuntimeFixtureBackup);
+}
+
+TEST("Cloud Coop partner follower draws the partner's form")
+{
+    u8 follower;
+
+    BeginPartnerFixture();
+    SpawnHeldFixtureRemote(66, 1, 1);
+
+    QueueRuntimeCompanion(66, 1, SPECIES_VULPIX, 1, 0);
+    CoopPresenceRuntime_Update();
+    follower = FindRuntimeObject(COOP_PRESENCE_RUNTIME_FOLLOWER_LOCAL_ID);
+    EXPECT_NE(follower, OBJECT_EVENTS_COUNT);
+    EXPECT_EQ(gObjectEvents[follower].graphicsId, OBJ_EVENT_MON | SPECIES_VULPIX_ALOLA);
+
+    /* A form outside the species' form table keeps the sent species. */
+    QueueRuntimeCompanion(66, 2, SPECIES_VULPIX, 5, 0);
+    CoopPresenceRuntime_Update();
+    follower = FindRuntimeObject(COOP_PRESENCE_RUNTIME_FOLLOWER_LOCAL_ID);
+    EXPECT_NE(follower, OBJECT_EVENTS_COUNT);
+    EXPECT_EQ(gObjectEvents[follower].graphicsId, OBJ_EVENT_MON | SPECIES_VULPIX);
+
+    EndRuntimeFixture(&sRuntimeFixtureBackup);
+}
+
+static bool8 TakeRuntimeCompanion(struct CoopPresenceLocalCompanion *companion)
+{
+    struct CoopBridgeMessage message;
+    bool8 found = FALSE;
+
+    while (CoopNetBridge_DequeueGameToNetwork(&message))
+    {
+        if (message.type == COOP_BRIDGE_MESSAGE_COMPANION_STATE
+         && CoopPresence_DecodeLocalCompanion(message.payload, message.length, companion))
+            found = TRUE;
+    }
+    return found;
+}
+
+TEST("Cloud Coop companion publishes the lead's form")
+{
+    struct CoopPresenceLocalCompanion companion = {0};
+
+    memcpy(sRuntimeTestPartyBackup, gPlayerParty, sizeof(sRuntimeTestPartyBackup));
+    BeginPartnerFixture();
+    SpawnHeldFixtureRemote(67, 1, 1);
+
+    CreateMon(&gPlayerParty[0], SPECIES_VULPIX_ALOLA, 5, 0x12345678, OTID_STRUCT_PLAYER_ID);
+    (void)TakeRuntimeCompanion(&companion);
+    CoopPresenceRuntime_AdvanceFrame();
+    CoopPresenceRuntime_Update();
+    EXPECT(TakeRuntimeCompanion(&companion));
+    EXPECT_EQ(companion.species, SPECIES_VULPIX_ALOLA);
+    EXPECT_EQ(companion.form, 1);
+
+    /* Unown's letter lives in its personality: 1 selects the B form. */
+    CreateMon(&gPlayerParty[0], SPECIES_UNOWN, 5, 1, OTID_STRUCT_PLAYER_ID);
+    CoopPresenceRuntime_AdvanceFrame();
+    CoopPresenceRuntime_Update();
+    EXPECT(TakeRuntimeCompanion(&companion));
+    EXPECT_EQ(companion.species, SPECIES_UNOWN_B);
+    EXPECT_EQ(companion.form, 1);
+
+    EndRuntimeFixture(&sRuntimeFixtureBackup);
+    memcpy(gPlayerParty, sRuntimeTestPartyBackup, sizeof(sRuntimeTestPartyBackup));
+}
+#endif // ROM_WORLD == 1
+
+enum
+{
+    RUNTIME_MENU_WAVE,
+    RUNTIME_MENU_TRADE,
+    RUNTIME_MENU_BATTLE,
+    RUNTIME_MENU_TRAVEL,
+    RUNTIME_MENU_CHECK,
+};
+
+#if ROM_WORLD == 1
+static bool8 sMenuFixtureScriptWasEnabled;
+
+static void BeginPartnerMenuFixture(u64 handle)
+{
+    struct CoopBridgeMessage message;
+
+    sMenuFixtureScriptWasEnabled = ScriptContext_IsEnabled();
+    BeginPartnerFixture();
+    /* The menu and its notices wait for the runner's script to yield. */
+    if (sMenuFixtureScriptWasEnabled)
+        ScriptContext_Stop();
+    InitStandardTextBoxWindows();
+    InitFieldMessageBox();
+    SpawnHeldFixtureRemote(handle, 1, 1);
+    while (CoopNetBridge_DequeueGameToNetwork(&message))
+        ;
+}
+
+static void EndPartnerMenuFixture(void)
+{
+    HideFieldMessageBox();
+    StopFieldMessage();
+    DeactivateAllTextPrinters();
+    if (sMenuFixtureScriptWasEnabled)
+        ScriptContext_Enable();
+    EndRuntimeFixture(&sRuntimeFixtureBackup);
+    FreeAllWindowBuffers();
+}
+
+static void OpenPartnerMenuFromInteraction(u64 handle, u32 sequence)
+{
+    struct CoopBridgeMessage message;
+
+    EXPECT_EQ(CoopPresenceRuntime_TestInteractionMenuTask(), TASK_NONE);
+    QueueRuntimeInteraction(handle, sequence);
+    CoopPresenceRuntime_Update();
+    EXPECT_NE(CoopPresenceRuntime_TestInteractionMenuTask(), TASK_NONE);
+    EXPECT(ArePlayerFieldControlsLocked());
+    /* Only the chosen entry's own frames are asserted afterwards. */
+    while (CoopNetBridge_DequeueGameToNetwork(&message))
+        ;
+}
+
+static void ChoosePartnerMenuEntry(s8 selection)
+{
+    EXPECT(CoopPresenceRuntime_TestChooseInteraction(selection));
+    EXPECT_EQ(CoopPresenceRuntime_TestInteractionMenuTask(), TASK_NONE);
+    EXPECT(!ArePlayerFieldControlsLocked());
+}
+
+TEST("Cloud Coop forwarded partner interaction opens the partner menu")
+{
+    BeginPartnerMenuFixture(70);
+
+    /* The partner pressed A on this player: the forwarded interaction opens
+     * the menu on the next overworld update and locks field input. */
+    OpenPartnerMenuFromInteraction(70, 1);
+    EXPECT_EQ(GetFieldMessageBoxMode(), FIELD_MESSAGE_BOX_HIDDEN);
+
+    /* B closes the menu without an action or a notice. */
+    ChoosePartnerMenuEntry(MENU_B_PRESSED);
+    EXPECT_EQ(GetFieldMessageBoxMode(), FIELD_MESSAGE_BOX_HIDDEN);
+    EXPECT(CoopBridgeQueue_IsEmpty(&gCoopNetBridge.game_to_network));
+
+    /* A later forwarded interaction opens it again. */
+    OpenPartnerMenuFromInteraction(70, 2);
+    ChoosePartnerMenuEntry(MENU_B_PRESSED);
+
+    EndPartnerMenuFixture();
+}
+
+TEST("Cloud Coop partner menu Wave sends the heart emote")
+{
+    struct CoopBridgeMessage message;
+    struct CoopPresenceLocalSignal signal;
+    bool8 before[MAX_SPRITES];
+    u8 spriteId;
+
+    BeginPartnerMenuFixture(71);
+    OpenPartnerMenuFromInteraction(71, 1);
+    SnapshotRuntimeSprites(before);
+    ChoosePartnerMenuEntry(RUNTIME_MENU_WAVE);
+
+    EXPECT(CoopNetBridge_DequeueGameToNetwork(&message));
+    EXPECT_EQ(message.type, COOP_BRIDGE_MESSAGE_SOCIAL_SIGNAL);
+    EXPECT(CoopPresence_DecodeLocalSignal(message.payload, message.length, &signal));
+    EXPECT_EQ(signal.kind, COOP_PRESENCE_SIGNAL_EMOTE);
+    EXPECT_EQ(signal.emote, COOP_PRESENCE_EMOTE_HEART);
+    EXPECT(CoopBridgeQueue_IsEmpty(&gCoopNetBridge.game_to_network));
+    spriteId = FindNewRuntimeSprite(before);
+    EXPECT_NE(spriteId, MAX_SPRITES);
+    EXPECT_EQ(gSprites[spriteId].animNum, FOLLOWER_EMOTION_LOVE);
+    DestroyNewRuntimeSprites(before);
+    ExpectRuntimeNotice(COMPOUND_STRING("You waved at them."));
+
+    /* Inside the signal cooldown the wave is refused honestly. */
+    OpenPartnerMenuFromInteraction(71, 2);
+    ChoosePartnerMenuEntry(RUNTIME_MENU_WAVE);
+    EXPECT(CoopBridgeQueue_IsEmpty(&gCoopNetBridge.game_to_network));
+    ExpectRuntimeNotice(COMPOUND_STRING("That option is not available yet."));
+
+    EndPartnerMenuFixture();
+}
+
+TEST("Cloud Coop partner menu Travel together explains shared travel without Fly")
+{
+    MainCallback callback2;
+
+    BeginPartnerMenuFixture(72);
+    EXPECT(!CoopNetBridge_IsGrouped());
+    OpenPartnerMenuFromInteraction(72, 1);
+    callback2 = gMain.callback2;
+    ChoosePartnerMenuEntry(RUNTIME_MENU_TRAVEL);
+    /* Without a group and a Fly user the partner fly map stays closed. */
+    EXPECT(gMain.callback2 == callback2);
+    EXPECT(CoopBridgeQueue_IsEmpty(&gCoopNetBridge.game_to_network));
+    ExpectRuntimeNotice(COMPOUND_STRING("Use FLY or a travel gate together."));
+
+    EndPartnerMenuFixture();
+}
+
+TEST("Cloud Coop partner menu Check Pokemon names the partner's lead")
+{
+    u8 expected[64];
+
+    BeginPartnerMenuFixture(73);
+    OpenPartnerMenuFromInteraction(73, 1);
+    ChoosePartnerMenuEntry(RUNTIME_MENU_CHECK);
+    ExpectRuntimeNotice(COMPOUND_STRING("Partner's lead is unknown."));
+
+    QueueRuntimeCompanion(73, 1, SPECIES_VULPIX, 0, 0);
+    CoopPresenceRuntime_Update();
+    OpenPartnerMenuFromInteraction(73, 2);
+    ChoosePartnerMenuEntry(RUNTIME_MENU_CHECK);
+    StringCopy(expected, COMPOUND_STRING("Partner's lead: "));
+    StringAppend(expected, GetSpeciesName(SPECIES_VULPIX));
+    StringAppend(expected, COMPOUND_STRING("."));
+    ExpectRuntimeNotice(expected);
+    EXPECT(CoopBridgeQueue_IsEmpty(&gCoopNetBridge.game_to_network));
+
+    EndPartnerMenuFixture();
+}
+
+TEST("Cloud Coop partner menu Battle and Trade stay unavailable placeholders")
+{
+    BeginPartnerMenuFixture(74);
+
+    /* Neither entry may reserve a battle or start a trade until the
+     * partner-versus-partner engine and the gameplay ledger exist. */
+    OpenPartnerMenuFromInteraction(74, 1);
+    ChoosePartnerMenuEntry(RUNTIME_MENU_BATTLE);
+    EXPECT(CoopBridgeQueue_IsEmpty(&gCoopNetBridge.game_to_network));
+    ExpectRuntimeNotice(COMPOUND_STRING("That option is not available yet."));
+
+    OpenPartnerMenuFromInteraction(74, 2);
+    ChoosePartnerMenuEntry(RUNTIME_MENU_TRADE);
+    EXPECT(CoopBridgeQueue_IsEmpty(&gCoopNetBridge.game_to_network));
+    ExpectRuntimeNotice(COMPOUND_STRING("That option is not available yet."));
+
+    EndPartnerMenuFixture();
+}
+#endif // ROM_WORLD == 1

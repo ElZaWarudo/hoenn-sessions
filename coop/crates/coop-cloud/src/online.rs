@@ -39,6 +39,17 @@ pub struct OnlineGroup {
     pub username: CanonicalUsername,
 }
 
+/// The most recent partner that can be invited back into a group.
+///
+/// The character identifier is retained for the authenticated host client so
+/// it can correlate the action and is never intended for display in the ROM.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct OnlineRememberedPartner {
+    pub character_id: crate::CharacterId,
+    pub username: CanonicalUsername,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct OnlineSnapshotResponse {
@@ -47,8 +58,21 @@ pub struct OnlineSnapshotResponse {
     pub nearby: Vec<OnlinePeer>,
     #[serde(deserialize_with = "page")]
     pub incoming: Vec<OnlineInvitation>,
+    #[serde(default, deserialize_with = "page")]
+    pub outgoing: Vec<OnlineInvitation>,
     pub incoming_next: Option<GroupInvitationId>,
     pub group: Option<OnlineGroup>,
+    /// A live outgoing invitation or pairing code can let a peer join remotely.
+    /// Older V1 servers omit this field; guard travel until a capable server
+    /// reports the authoritative state.
+    #[serde(default = "remote_join_unknown")]
+    pub remote_join_possible: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_partner: Option<OnlineRememberedPartner>,
+}
+
+fn remote_join_unknown() -> bool {
+    true
 }
 
 fn page<'de, D, T>(deserializer: D) -> Result<Vec<T>, D::Error>
@@ -92,6 +116,10 @@ pub enum OnlineAction {
     Decline {
         invitation_id: GroupInvitationId,
     },
+    Cancel {
+        invitation_id: GroupInvitationId,
+    },
+    InviteLastPartner,
     Leave {
         group_id: GroupId,
     },
@@ -112,5 +140,6 @@ pub enum OnlineActionResponse {
     Invited { invitation: GroupInvitationView },
     Accepted { group: GroupView },
     Declined,
+    Cancelled,
     Left,
 }

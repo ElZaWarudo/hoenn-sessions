@@ -4,9 +4,9 @@ use axum::{
     http::{Method, Request, StatusCode},
 };
 use coop_cloud::{
-    AcquireLeaseRequest, ClientInstanceId, CreateGroupInvitationRequest, IdempotencyKey,
-    InvitationCode, LeaseContract, LoginRequest, LoginResponse, Password, RegisterRequest,
-    RegisterResponse, SigningPrivateKey,
+    AcquireLeaseRequest, ClientInstanceId, CreateGroupInvitationRequest, CreatePairingCodeRequest,
+    IdempotencyKey, InvitationCode, LeaseContract, LoginRequest, LoginResponse, PairingCode,
+    Password, RedeemPairingCodeRequest, RegisterRequest, RegisterResponse, SigningPrivateKey,
 };
 use coop_server::{Phase2App, Phase2Config};
 use http_body_util::BodyExt;
@@ -25,6 +25,9 @@ async fn request(
         .method(method)
         .uri(uri)
         .header("content-type", "application/json");
+    if uri == "/v1/online/snapshot" {
+        builder = builder.header("x-coop-online-remote-join", "1");
+    }
     if let Some(token) = bearer {
         builder = builder.header("authorization", format!("Bearer {token}"));
     }
@@ -139,8 +142,30 @@ async fn online_snapshot_is_authenticated_fenced_and_bounded() {
     assert_eq!(response.status(), StatusCode::OK);
     assert_eq!(
         json_body(response).await,
-        json!({"api_version":1,"nearby":[],"incoming":[],"incoming_next":null,"group":null})
+        json!({"api_version":1,"nearby":[],"incoming":[],"outgoing":[],"incoming_next":null,"group":null,"remote_join_possible":false})
     );
+    let legacy = router
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/v1/online/snapshot")
+                .header("content-type", "application/json")
+                .header(
+                    "authorization",
+                    format!("Bearer {}", login.access_token.expose_secret()),
+                )
+                .body(Body::from(body.to_string()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(legacy.status(), StatusCode::OK);
+    let legacy_body = json_body(legacy).await;
+    assert!(legacy_body.get("remote_join_possible").is_none());
+    let conservative: coop_cloud::OnlineSnapshotResponse =
+        serde_json::from_value(legacy_body).unwrap();
+    assert!(conservative.remote_join_possible);
     let response = request(&router, Method::POST, "/v1/online/snapshot", None, body).await;
     assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
 }
@@ -210,6 +235,14 @@ async fn incoming_names_accept_and_symmetric_leave_are_idempotent() {
     let (one, login_one, lease_one, _) = account(&router, &app, "onlinealice", "ONLINE-A").await;
     let (two, login_two, lease_two, _) = account(&router, &app, "onlinebob", "ONLINE-B").await;
     let invitation = invite(&router, &login_one, &lease_one, two.character_id).await;
+    assert_eq!(
+        snapshot(&router, &login_one, &lease_one, Value::Null).await["remote_join_possible"],
+        true
+    );
+    assert_eq!(
+        snapshot(&router, &login_two, &lease_two, Value::Null).await["remote_join_possible"],
+        false
+    );
     let inbox = snapshot(&router, &login_two, &lease_two, Value::Null).await;
     assert_eq!(inbox["incoming"][0]["username"], "onlinealice");
     let accept = json!({"operation":"accept","invitation_id":invitation["invitation_id"]});
@@ -221,6 +254,7 @@ async fn incoming_names_accept_and_symmetric_leave_are_idempotent() {
     assert_eq!(json_body(replay).await, accepted);
     let first = snapshot(&router, &login_one, &lease_one, Value::Null).await;
     assert_eq!(first["group"]["username"], "onlinebob");
+    assert_eq!(first["remote_join_possible"], false);
     assert!(
         accepted["group"]["members"]
             .as_array()
@@ -259,18 +293,96 @@ async fn incoming_names_accept_and_symmetric_leave_are_idempotent() {
 }
 
 #[tokio::test]
+async fn pairing_code_makes_remote_join_possible_until_redeemed() {
+    let app = app();
+    let router = app.router();
+    let (_, creator, creator_lease, _) =
+        account(&router, &app, "paironlineone", "PAIR-ONLINE-A").await;
+    let (_, joiner, joiner_lease, _) =
+        account(&router, &app, "paironlinetwo", "PAIR-ONLINE-B").await;
+    assert_eq!(
+        snapshot(&router, &creator, &creator_lease, Value::Null).await["remote_join_possible"],
+        false
+    );
+    let response = request(
+        &router,
+        Method::POST,
+        "/v1/groups/pairing-codes",
+        Some(creator.access_token.expose_secret()),
+        serde_json::to_value(CreatePairingCodeRequest::new(creator_lease.fence())).unwrap(),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::CREATED);
+    let created = json_body(response).await;
+    assert_eq!(
+        snapshot(&router, &creator, &creator_lease, Value::Null).await["remote_join_possible"],
+        true
+    );
+    assert_eq!(
+        snapshot(&router, &joiner, &joiner_lease, Value::Null).await["remote_join_possible"],
+        false
+    );
+    let response = request(
+        &router,
+        Method::POST,
+        "/v1/groups/pairing-codes/redeem",
+        Some(joiner.access_token.expose_secret()),
+        serde_json::to_value(RedeemPairingCodeRequest::new(
+            joiner_lease.fence(),
+            PairingCode::new(created["code"].as_str().unwrap().to_owned()).unwrap(),
+        ))
+        .unwrap(),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(
+        snapshot(&router, &creator, &creator_lease, Value::Null).await["remote_join_possible"],
+        false
+    );
+}
+
+#[tokio::test]
 async fn incoming_pagination_decline_and_foreign_invitation_are_safe() {
     let app = app();
     let router = app.router();
     let (_, sender, sender_lease, _) = account(&router, &app, "onlinesender", "ONLINE-S").await;
+    let (_, other_sender, other_sender_lease, _) =
+        account(&router, &app, "onlineother", "ONLINE-O").await;
     let (recipient_id, recipient, recipient_lease, _) =
         account(&router, &app, "onlinereceiver", "ONLINE-R").await;
     let mut ids = Vec::new();
-    for _ in 0..5 {
+    for _ in 0..3 {
         ids.push(invite(&router, &sender, &sender_lease, recipient_id.character_id).await["invitation_id"].clone());
     }
+    for _ in 0..2 {
+        ids.push(
+            invite(
+                &router,
+                &other_sender,
+                &other_sender_lease,
+                recipient_id.character_id,
+            )
+            .await["invitation_id"]
+                .clone(),
+        );
+    }
+    let sent = snapshot(&router, &sender, &sender_lease, Value::Null).await;
+    assert_eq!(sent["remote_join_possible"], true);
+    assert_eq!(sent["outgoing"].as_array().unwrap().len(), 3);
+    assert!(
+        sent["outgoing"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|entry| entry["username"] == "onlinereceiver")
+    );
+    let other_sent = snapshot(&router, &other_sender, &other_sender_lease, Value::Null).await;
+    assert_eq!(other_sent["outgoing"].as_array().unwrap().len(), 2);
+    assert_eq!(other_sent["remote_join_possible"], true);
     ids.sort_by_key(|id| id.as_str().unwrap().to_owned());
     let first = snapshot(&router, &recipient, &recipient_lease, Value::Null).await;
+    assert!(first["outgoing"].as_array().unwrap().is_empty());
+    assert_eq!(first["remote_join_possible"], false);
     assert_eq!(first["incoming"].as_array().unwrap().len(), 4);
     let second = snapshot(
         &router,
@@ -327,8 +439,18 @@ async fn incoming_pagination_decline_and_foreign_invitation_are_safe() {
 #[test]
 fn online_contract_rejects_unbounded_or_ambiguous_wire_data() {
     let peer = json!({"handle":"0000000000000001","generation":1,"username":"alice"});
-    let base = json!({"api_version":1,"nearby":[],"incoming":[],"incoming_next":null,"group":null});
+    let base = json!({"api_version":1,"nearby":[],"incoming":[],"incoming_next":null,"group":null,"remote_join_possible":false});
     assert!(serde_json::from_value::<coop_cloud::OnlineSnapshotResponse>(base.clone()).is_ok());
+    let mut missing = base.clone();
+    missing
+        .as_object_mut()
+        .unwrap()
+        .remove("remote_join_possible");
+    assert!(
+        serde_json::from_value::<coop_cloud::OnlineSnapshotResponse>(missing)
+            .unwrap()
+            .remote_join_possible
+    );
     let mut bounded = base.clone();
     bounded["nearby"] = json!([peer, peer, peer, peer]);
     assert!(serde_json::from_value::<coop_cloud::OnlineSnapshotResponse>(bounded).is_ok());

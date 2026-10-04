@@ -2065,6 +2065,9 @@ mod tests {
         assert_eq!(record.server_stage_snapshot_id, Some(staged.stage_id));
     }
 
+    // Existing executable paths are refused off Windows (see
+    // `executable_binding`), so the ROM digest binding is Windows-only.
+    #[cfg(windows)]
     #[test]
     fn wrong_owned_destination_rom_is_rejected_before_emulator_start() {
         let directory = tempfile::tempdir().unwrap();

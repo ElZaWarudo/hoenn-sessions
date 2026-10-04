@@ -29,6 +29,7 @@
     - [Work-tracking seed plan](./jira/seed-plan.md)
 - [Hoenn Sessions project documentation]()
     - [Online invitations and presence reconnection](./plans/2026-09-06-1718-feat-online-menu-plan.md)
+    - [Co-op battles for every trainer, outcome ledger and friendly battles](./plans/2026-09-29-coop-trainers-and-outcome-ledger-plan.md)
     - [Reliable stock mGBA multiplayer testing](./solutions/workflow-issues/stock-mgba-testing.md)
     - [Two-player Littleroot conformance](./testing/littleroot-conformance.md)
     - [Character validation evidence]()

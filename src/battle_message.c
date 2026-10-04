@@ -18,6 +18,7 @@
 #include "palette.h"
 #include "recorded_battle.h"
 #include "string_util.h"
+#include "coop/battle_runtime.h"
 #include "strings.h"
 #include "test_runner.h"
 #include "text.h"
@@ -3092,7 +3093,12 @@ static const u8 *BattleStringGetPlayerName(u8 *text, enum BattlerId battler)
             toCpy = gSaveBlock2Ptr->playerName;
         break;
     case B_POSITION_PLAYER_RIGHT:
-        if (((gBattleTypeFlags & BATTLE_TYPE_RECORDED) && !(gBattleTypeFlags & (BATTLE_TYPE_MULTI | BATTLE_TYPE_INGAME_PARTNER)))
+        if (CoopBattleRuntime_CopyPartnerName(text))
+        {
+            /* Co-op trainer battle: the partner is the other player. */
+            toCpy = text;
+        }
+        else if (((gBattleTypeFlags & BATTLE_TYPE_RECORDED) && !(gBattleTypeFlags & (BATTLE_TYPE_MULTI | BATTLE_TYPE_INGAME_PARTNER)))
             || gTestRunnerEnabled)
         {
             toCpy = gLinkPlayers[0].name;
@@ -3588,6 +3594,13 @@ u32 BattleStringExpandPlaceholders(const u8 *src, u8 *dst, u32 dstSize)
                 toCpy = BattleStringGetPlayerName(text, GetBattlerAtPosition(B_POSITION_PLAYER_RIGHT));
                 break;
             case B_TXT_PARTNER_NAME_WITH_CLASS:
+                /* A co-op partner is another player: its name alone, as a
+                 * link partner is shown. */
+                if (CoopBattleRuntime_IsTrainerEngine())
+                {
+                    toCpy = BattleStringGetPlayerName(text, GetBattlerAtPosition(B_POSITION_PLAYER_RIGHT));
+                    break;
+                }
                 toCpy = textStart;
                 classString = gTrainerClasses[GetFrontierOpponentClass(gPartnerTrainerId)].name;
                 while (classString[classLength] != EOS)
@@ -3633,7 +3646,8 @@ u32 BattleStringExpandPlaceholders(const u8 *src, u8 *dst, u32 dstSize)
                 break;
             case B_TXT_ATK_TRAINER_NAME_WITH_CLASS:
                 toCpy = textStart;
-                if (GetBattlerPosition(gBattlerAttacker) == B_POSITION_PLAYER_LEFT)
+                if (GetBattlerPosition(gBattlerAttacker) == B_POSITION_PLAYER_LEFT
+                 || (CoopBattleRuntime_IsTrainerEngine() && GetBattlerPosition(gBattlerAttacker) == B_POSITION_PLAYER_RIGHT))
                 {
                     textStart = StringCopy(textStart, BattleStringGetTrainerName(textStart, multiplayerId, gBattlerAttacker));
                 }

@@ -192,7 +192,7 @@ public class RuntimeStoreTest {
     private static byte[] manifest(String romHash) throws Exception {
         return bytes(new JSONObject().put("schema_version",4)
             .put("game_build",new JSONObject().put("id","test").put("rom_sha256",romHash))
-            .put("net_bridge",new JSONObject().put("abi_version",1).put("game_protocol_version",1))
+            .put("net_bridge",new JSONObject().put("abi_version",1).put("game_protocol_version",BridgeFrame.PROTOCOL_VERSION))
             .toString());
     }
 }

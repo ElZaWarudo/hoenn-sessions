@@ -48,6 +48,9 @@
 #include "constants/item_effects.h"
 #include "constants/items.h"
 #include "constants/songs.h"
+#include "coop/net_bridge.h"
+#include "coop/battle_items.h"
+#include "coop/group_travel.h"
 
 // Flight Call function
 extern const u8 EventScript_UseFlightCall[];
@@ -1138,6 +1141,12 @@ static void ItemUseOnFieldCB_EscapeRope(u8 taskId)
     DisplayItemMessageOnField(taskId, gStringVar4, Task_UseDigEscapeRopeOnField);
 }
 
+static void ItemUseOnFieldCB_GroupEscapeRope(u8 taskId)
+{
+    (void)CoopGroupTravel_BeginEscapeRope();
+    DestroyTask(taskId);
+}
+
 bool8 CanUseDigOrEscapeRopeOnCurMap(void)
 {
     if (!CheckFollowerNPCFlag(FOLLOWER_NPC_FLAG_CAN_LEAVE_ROUTE))
@@ -1151,9 +1160,13 @@ bool8 CanUseDigOrEscapeRopeOnCurMap(void)
 
 void ItemUseOutOfBattle_EscapeRope(u8 taskId)
 {
-    if (CanUseDigOrEscapeRopeOnCurMap() == TRUE)
+    if (CanUseDigOrEscapeRopeOnCurMap() == TRUE
+     && (!CoopNetBridge_IsOrMayBeGrouped()
+         || (CoopNetBridge_IsGrouped() && CoopGroupTravel_CanEscape())))
     {
-        sItemUseOnFieldCB = ItemUseOnFieldCB_EscapeRope;
+        sItemUseOnFieldCB = CoopNetBridge_IsGrouped()
+            ? ItemUseOnFieldCB_GroupEscapeRope
+            : ItemUseOnFieldCB_EscapeRope;
         SetUpItemUseOnFieldCallback(taskId);
     }
     else
@@ -1421,7 +1434,13 @@ void ItemUseInBattle_BagMenu(u8 taskId)
     else
     {
         PlaySE(SE_SELECT);
-        if (!GetItemImportance(gSpecialVar_ItemId) && !(B_TRY_CATCH_TRAINER_BALL >= GEN_4 && (GetItemBattleUsage(gSpecialVar_ItemId) == EFFECT_ITEM_THROW_BALL) && (gBattleTypeFlags & BATTLE_TYPE_TRAINER)))
+        if (CoopBattleItems_IsBagOpen())
+        {
+            // Co-op trainer battle: the item stays in the bag until its
+            // turn runs on both ROMs.
+            CoopBattleItems_ChooseTarget(&GetBattlerParty(gBattlerInMenuId)[gBattlerPartyIndexes[gBattlerInMenuId]]);
+        }
+        else if (!GetItemImportance(gSpecialVar_ItemId) && !(B_TRY_CATCH_TRAINER_BALL >= GEN_4 && (GetItemBattleUsage(gSpecialVar_ItemId) == EFFECT_ITEM_THROW_BALL) && (gBattleTypeFlags & BATTLE_TYPE_TRAINER)))
             RemoveUsedItem();
         ScheduleBgCopyTilemapToVram(2);
         if (CurrentBattlePyramidLocation() == PYRAMID_LOCATION_NONE)

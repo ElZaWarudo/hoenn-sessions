@@ -192,11 +192,19 @@ TEST("Cormoria GameClear stores the Carabrue Town continue warp")
 TEST("Main GameClear keeps the Brendan house continue warp")
 {
     const struct HealLocation *brendanHouse = GetHealLocation(HEAL_LOCATION_LITTLEROOT_TOWN_BRENDANS_HOUSE_2F);
+    MainCallback runnerCallback = gMain.callback2;
+    MainCallback nextCallback;
+    int result;
 
     EXPECT(brendanHouse != NULL);
     gSaveBlock2Ptr->playerGender = MALE;
 
-    EXPECT_EQ(GameClear(), 0);
+    result = GameClear();
+    nextCallback = gMain.callback2;
+    // Verify the transition without abandoning the test runner for the UI.
+    SetMainCallback2(runnerCallback);
+    EXPECT_EQ(result, 0);
+    EXPECT_EQ(nextCallback, CB2_DoHallOfFameScreen);
     EXPECT_EQ(gSaveBlock1Ptr->continueGameWarp.mapGroup, brendanHouse->mapGroup);
     EXPECT_EQ(gSaveBlock1Ptr->continueGameWarp.mapNum, brendanHouse->mapNum);
     EXPECT_EQ(gSaveBlock1Ptr->continueGameWarp.warpId, WARP_ID_NONE);

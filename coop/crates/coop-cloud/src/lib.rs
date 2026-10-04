@@ -17,6 +17,7 @@ pub mod resume;
 pub mod security;
 pub mod session;
 pub mod snapshot;
+pub mod trade;
 
 pub use auth::{
     AUTH_API_VERSION, ApiVersion, AuthError, LoginRequest, LoginResponse, LogoutRequest,
@@ -25,11 +26,16 @@ pub use auth::{
 };
 pub use group::{
     AcceptGroupInvitationRequest, AcceptGroupInvitationResponse, CreateGroupInvitationRequest,
-    CreateGroupInvitationResponse, GROUP_INVITATION_TTL_MS, GROUP_REQUEST_BODY_MAX_BYTES,
-    GROUP_ROUTE_ID_MAX_BYTES, Group, GroupError, GroupInvitationView, GroupMemberView,
-    GroupTravelAction, GroupTravelActionRequest, GroupTravelCommit, GroupTravelProposalRequest,
-    GroupTravelProposalStatus, GroupTravelProposalView, GroupTravelRequest, GroupTravelResponse,
-    GroupView, MAX_WORLD_REVISION, RouteId,
+    CreateGroupInvitationResponse, CreatePairingCodeRequest, CreatePairingCodeResponse,
+    GROUP_INVITATION_TTL_MS, GROUP_PAIRING_CODE_LINK_PREFIX, GROUP_PAIRING_CODE_TTL_MS,
+    GROUP_REQUEST_BODY_MAX_BYTES, GROUP_ROUTE_ID_MAX_BYTES, Group, GroupError, GroupInvitationView,
+    GroupMemberView, GroupTravelAction, GroupTravelActionRequest, GroupTravelCommit,
+    GroupTravelProposalRequest, GroupTravelProposalStatus, GroupTravelProposalView,
+    GroupTravelRequest, GroupTravelResponse, GroupTravelSceneMarkerRequest,
+    GroupTravelSceneReceiptRequest, GroupView, MAX_WORLD_REVISION, PairingCode, PartnerStatus,
+    PartnerStatusResponse, RedeemPairingCodeRequest, RedeemPairingCodeResponse, RouteId,
+    StoryTravelRecoveryAction, StoryTravelRecoveryActionRequest, StoryTravelRecoveryOutcome,
+    StoryTravelRecoveryResolutionView, StoryTravelRecoveryView, pairing_code_from_join_text,
 };
 pub use group_handoff::{
     GroupRomHandoffAbortRequest, GroupRomHandoffArrivalRequest, GroupRomHandoffError,
@@ -40,22 +46,25 @@ pub use ids::{
     BridgeAbiVersion, CharacterId, ClientInstanceId, CommitId, GameBuildId, GroupId,
     GroupInvitationId, GroupTravelProposalId, IdError, IdempotencyKey, MgbaVersion,
     ProtocolVersion, RefreshFamilyId, Revision, SessionEpoch, SessionId, Sha256Digest, SnapshotId,
-    SnapshotRevision, Timestamp, UnixTimestampMillis, UserId,
+    SnapshotRevision, Timestamp, TradeOfferId, UnixTimestampMillis, UserId,
 };
 pub use online::{
     ONLINE_PAGE_SIZE, OnlineAction, OnlineActionRequest, OnlineActionResponse, OnlineGroup,
-    OnlineInvitation, OnlinePeer, OnlineSnapshotRequest, OnlineSnapshotResponse,
+    OnlineInvitation, OnlinePeer, OnlineRememberedPartner, OnlineSnapshotRequest,
+    OnlineSnapshotResponse,
 };
 pub use presence::{RuntimeBuildIdentity, RuntimeLeaseFence, StableRuntimeSession};
 pub use realtime::{
-    CURRENT_REALTIME_VERSION, ClientRealtimeFrameV1, MAX_PRESENCE_CLIENT_TEXT_FRAME_BYTES,
+    CURRENT_REALTIME_VERSION, ClientRealtimeFrameV1, GroupEndedV1, GroupStartedV1,
+    InteractionRejectReason, InteractionRejectedV1, MAX_PRESENCE_CLIENT_TEXT_FRAME_BYTES,
     MAX_PRESENCE_SERVER_TEXT_FRAME_BYTES, MintRealtimeTicketRequest, MintRealtimeTicketResponse,
     PRESENCE_INTERPOLATION_DELAY_MS, PRESENCE_SEND_RATE_HZ, PRESENCE_STALE_MS, PresenceReadyV1,
-    REALTIME_TICKET_ENCODED_LEN, REALTIME_TICKET_ENTROPY_BYTES,
-    REALTIME_TICKET_REQUEST_BODY_MAX_BYTES, REALTIME_TICKET_TTL_MS, RealtimeError, RealtimeVersion,
-    RealtimeVersionError, ServerRealtimeFrameV1, decode_client_frame, decode_client_realtime_frame,
-    decode_server_frame, decode_server_realtime_frame, encode_client_frame,
-    encode_client_realtime_frame, encode_server_frame, encode_server_realtime_frame,
+    ProgressFeedEventV1, ProgressFeedResponse, REALTIME_TICKET_ENCODED_LEN,
+    REALTIME_TICKET_ENTROPY_BYTES, REALTIME_TICKET_REQUEST_BODY_MAX_BYTES, REALTIME_TICKET_TTL_MS,
+    RealtimeError, RealtimeVersion, RealtimeVersionError, ServerRealtimeFrameV1,
+    decode_client_frame, decode_client_realtime_frame, decode_server_frame,
+    decode_server_realtime_frame, encode_client_frame, encode_client_realtime_frame,
+    encode_server_frame, encode_server_realtime_frame,
 };
 pub use resume::{
     CompatibilityError, CompatibilityTarget, CreatedAt, ManifestBuildInfo, ManifestSignature,
@@ -81,6 +90,10 @@ pub use snapshot::{
     SnapshotListRequest, SnapshotListResponse, SnapshotPrepareFence, SnapshotPrepareRequest,
     SnapshotPrepareResponse, SnapshotRecord, SnapshotRestoreRequest, SnapshotRestoreResponse,
     UploadCapabilityUrl, UploadMethod, UploadTarget,
+};
+pub use trade::{
+    PartyPosition, TradeDecision, TradeDecisionRequest, TradeOfferCurrentView, TradeOfferRequest,
+    TradeOfferStatus, TradeOfferView, TradeOfferedPokemon, TradePokemonKey,
 };
 
 #[cfg(test)]
@@ -339,7 +352,8 @@ mod tests {
         assert!(SessionEpoch::new(0).is_err());
         assert!(serde_json::from_str::<ApiVersion>("2").is_err());
         assert!(BridgeAbiVersion::new(2).is_err());
-        assert!(ProtocolVersion::new(2).is_err());
+        assert!(ProtocolVersion::new(5).is_ok());
+        assert!(ProtocolVersion::new(6).is_err());
     }
 
     #[test]
@@ -1025,6 +1039,8 @@ mod tests {
         for value in [0, 2] {
             assert!(serde_json::from_value::<ApiVersion>(json!(value)).is_err());
             assert!(serde_json::from_value::<BridgeAbiVersion>(json!(value)).is_err());
+        }
+        for value in [0, 6] {
             assert!(serde_json::from_value::<ProtocolVersion>(json!(value)).is_err());
         }
         assert!(serde_json::from_value::<Username>(json!("A".repeat(33))).is_err());

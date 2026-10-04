@@ -40,16 +40,19 @@ static u32 sEraseCalls;
 static u32 sProgramSectorCalls;
 static u32 sProgramByteCalls;
 
+/* The serialized tails no longer fit in static EWRAM, so each flash test owns
+ * a heap copy for exactly its own duration: TestFlashBegin() allocates it and
+ * TestFlashEnd() frees it (and the partial-write sector) before the runner's
+ * leak check. Pointers never survive into another test, whose heap may have
+ * been reset or moved. */
 static void TestFlashReset(void)
 {
     u16 sector;
 
-    if (sFlashSaveBlock1Tail == NULL)
-        sFlashSaveBlock1Tail = Alloc(NUM_SAVE_SLOTS * sizeof(*sFlashSaveBlock1Tail));
     EXPECT(sFlashSaveBlock1Tail != NULL);
     memset(sFlashSaveBlock1Tail, 0, NUM_SAVE_SLOTS * sizeof(*sFlashSaveBlock1Tail));
     memset(sFlashMeta, 0, sizeof(sFlashMeta));
-    sPartialWriteBuffer = NULL;
+    TRY_FREE_AND_SET_NULL(sPartialWriteBuffer);
     sPartialSector = 0xFFFF;
     sFullWriteCount = 0;
     sFirstFullWriteSector[0] = 0xFFFF;
@@ -71,6 +74,20 @@ static void TestFlashReset(void)
         sFlashMeta[sector].signature = SECTOR_SIGNATURE;
         sFlashMeta[sector].counter = 0;
     }
+}
+
+static void TestFlashBegin(void)
+{
+    /* Anything left by an earlier (failed) test belongs to its heap. */
+    sPartialWriteBuffer = NULL;
+    sFlashSaveBlock1Tail = Alloc(NUM_SAVE_SLOTS * sizeof(*sFlashSaveBlock1Tail));
+    TestFlashReset();
+}
+
+static void TestFlashEnd(void)
+{
+    TRY_FREE_AND_SET_NULL(sPartialWriteBuffer);
+    TRY_FREE_AND_SET_NULL(sFlashSaveBlock1Tail);
 }
 
 static void TestFlashRead(u16 sectorNum, u32 offset, u8 *dest, u32 size)
@@ -283,14 +300,19 @@ TEST("Johto save extension has a bounded append-only layout")
 TEST("Johto save preserves old zero tails in both rotating slots")
 {
     u16 slot;
+    /* Too large for the test stack; owned by this test only. */
+    u8 (*tails)[WORLD_EVENT_SAVE_SERIALIZED_TAIL_SIZE] =
+        Alloc(NUM_SAVE_SLOTS * sizeof(*tails));
 
+    EXPECT(tails != NULL);
     for (slot = 0; slot < NUM_SAVE_SLOTS; slot++)
     {
-        memset(sFlashSaveBlock1Tail[slot], 0, WORLD_EVENT_SAVE_SERIALIZED_TAIL_SIZE);
-        memset(sFlashSaveBlock1Tail[slot], 0xA5, JOHTO_SAVE_LEGACY_TAIL_SIZE);
-        EXPECT_EQ(ChecksumWords(sFlashSaveBlock1Tail[slot], JOHTO_SAVE_LEGACY_TAIL_SIZE),
-                  ChecksumWords(sFlashSaveBlock1Tail[slot], WORLD_EVENT_SAVE_SERIALIZED_TAIL_SIZE));
+        memset(tails[slot], 0, WORLD_EVENT_SAVE_SERIALIZED_TAIL_SIZE);
+        memset(tails[slot], 0xA5, JOHTO_SAVE_LEGACY_TAIL_SIZE);
+        EXPECT_EQ(ChecksumWords(tails[slot], JOHTO_SAVE_LEGACY_TAIL_SIZE),
+                  ChecksumWords(tails[slot], WORLD_EVENT_SAVE_SERIALIZED_TAIL_SIZE));
     }
+    Free(tails);
 }
 
 TEST("Johto zero tail initializes without changing the old SaveBlock1 prefix")
@@ -437,6 +459,7 @@ TEST("Johto legacy saves load from either rotated slot without losing tail bytes
     CoopNetBridge_Init();
     gFlashMemoryPresent = TRUE;
     Save_TestSetFlashReadCallback(TestFlashRead);
+    TestFlashBegin();
     for (slot = 0; slot < NUM_SAVE_SLOTS; slot++)
     {
         u16 index;
@@ -467,6 +490,7 @@ TEST("Johto legacy saves load from either rotated slot without losing tail bytes
         EXPECT_EQ(JohtoSave_GetVariable(0), 0);
     }
     Save_TestSetFlashReadCallback(NULL);
+    TestFlashEnd();
     gFlashMemoryPresent = flashMemoryPresent;
     Save_ResetSaveCounters();
 }
@@ -482,7 +506,7 @@ TEST("Incremental link save rejects corrupt world state before any flash write")
 
     SetSaveBlocksPointers(0);
     CoopNetBridge_Init();
-    TestFlashReset();
+    TestFlashBegin();
     Save_ResetSaveCounters();
     WorldEventSave_InitializeCurrent();
     gSaveblock1.world_event.flag_bits[0] ^= 1;
@@ -541,6 +565,7 @@ TEST("Incremental link save rejects corrupt world state before any flash write")
     ProgramFlashSector = programFlashSector;
     ProgramFlashByte = programFlashByte;
     EraseFlashSector = eraseFlashSector;
+    TestFlashEnd();
     gFlashMemoryPresent = flashMemoryPresent;
 }
 
@@ -553,7 +578,7 @@ TEST("Johto extension persists through production full partial saves and heap mo
 
     SetSaveBlocksPointers(0);
     CoopNetBridge_Init();
-    TestFlashReset();
+    TestFlashBegin();
     Save_ResetSaveCounters();
     memset(&gSaveblock1, 0, sizeof(gSaveblock1));
     memset(&gSaveblock2, 0, sizeof(gSaveblock2));
@@ -648,8 +673,9 @@ TEST("Johto extension persists through production full partial saves and heap mo
     EXPECT_EQ(gSaveblock1.world_event.crc32, sWorldEventSnapshotCrc);
     EXPECT_EQ(JohtoSave_GetVariable(1), 0xFACE);
 
-    Free(sPartialWriteBuffer);
-    sPartialWriteBuffer = NULL;
+    /* No flash I/O follows, and the heap reset below would orphan the
+     * fixture buffers, so release them first. */
+    TestFlashEnd();
 
     /* The production operation destroys the heap, including the test harness
      * allocations. Keep its state off-heap during the call and rebuild those

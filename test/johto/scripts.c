@@ -53,6 +53,7 @@ static void ResetMovementFixture(void)
     memset(gSprites, 0, sizeof(gSprites));
     gSaveBlock1Ptr->location.mapGroup = 1;
     gSaveBlock1Ptr->location.mapNum = 1;
+    FlagClear(FLAG_SAFE_FOLLOWER_MOVEMENT);
 
     gObjectEvents[1].active = TRUE;
     gObjectEvents[1].isPlayer = TRUE;

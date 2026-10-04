@@ -9,7 +9,9 @@
 #include "battle_controllers.h"
 #include "battle_message.h"
 #include "battle_interface.h"
+#include "battle_main.h"
 #include "battle_setup.h"
+#include "coop/battle_runtime.h"
 #include "battle_special.h"
 #include "battle_tv.h"
 #include "battle_z_move.h"
@@ -424,14 +426,104 @@ static void OpponentHandleTrainerSlideBack(enum BattlerId battler)
     BtlController_HandleTrainerSlideBack(battler, 35, FALSE);
 }
 
+/* Friendly battles: the opponent side is the partner. Its choices come from
+ * the exchanged actions (battler IDs are canonical, so targets are too). A
+ * handler waits by returning without completing. Once the engine has left
+ * action selection (a forfeit ended the battle), a pending choice is
+ * simply dropped. */
+static void CoopFriendlyChooseAction(enum BattlerId battler)
+{
+    struct CoopBattleAction action;
+    u8 chosen;
+
+    if (!IsBattleInActionSelection())
+    {
+        BtlController_Complete(battler);
+        return;
+    }
+    if (!CoopFriendly_GetPeerAction(battler, &action))
+        return;
+    switch (action.kind)
+    {
+    case COOP_BATTLE_ACTION_MOVE:
+        chosen = B_ACTION_USE_MOVE;
+        break;
+    case COOP_BATTLE_ACTION_SWITCH:
+        chosen = B_ACTION_SWITCH;
+        break;
+    case COOP_BATTLE_ACTION_FORFEIT:
+        /* Resolved by the engine before this turn runs. */
+        return;
+    default:
+        CoopBattleRuntime_FailEngine();
+        return;
+    }
+    BtlController_EmitTwoReturnValues(battler, B_COMM_TO_ENGINE, chosen, 0);
+    BtlController_Complete(battler);
+}
+
+static void CoopFriendlyChooseMove(enum BattlerId battler)
+{
+    struct CoopBattleAction action;
+
+    if (!IsBattleInActionSelection())
+    {
+        BtlController_Complete(battler);
+        return;
+    }
+    if (!CoopFriendly_GetPeerAction(battler, &action))
+        return;
+    if (action.kind == COOP_BATTLE_ACTION_FORFEIT)
+        return;
+    if (action.kind != COOP_BATTLE_ACTION_MOVE || action.target >= gBattlersCount)
+    {
+        CoopBattleRuntime_FailEngine();
+        return;
+    }
+    BtlController_EmitTwoReturnValues(battler, B_COMM_TO_ENGINE, B_ACTION_EXEC_SCRIPT,
+                                      action.index | (action.target << 8));
+    BtlController_Complete(battler);
+}
+
+static void CoopFriendlyChoosePokemon(enum BattlerId battler)
+{
+    u8 partyIndex;
+
+    if (IsBattleInActionSelection())
+    {
+        /* The switch the partner picked as its turn action. */
+        if (!CoopFriendly_GetPeerSwitch(battler, &partyIndex))
+            return;
+        BtlController_EmitChosenMonReturnValue(battler, B_COMM_TO_ENGINE, partyIndex, NULL);
+        BtlController_Complete(battler);
+        return;
+    }
+    if (!CoopFriendly_ResolveChoosePokemon(battler, PARTY_SIZE, &partyIndex))
+        return;
+    gSelectedMonPartyId = partyIndex;
+    BtlController_EmitChosenMonReturnValue(battler, B_COMM_TO_ENGINE, partyIndex, NULL);
+    BtlController_Complete(battler);
+    CoopFriendly_FinishChoosePokemon();
+}
+
 static void OpponentHandleChooseAction(enum BattlerId battler)
 {
+    if (CoopBattleRuntime_IsFriendlyEngine())
+    {
+        CoopFriendlyChooseAction(battler);
+        return;
+    }
     AI_TrySwitchOrUseItem(battler);
     BtlController_Complete(battler);
 }
 
 static void OpponentHandleChooseMove(enum BattlerId battler)
 {
+    if (CoopBattleRuntime_IsFriendlyEngine())
+    {
+        CoopFriendlyChooseMove(battler);
+        return;
+    }
     u32 chosenMoveIndex;
     struct ChooseMoveStruct *moveInfo = (struct ChooseMoveStruct *)(&gBattleResources->bufferA[battler][4]);
 
@@ -549,6 +641,12 @@ static void OpponentHandleChoosePokemon(enum BattlerId battler)
 {
     s32 chosenMonId;
     enum SwitchType switchType = SWITCH_AFTER_KO;
+
+    if (CoopBattleRuntime_IsFriendlyEngine())
+    {
+        CoopFriendlyChoosePokemon(battler);
+        return;
+    }
 
     // Choosing Revival Blessing target
     if (gBattleResources->bufferA[battler][1] == PARTY_ACTION_CHOOSE_FAINTED_MON)

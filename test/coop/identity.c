@@ -22,7 +22,10 @@ TEST("Cloud Coop trainer registry resolves every Hoenn opponent without raw flag
     u16 i;
 
     EXPECT_EQ(HOENN_TRAINER_IDENTITY_COUNT, 854);
-    EXPECT_EQ(COOP_TRAINER_IDENTITY_COUNT, 856);
+    /* Cormoria trainers are appended after the Hoenn, Kanto and Johto
+     * ordinals, so every earlier ordinal keeps its value. */
+    EXPECT_EQ(COOP_TRAINER_CORMORIA_TRAINER_CERAMBASECAMPGYM_A_ORDINAL, 856);
+    EXPECT_EQ(COOP_TRAINER_IDENTITY_COUNT, 1050);
     for (i = 0; i < HOENN_TRAINER_IDENTITY_COUNT; i++)
     {
         const struct CoopIdentityRegistryEntry *entry = &gCoopTrainerIdentityRegistry[i];
@@ -42,6 +45,59 @@ TEST("Cloud Coop trainer registry resolves every Hoenn opponent without raw flag
     EXPECT(!CoopIdentity_ResolveTrainerOrdinal(COOP_REGION_UNSPECIFIED,
                                                TRAINER_WALLY_VR_1,
                                                NULL));
+}
+
+TEST("Cloud Coop trainer legacy lookup round-trips the forward registry lookup")
+{
+    static const u16 sampled[] = {
+        TRAINER_WALLY_VR_1, TRAINER_ROXANNE_1, TRAINER_CALVIN_1,
+        TRAINER_BRAWLY_1, 1,
+    };
+    u16 legacy = 0;
+    u16 ordinal = COOP_IDENTITY_ORDINAL_NONE;
+    u16 i;
+
+    for (i = 0; i < ARRAY_COUNT(sampled); i++)
+    {
+        EXPECT(CoopIdentity_ResolveTrainerOrdinal(COOP_REGION_HOENN, sampled[i], &ordinal));
+        EXPECT(CoopIdentity_ResolveTrainerLegacyId(COOP_REGION_HOENN, ordinal, &legacy));
+        EXPECT_EQ(legacy, sampled[i]);
+    }
+    EXPECT(CoopIdentity_ResolveTrainerOrdinal(COOP_REGION_KANTO, TRAINER_LEADER_BROCK, &ordinal));
+    EXPECT(CoopIdentity_ResolveTrainerLegacyId(COOP_REGION_KANTO, ordinal, &legacy));
+    EXPECT_EQ(legacy, TRAINER_LEADER_BROCK);
+
+    /* Every registry entry with a legacy ID maps back to itself. */
+    for (i = 0; i < COOP_TRAINER_IDENTITY_COUNT; i++)
+    {
+        const struct CoopIdentityRegistryEntry *entry = &gCoopTrainerIdentityRegistry[i];
+
+        if (entry->legacy_value == COOP_IDENTITY_LEGACY_NONE)
+        {
+            EXPECT(!CoopIdentity_ResolveTrainerLegacyId(entry->region, entry->ordinal, NULL));
+            continue;
+        }
+        EXPECT(CoopIdentity_ResolveTrainerLegacyId(entry->region, entry->ordinal, &legacy));
+        EXPECT_EQ(legacy, entry->legacy_value);
+        EXPECT(CoopIdentity_ResolveTrainerOrdinal(entry->region, legacy, &ordinal));
+        EXPECT_EQ(ordinal, entry->ordinal);
+    }
+
+    legacy = 0x1234;
+    EXPECT(!CoopIdentity_ResolveTrainerLegacyId(COOP_REGION_HOENN,
+                                                COOP_TRAINER_KANTO_TRAINER_BROCK_ORDINAL,
+                                                &legacy));
+    EXPECT(!CoopIdentity_ResolveTrainerLegacyId(COOP_REGION_KANTO,
+                                                COOP_TRAINER_HOENN_TRAINER_WALLY_1_ORDINAL,
+                                                &legacy));
+    EXPECT(!CoopIdentity_ResolveTrainerLegacyId(COOP_REGION_SEVII, 0, &legacy));
+    EXPECT(!CoopIdentity_ResolveTrainerLegacyId(COOP_REGION_UNSPECIFIED, 0, &legacy));
+    EXPECT(!CoopIdentity_ResolveTrainerLegacyId(COOP_REGION_COUNT, 0, &legacy));
+    EXPECT(!CoopIdentity_ResolveTrainerLegacyId(COOP_REGION_HOENN,
+                                                COOP_TRAINER_IDENTITY_COUNT, &legacy));
+    EXPECT(!CoopIdentity_ResolveTrainerLegacyId(COOP_REGION_HOENN,
+                                                COOP_IDENTITY_ORDINAL_NONE, &legacy));
+    EXPECT_EQ(legacy, 0x1234);
 }
 
 TEST("Cloud Coop Wally and Brock identities remain isolated by active region")

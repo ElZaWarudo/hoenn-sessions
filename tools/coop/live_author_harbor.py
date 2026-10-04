@@ -48,6 +48,57 @@ def load_templates() -> dict:
     return templates
 
 
+# naming_screen.c animates two sprites on the blank name field, on independent
+# timers: SpriteCB_InputArrow shifts the input arrow by x2 = 0/-4/-2/-1 (eight
+# frames each) and SpriteCB_Underscore bobs only the active (first) slot's
+# underscore by y2 = 2/3/2/1 (nine frames each). Any of the 4 x 3 pairs can be
+# on screen. The pinned name-field template was captured at x2=-2, y2=2; its
+# arrow occupies ROI box (1,18)-(8,26) and the first underscore (11,30)-(17,32).
+# Every phase is rebuilt from those exact template pixels over the template's
+# own blank background, so the field still has to match one phase pixel-exactly.
+NAME_ARROW_X2 = (0, -4, -2, -1)
+NAME_UNDERSCORE_Y2 = (1, 2, 3)
+NAME_TEMPLATE_ARROW = (-2, (1, 18, 8, 26))
+NAME_TEMPLATE_UNDERSCORE = (2, (11, 30, 17, 32))
+NAME_FIELD_BLANK = (255, 255, 255)
+
+
+def colors(image: Image.Image) -> set:
+    return {color for _, color in image.getcolors(image.width * image.height)}
+
+
+def name_field_variants(expected: Image.Image) -> dict:
+    arrow_x2, arrow_box = NAME_TEMPLATE_ARROW
+    under_y2, under_box = NAME_TEMPLATE_UNDERSCORE
+    arrow, underscore = expected.crop(arrow_box), expected.crop(under_box)
+    background = expected.copy()
+    background.paste(NAME_FIELD_BLANK, arrow_box)
+    background.paste(NAME_FIELD_BLANK, under_box)
+    # Both full animation envelopes must be blank once the template's own
+    # sprites are lifted, and the lifted sprites must be non-blank.
+    arrow_envelope = (arrow_box[0] + min(NAME_ARROW_X2) - arrow_x2, arrow_box[1],
+                      arrow_box[2] + max(NAME_ARROW_X2) - arrow_x2, arrow_box[3])
+    under_envelope = (under_box[0], under_box[1] + min(NAME_UNDERSCORE_Y2) - under_y2,
+                      under_box[2], under_box[3] + max(NAME_UNDERSCORE_Y2) - under_y2)
+    for box in (arrow_envelope, under_envelope):
+        clipped = (max(box[0], 0), box[1], box[2], box[3])
+        if colors(background.crop(clipped)) != {NAME_FIELD_BLANK}:
+            raise OracleFailure("fresh harbor name-field template has content in the animation envelope")
+    if NAME_FIELD_BLANK not in colors(arrow) or len(colors(arrow)) < 2 \
+            or len(colors(underscore) - {NAME_FIELD_BLANK}) < 2:
+        raise OracleFailure("fresh harbor name-field template lacks the animated sprites")
+    variants = {}
+    for x2 in NAME_ARROW_X2:
+        for y2 in NAME_UNDERSCORE_Y2:
+            variant = background.copy()
+            variant.paste(arrow, (arrow_box[0] + x2 - arrow_x2, arrow_box[1]))
+            variant.paste(underscore, (under_box[0], under_box[1] + y2 - under_y2))
+            variants[(x2, y2)] = variant
+    if variants[(arrow_x2, under_y2)].tobytes() != expected.tobytes():
+        raise OracleFailure("fresh harbor name-field template does not decompose into phases")
+    return variants
+
+
 def matches_intro(path: Path, templates: dict, names) -> bool:
     with Image.open(path) as image:
         rgb = image.convert("RGB")
@@ -57,11 +108,13 @@ def matches_intro(path: Path, templates: dict, names) -> bool:
             actual = rgb.crop(TEMPLATES[name][0])
             expected = templates[name]
             if name == "name-field":
-                # naming_screen.c SpriteCB_InputArrow moves the eight-pixel
-                # arrow at y56 left by 0/-4/-2/-1. This ROI begins at x87;
-                # mask only its intersecting footprint, before input starts x96.
-                actual.paste(expected.crop((0, 18, 8, 26)), (0, 18))
-            elif name == "name-keyboard":
+                # Exact match against one reviewed animation phase; nothing
+                # in the field is masked.
+                if not any(actual.tobytes() == variant.tobytes()
+                           for variant in name_field_variants(expected).values()):
+                    return False
+                continue
+            if name == "name-keyboard":
                 # SpriteCB_Cursor pulses one palette color, not its geometry.
                 # CreateCursorSprite/SetCursorPos put default A at (38,88).
                 # Keep all 80 outline pixels at that position, one common tint,

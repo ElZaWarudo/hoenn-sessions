@@ -9,6 +9,10 @@
 #define COOP_ARRIVAL_PROOF_PAYLOAD_SIZE 64
 #define COOP_ARRIVAL_FLASH_SECTOR_SIZE 0x1000
 #define COOP_ARRIVAL_FLASH_SECTOR_COUNT 32
+/* Each Poll still hashes exactly one whole sector, but reads it through a
+ * small chunk buffer so the verifier does not pin 4 KiB of EWRAM for the
+ * lifetime of the ROM. The SHA-256 input stream is byte-identical. */
+#define COOP_ARRIVAL_FLASH_READ_CHUNK_SIZE 0x100
 
 /* The challenge is a verifier-only epoch-0 message. It never starts a
  * cloud session or changes the normal save/online state machine. */

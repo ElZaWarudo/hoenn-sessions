@@ -53,6 +53,19 @@ fn handoff_fixture() -> (
     ClientInstanceId,
     SnapshotId,
 ) {
+    let (app, actor, lease, client, snapshot_id, _) = handoff_fixture_with_clock();
+    (app, actor, lease, client, snapshot_id)
+}
+
+fn handoff_fixture_with_clock() -> (
+    Phase2App,
+    AuthenticatedActor,
+    coop_cloud::LeaseContract,
+    ClientInstanceId,
+    SnapshotId,
+    Arc<FixedClock>,
+) {
+    let clock = Arc::new(FixedClock::new(1_700_000_000_000));
     let mut bytes = valid_character_sav(false);
     for slot in 0..2 {
         for physical in 0..coop_save::SECTORS_PER_SLOT {
@@ -103,7 +116,7 @@ fn handoff_fixture() -> (
     )
     .unwrap()
     .with_test_adapters(
-        Arc::new(FixedClock::new(1_700_000_000_000)),
+        clock.clone(),
         Arc::new(FixedEntropy::new((0_u8..=255).collect())),
     )
     .with_password_engine(Arc::new(ArgonPasswordEngine::new(8_192, 1, 1).unwrap()));
@@ -169,7 +182,7 @@ fn handoff_fixture() -> (
         )
         .unwrap();
     assert_eq!(record.revision, Revision::new(1));
-    (app, actor, lease, client, record.snapshot_id)
+    (app, actor, lease, client, record.snapshot_id, clock)
 }
 
 fn acquire_bound_world(

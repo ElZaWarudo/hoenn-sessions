@@ -3,11 +3,11 @@
 use std::{
     collections::HashMap,
     fmt,
-    io::Read,
     net::SocketAddr,
     path::PathBuf,
     sync::atomic::{AtomicUsize, Ordering},
     sync::{Arc, OnceLock},
+    time::Duration,
 };
 
 use axum::{
@@ -84,10 +84,14 @@ where
 use thiserror::Error;
 
 pub mod auth;
+mod battles;
 mod firebase;
 mod group_handoff;
 pub(crate) mod group_travel;
+pub(crate) mod ledger;
 mod online;
+mod pairing;
+mod partner;
 mod persistent;
 mod portal;
 pub mod presence;
@@ -97,6 +101,8 @@ pub mod releases;
 pub mod saves;
 pub mod sessions;
 pub mod storage;
+mod trades;
+mod trainer_rules;
 
 pub use presence::{
     PRESENCE_HANDLE_CANDIDATES, PRESENCE_MAP, PRESENCE_MAP_GROUP, PRESENCE_MAP_NUMBER,
@@ -143,6 +149,10 @@ pub enum Phase2Error {
     PayloadTooLarge,
     #[error("service is busy")]
     Busy,
+    /// A trade was refused because an offered Pokémon holds mail. Mail lives
+    /// in the sender's save, so the ROM cannot apply such a record.
+    #[error("an offered Pokémon holds mail")]
+    TradePokemonHoldsMail,
     #[error("internal service error")]
     Internal,
 }
@@ -166,7 +176,7 @@ impl IntoResponse for Phase2Error {
             Self::Authentication | Self::Expired => StatusCode::UNAUTHORIZED,
             Self::AcquireClosed => StatusCode::GONE,
             Self::NotFound => StatusCode::NOT_FOUND,
-            Self::Conflict => StatusCode::CONFLICT,
+            Self::Conflict | Self::TradePokemonHoldsMail => StatusCode::CONFLICT,
             Self::Forbidden => StatusCode::FORBIDDEN,
             Self::Internal => StatusCode::INTERNAL_SERVER_ERROR,
         };
@@ -192,6 +202,7 @@ impl Phase2Error {
             Self::AcquireClosed => "acquire_closed",
             Self::PayloadTooLarge => "payload_too_large",
             Self::Busy => "service_busy",
+            Self::TradePokemonHoldsMail => "trade_pokemon_holds_mail",
             Self::Internal => "internal_error",
         }
     }
@@ -396,14 +407,63 @@ impl Phase2App {
             .merge(
                 Router::new()
                     .route("/v1/groups/invitations", post(create_group_invitation))
+                    .route("/v1/groups/pairing-codes", post(create_pairing_code))
+                    .route("/v1/groups/pairing-codes/redeem", post(redeem_pairing_code))
                     .route("/v1/online/snapshot", post(online_snapshot))
                     .route("/v1/online/actions", post(online_action))
+                    .route("/v1/group/partner", get(get_partner_status))
+                    .route("/v1/group/progress", get(get_progress_feed))
+                    .route("/v1/groups/{group_id}/battles", post(reserve_battle))
+                    .route("/v1/groups/{group_id}/battles/current", get(current_battle))
+                    .route(
+                        "/v1/groups/{group_id}/battles/{battle_id}/accept",
+                        post(accept_battle),
+                    )
+                    .route(
+                        "/v1/groups/{group_id}/battles/{battle_id}/decline",
+                        post(decline_battle),
+                    )
+                    .route(
+                        "/v1/groups/{group_id}/battles/{battle_id}/cancel",
+                        post(cancel_battle),
+                    )
+                    .route(
+                        "/v1/groups/{group_id}/battles/{battle_id}/snapshot-commitments",
+                        post(commit_battle_snapshot),
+                    )
+                    .route(
+                        "/v1/groups/{group_id}/battles/{battle_id}/ready",
+                        post(ready_battle),
+                    )
+                    .route(
+                        "/v1/groups/{group_id}/battles/{battle_id}/consensus",
+                        get(inspect_battle_consensus),
+                    )
+                    .route(
+                        "/v1/groups/{group_id}/battles/{battle_id}/peer-party",
+                        get(get_battle_peer_party),
+                    )
+                    .route(
+                        "/v1/groups/{group_id}/battles/{battle_id}/actions",
+                        post(submit_battle_action),
+                    )
+                    .route(
+                        "/v1/groups/{group_id}/battles/{battle_id}/state-hashes",
+                        post(acknowledge_battle_hash),
+                    )
+                    .route(
+                        "/v1/groups/{group_id}/battles/{battle_id}/finish",
+                        post(finish_battle),
+                    )
+                    .route(
+                        "/v1/groups/{group_id}/battles/{battle_id}/commit-grant",
+                        get(get_battle_commit_grant),
+                    )
                     .route(
                         "/v1/groups/invitations/{invitation_id}/accept",
                         post(accept_group_invitation),
                     )
                     .route("/v1/groups/{group_id}", get(inspect_group))
-                    .route("/v1/groups/{group_id}/travel", post(travel_group))
                     .route(
                         "/v1/groups/{group_id}/rom-handoff/join",
                         post(join_group_rom_handoff),
@@ -429,12 +489,48 @@ impl Phase2App {
                         get(current_group_travel_proposal),
                     )
                     .route(
+                        "/v1/characters/{character_id}/story-travel-recovery",
+                        get(discover_story_travel_recovery),
+                    )
+                    .route(
+                        "/v1/characters/{character_id}/ledger/open",
+                        get(get_open_ledger_entry),
+                    )
+                    .route(
+                        "/v1/characters/{character_id}/story-travel-recovery/{proposal_id}/actions",
+                        post(resolve_story_travel_recovery),
+                    )
+                    .route(
                         "/v1/groups/{group_id}/travel-proposals/{proposal_id}",
                         get(get_group_travel_proposal),
                     )
                     .route(
                         "/v1/groups/{group_id}/travel-proposals/{proposal_id}/actions",
                         post(act_on_group_travel_proposal),
+                    )
+                    .route(
+                        "/v1/groups/{group_id}/trade-offers",
+                        post(create_trade_offer),
+                    )
+                    .route(
+                        "/v1/groups/{group_id}/trade-offers/current",
+                        get(current_trade_offer),
+                    )
+                    .route(
+                        "/v1/groups/{group_id}/trade-offers/{offer_id}",
+                        get(get_trade_offer),
+                    )
+                    .route(
+                        "/v1/groups/{group_id}/trade-offers/{offer_id}/decision",
+                        post(decide_trade_offer),
+                    )
+                    .route(
+                        "/v1/groups/{group_id}/travel-proposals/{proposal_id}/scene-markers",
+                        post(mark_group_travel_scene),
+                    )
+                    .route(
+                        "/v1/groups/{group_id}/travel-proposals/{proposal_id}/scene-receipts",
+                        post(receipt_group_travel_scene),
                     )
                     .layer(axum::extract::DefaultBodyLimit::max(
                         coop_cloud::GROUP_REQUEST_BODY_MAX_BYTES,
@@ -803,6 +899,30 @@ impl Phase2App {
         group_travel::create_invitation(&self.store, actor, &request)
     }
 
+    /// Creates a short-lived, single-use pairing code bound to the caller's
+    /// active lease. The code contains no host or location information.
+    pub fn create_pairing_code(
+        &self,
+        actor: AuthenticatedActor,
+        request: coop_cloud::CreatePairingCodeRequest,
+    ) -> Result<coop_cloud::CreatePairingCodeResponse, Phase2Error> {
+        let _gate = self.store.lock_runtime_transition_gate();
+        pairing::create_code(&self.store, actor, &request)
+    }
+
+    /// Redeems a pairing code and forms an active group even when the members
+    /// are on different maps. Each member remains at their current location.
+    pub fn redeem_pairing_code(
+        &self,
+        actor: AuthenticatedActor,
+        request: coop_cloud::RedeemPairingCodeRequest,
+    ) -> Result<coop_cloud::RedeemPairingCodeResponse, Phase2Error> {
+        let _gate = self.store.lock_runtime_transition_gate();
+        let response = pairing::redeem_code(&self.store, actor, &request)?;
+        self.queue_group_started(&response.group);
+        Ok(response)
+    }
+
     /// Consumes an invitation and creates a symmetric group atomically.
     ///
     /// # Errors
@@ -815,7 +935,37 @@ impl Phase2App {
         request: coop_cloud::AcceptGroupInvitationRequest,
     ) -> Result<coop_cloud::AcceptGroupInvitationResponse, Phase2Error> {
         let _gate = self.store.lock_runtime_transition_gate();
-        group_travel::accept_invitation(&self.store, actor, invitation_id, &request)
+        let response =
+            group_travel::accept_invitation(&self.store, actor, invitation_id, &request)?;
+        self.queue_group_started(&response.group);
+        Ok(response)
+    }
+
+    /// Publish only to live sockets for the two leases that own this committed
+    /// group. The watcher remains the replay path when no socket is connected.
+    fn queue_group_started(&self, view: &coop_cloud::GroupView) {
+        let now = self.store.now();
+        let sessions = self.store.read_transaction(|state| {
+            Ok::<_, Phase2Error>(
+                view.members
+                    .iter()
+                    .map(|member| member.character_id)
+                    .filter_map(|member| {
+                        if state.active_group_by_member.get(&member) != Some(&view.group_id) {
+                            return None;
+                        }
+                        let lease = state.leases.get(&member)?;
+                        (!lease.released && lease.contract.expires_at.value() > now)
+                            .then(|| lease.contract.stable_runtime_session())
+                    })
+                    .collect::<Vec<_>>(),
+            )
+        });
+        if let Ok(sessions) = sessions {
+            for session in sessions {
+                self.realtime.queue_group_started(session, view.group_id);
+            }
+        }
     }
 
     /// Returns an active group owned by the caller and fenced to its lease.
@@ -830,25 +980,6 @@ impl Phase2App {
         fence: coop_cloud::LeaseFence,
     ) -> Result<coop_cloud::GroupView, Phase2Error> {
         group_travel::inspect_group(&self.store, actor, group_id, fence)
-    }
-
-    /// Moves both members through one server-owned route atomically.
-    ///
-    /// # Errors
-    ///
-    /// Returns an authentication, policy, conflict, capacity, or storage error.
-    #[allow(
-        clippy::needless_pass_by_value,
-        reason = "public operation consumes the request at the service boundary"
-    )]
-    pub fn travel_group(
-        &self,
-        actor: AuthenticatedActor,
-        group_id: coop_cloud::GroupId,
-        request: coop_cloud::GroupTravelRequest,
-    ) -> Result<coop_cloud::GroupTravelResponse, Phase2Error> {
-        let _gate = self.store.lock_runtime_transition_gate();
-        group_travel::travel(&self.store, actor, group_id, &request)
     }
 
     /// Creates a pending two-member travel proposal from the current group state.
@@ -917,6 +1048,304 @@ impl Phase2App {
     ) -> Result<coop_cloud::GroupTravelProposalView, Phase2Error> {
         let _gate = self.store.lock_runtime_transition_gate();
         group_travel::act_on_travel_proposal(&self.store, actor, group_id, proposal_id, &request)
+    }
+
+    /// Discovers the caller's own unresolved first-Briney scene marker.
+    ///
+    /// # Errors
+    ///
+    /// Returns an authentication, fence, hidden-not-found, ambiguity, or storage error.
+    pub fn discover_story_travel_recovery(
+        &self,
+        actor: AuthenticatedActor,
+        fence: coop_cloud::LeaseFence,
+    ) -> Result<coop_cloud::StoryTravelRecoveryView, Phase2Error> {
+        group_travel::discover_story_travel_recovery(&self.store, actor, fence)
+    }
+
+    pub fn resolve_story_travel_recovery(
+        &self,
+        actor: AuthenticatedActor,
+        proposal_id: coop_cloud::GroupTravelProposalId,
+        fence: coop_cloud::LeaseFence,
+        request: coop_cloud::StoryTravelRecoveryActionRequest,
+    ) -> Result<coop_cloud::StoryTravelRecoveryResolutionView, Phase2Error> {
+        let _gate = self.store.lock_runtime_transition_gate();
+        group_travel::resolve_story_travel_recovery(
+            &self.store,
+            actor,
+            proposal_id,
+            fence,
+            &request,
+        )
+    }
+
+    pub fn mark_group_travel_scene(
+        &self,
+        actor: AuthenticatedActor,
+        group_id: coop_cloud::GroupId,
+        proposal_id: coop_cloud::GroupTravelProposalId,
+        request: coop_cloud::group::GroupTravelSceneMarkerRequest,
+    ) -> Result<coop_cloud::GroupTravelProposalView, Phase2Error> {
+        let _gate = self.store.lock_runtime_transition_gate();
+        group_travel::mark_story_scene(&self.store, actor, group_id, proposal_id, &request)
+    }
+
+    pub fn receipt_group_travel_scene(
+        &self,
+        actor: AuthenticatedActor,
+        group_id: coop_cloud::GroupId,
+        proposal_id: coop_cloud::GroupTravelProposalId,
+        request: coop_cloud::group::GroupTravelSceneReceiptRequest,
+    ) -> Result<coop_cloud::GroupTravelProposalView, Phase2Error> {
+        let _gate = self.store.lock_runtime_transition_gate();
+        group_travel::receipt_story_scene(&self.store, actor, group_id, proposal_id, &request)
+    }
+
+    /// Reserves both current group members for a future battle. This only
+    /// creates a bounded, expiring consent record; it does not start a battle
+    /// or mutate character state.
+    pub fn reserve_battle(
+        &self,
+        actor: AuthenticatedActor,
+        group_id: coop_cloud::GroupId,
+        fence: coop_cloud::LeaseFence,
+        request: battles::BattleReservationRequest,
+    ) -> Result<battles::BattleReservationView, Phase2Error> {
+        let _gate = self.store.lock_runtime_transition_gate();
+        battles::reserve(&self.store, actor, group_id, fence, &request)
+    }
+
+    /// Returns the caller's live group battle reservation without changing its deadline.
+    pub fn current_battle(
+        &self,
+        actor: AuthenticatedActor,
+        group_id: coop_cloud::GroupId,
+        fence: coop_cloud::LeaseFence,
+    ) -> Result<battles::BattleReservationView, Phase2Error> {
+        let _gate = self.store.lock_runtime_transition_gate();
+        battles::current(&self.store, actor, group_id, fence)
+    }
+
+    pub fn accept_battle(
+        &self,
+        actor: AuthenticatedActor,
+        group_id: coop_cloud::GroupId,
+        battle_id: uuid::Uuid,
+        fence: coop_cloud::LeaseFence,
+        request: battles::BattleReservationActionRequest,
+    ) -> Result<battles::BattleReservationView, Phase2Error> {
+        let _gate = self.store.lock_runtime_transition_gate();
+        battles::accept(&self.store, actor, group_id, battle_id, fence, &request)
+    }
+
+    pub fn decline_battle(
+        &self,
+        actor: AuthenticatedActor,
+        group_id: coop_cloud::GroupId,
+        battle_id: uuid::Uuid,
+        fence: coop_cloud::LeaseFence,
+        request: battles::BattleReservationActionRequest,
+    ) -> Result<battles::BattleReservationView, Phase2Error> {
+        let _gate = self.store.lock_runtime_transition_gate();
+        battles::decline(&self.store, actor, group_id, battle_id, fence, &request)
+    }
+
+    pub fn cancel_battle(
+        &self,
+        actor: AuthenticatedActor,
+        group_id: coop_cloud::GroupId,
+        battle_id: uuid::Uuid,
+        fence: coop_cloud::LeaseFence,
+        request: battles::BattleReservationActionRequest,
+    ) -> Result<battles::BattleReservationView, Phase2Error> {
+        let _gate = self.store.lock_runtime_transition_gate();
+        battles::cancel(&self.store, actor, group_id, battle_id, fence, &request)
+    }
+
+    pub fn commit_battle_snapshot(
+        &self,
+        actor: AuthenticatedActor,
+        group_id: coop_cloud::GroupId,
+        battle_id: uuid::Uuid,
+        fence: coop_cloud::LeaseFence,
+        request: battles::BattleSnapshotCommitRequest,
+    ) -> Result<battles::BattleConsensusView, Phase2Error> {
+        let _gate = self.store.lock_runtime_transition_gate();
+        battles::commit_snapshot(&self.store, actor, group_id, battle_id, fence, &request)
+    }
+
+    pub fn ready_battle(
+        &self,
+        actor: AuthenticatedActor,
+        group_id: coop_cloud::GroupId,
+        battle_id: uuid::Uuid,
+        fence: coop_cloud::LeaseFence,
+        request: battles::BattleReadyRequest,
+    ) -> Result<battles::BattleConsensusView, Phase2Error> {
+        let _gate = self.store.lock_runtime_transition_gate();
+        battles::ready(&self.store, actor, group_id, battle_id, fence, &request)
+    }
+
+    pub fn inspect_battle_consensus(
+        &self,
+        actor: AuthenticatedActor,
+        group_id: coop_cloud::GroupId,
+        battle_id: uuid::Uuid,
+        fence: coop_cloud::LeaseFence,
+    ) -> Result<battles::BattleConsensusView, Phase2Error> {
+        let _gate = self.store.lock_runtime_transition_gate();
+        battles::inspect_consensus(&self.store, actor, group_id, battle_id, fence)
+    }
+
+    pub fn battle_peer_party(
+        &self,
+        actor: AuthenticatedActor,
+        group_id: coop_cloud::GroupId,
+        battle_id: uuid::Uuid,
+        fence: coop_cloud::LeaseFence,
+    ) -> Result<battles::BattlePeerPartyView, Phase2Error> {
+        let _gate = self.store.lock_runtime_transition_gate();
+        battles::peer_party(&self.store, actor, group_id, battle_id, fence)
+    }
+
+    pub fn submit_battle_action(
+        &self,
+        actor: AuthenticatedActor,
+        group_id: coop_cloud::GroupId,
+        battle_id: uuid::Uuid,
+        fence: coop_cloud::LeaseFence,
+        request: battles::BattleActionIntentRequest,
+    ) -> Result<battles::BattleConsensusView, Phase2Error> {
+        let _gate = self.store.lock_runtime_transition_gate();
+        battles::submit_action(&self.store, actor, group_id, battle_id, fence, &request)
+    }
+
+    pub fn acknowledge_battle_hash(
+        &self,
+        actor: AuthenticatedActor,
+        group_id: coop_cloud::GroupId,
+        battle_id: uuid::Uuid,
+        fence: coop_cloud::LeaseFence,
+        request: battles::BattleStateHashRequest,
+    ) -> Result<battles::BattleConsensusView, Phase2Error> {
+        let _gate = self.store.lock_runtime_transition_gate();
+        battles::acknowledge_hash(&self.store, actor, group_id, battle_id, fence, &request)
+    }
+
+    /// Records a paired terminal battle attestation. This is a pre-ledger
+    /// receipt only: it cannot publish a snapshot or award trainer progress.
+    pub fn finish_battle(
+        &self,
+        actor: AuthenticatedActor,
+        group_id: coop_cloud::GroupId,
+        battle_id: uuid::Uuid,
+        fence: coop_cloud::LeaseFence,
+        request: battles::BattleFinishRequest,
+    ) -> Result<battles::BattleReservationView, Phase2Error> {
+        let _gate = self.store.lock_runtime_transition_gate();
+        battles::finish(&self.store, actor, group_id, battle_id, fence, &request)
+    }
+
+    /// Reads only the caller's server-issued trainer victory grant. It does
+    /// not apply progression or authorize an uploaded save by itself.
+    pub fn battle_commit_grant(
+        &self,
+        actor: AuthenticatedActor,
+        group_id: coop_cloud::GroupId,
+        battle_id: uuid::Uuid,
+        fence: coop_cloud::LeaseFence,
+    ) -> Result<battles::BattleCommitGrant, Phase2Error> {
+        let _gate = self.store.lock_runtime_transition_gate();
+        battles::retrieve_commit_grant(&self.store, actor, group_id, battle_id, fence)
+    }
+
+    /// Returns the caller's open outcome-ledger entry under its exact lease
+    /// fence and records it as delivered.
+    ///
+    /// # Errors
+    ///
+    /// Returns an authentication, not-found (no open entry), or storage error.
+    pub fn open_ledger_entry(
+        &self,
+        actor: AuthenticatedActor,
+        character_id: CharacterId,
+        fence: coop_cloud::LeaseFence,
+    ) -> Result<ledger::LedgerEntryView, Phase2Error> {
+        let _gate = self.store.lock_runtime_transition_gate();
+        ledger::open_for_character(&self.store, actor, character_id, fence)
+    }
+
+    /// Creates one pending two-party trade offer anchoring both snapshot
+    /// heads. This records consent only; staging stays gated.
+    ///
+    /// # Errors
+    ///
+    /// Returns an authentication, fence, conflict, capacity, or storage error.
+    #[allow(
+        clippy::needless_pass_by_value,
+        reason = "public operation consumes the request at the service boundary"
+    )]
+    pub fn create_trade_offer(
+        &self,
+        actor: AuthenticatedActor,
+        group_id: coop_cloud::GroupId,
+        request: coop_cloud::TradeOfferRequest,
+    ) -> Result<coop_cloud::TradeOfferView, Phase2Error> {
+        let _gate = self.store.lock_runtime_transition_gate();
+        trades::create_offer(&self.store, actor, group_id, &request)
+    }
+
+    /// Returns one trade offer visible to either participant.
+    ///
+    /// # Errors
+    ///
+    /// Returns a hidden-not-found, fence, or storage error.
+    pub fn get_trade_offer(
+        &self,
+        actor: AuthenticatedActor,
+        group_id: coop_cloud::GroupId,
+        offer_id: coop_cloud::TradeOfferId,
+        fence: coop_cloud::LeaseFence,
+    ) -> Result<coop_cloud::TradeOfferView, Phase2Error> {
+        let _gate = self.store.lock_runtime_transition_gate();
+        trades::get_offer(&self.store, actor, group_id, offer_id, fence)
+    }
+
+    /// Returns the group's pending open trade offer and the offered Pokémon.
+    ///
+    /// # Errors
+    ///
+    /// Returns a hidden-not-found (also when no open offer is pending),
+    /// fence, or storage error.
+    pub fn current_trade_offer(
+        &self,
+        actor: AuthenticatedActor,
+        group_id: coop_cloud::GroupId,
+        fence: coop_cloud::LeaseFence,
+    ) -> Result<coop_cloud::TradeOfferCurrentView, Phase2Error> {
+        let _gate = self.store.lock_runtime_transition_gate();
+        trades::current_offer(&self.store, actor, group_id, fence)
+    }
+
+    /// Records one trade consent decision under the runtime transition gate.
+    ///
+    /// # Errors
+    ///
+    /// Returns an authentication, role, stale-state, conflict, or storage error.
+    #[allow(
+        clippy::needless_pass_by_value,
+        reason = "public operation consumes the request at the service boundary"
+    )]
+    pub fn decide_trade_offer(
+        &self,
+        actor: AuthenticatedActor,
+        group_id: coop_cloud::GroupId,
+        offer_id: coop_cloud::TradeOfferId,
+        request: coop_cloud::TradeDecisionRequest,
+    ) -> Result<coop_cloud::TradeOfferView, Phase2Error> {
+        let _gate = self.store.lock_runtime_transition_gate();
+        trades::decide_offer(&self.store, actor, group_id, offer_id, &request)
     }
 }
 
@@ -1036,30 +1465,19 @@ fn phase2_app_from_env(
     let bootstrap = zeroize::Zeroizing::new(
         std::env::var("COOP_PHASE2_BOOTSTRAP_INVITATION").map_err(|_| Phase2Error::Internal)?,
     );
-    let catalog_path =
-        std::env::var("COOP_PHASE2_RELEASE_CATALOG_PATH").map_err(|_| Phase2Error::Internal)?;
-    let catalog_digest = coop_cloud::Sha256Digest::parse(
-        &std::env::var("COOP_PHASE2_RELEASE_CATALOG_SHA256").map_err(|_| Phase2Error::Internal)?,
-    )
-    .map_err(|_| Phase2Error::Internal)?;
-    const MAX_RELEASE_CATALOG_BYTES: u64 = 64 * 1024;
-    let mut catalog_bytes = Vec::new();
-    std::fs::File::open(&catalog_path)
-        .map_err(|_| Phase2Error::Internal)?
-        .take(MAX_RELEASE_CATALOG_BYTES + 1)
-        .read_to_end(&mut catalog_bytes)
-        .map_err(|_| Phase2Error::Internal)?;
-    if catalog_bytes.len() as u64 > MAX_RELEASE_CATALOG_BYTES {
-        return Err(Phase2Error::Internal);
-    }
+    // Same loader and validation as `postgres-firebase` production startup.
+    let catalog = production::release_catalog_from_env().map_err(|error| {
+        eprintln!("co-op phase2-local startup refused: {error}");
+        Phase2Error::Internal
+    })?;
     let app = phase2_app_from_values(
         pepper.as_str(),
         signing.as_str(),
         key_id.as_str(),
         bootstrap.as_str(),
         upload_base_url,
-        Some((&catalog_bytes, catalog_digest)),
-        std::path::Path::new(&catalog_path).parent(),
+        Some((&catalog.bytes, catalog.digest)),
+        Some(&catalog.root),
     )?;
     if let Some(root) = release_fixture_root {
         app.with_release_root(root)
@@ -1070,6 +1488,42 @@ fn phase2_app_from_env(
 
 fn loopback_upload_base(address: SocketAddr) -> String {
     format!("http://{address}")
+}
+
+pub(crate) fn spawn_group_expiry_watchdog(app: Phase2App) {
+    let mut shutdown = app.shutdown.subscribe();
+    tokio::spawn(async move {
+        loop {
+            tokio::select! {
+                () = tokio::time::sleep(Duration::from_secs(5)) => {
+                    {
+                        let _gate = app.store.lock_runtime_transition_gate();
+                        match sessions::expire_groups(&app.store) {
+                            Ok(events) => {
+                                for event in events {
+                                    if let Some(session) = event.partner_session {
+                                        app.realtime.queue_group_ended(session, event.group_id);
+                                    }
+                                }
+                            }
+                            Err(error) => eprintln!("group expiry sweep failed: {error}"),
+                        }
+                        if let Err(error) = battles::prune_expired(&app.store) {
+                            eprintln!("battle reservation expiry sweep failed: {error}");
+                        }
+                    }
+                    if let Err(error) = trades::recover_trade_stages(&app.store, app.store.now()) {
+                        eprintln!("trade staging recovery sweep failed: {error}");
+                    }
+                }
+                changed = shutdown.changed() => {
+                    if changed.is_err() || *shutdown.borrow() {
+                        break;
+                    }
+                }
+            }
+        }
+    });
 }
 
 /// Runs the explicitly selected in-memory Phase 2 service on a loopback
@@ -1104,6 +1558,7 @@ pub async fn serve_phase2_local_with_release_fixture_root(
         .map_err(|_| Phase2Error::Internal)?;
     let bound = listener.local_addr().map_err(|_| Phase2Error::Internal)?;
     let app = phase2_app_from_env(loopback_upload_base(bound), release_fixture_root.as_deref())?;
+    spawn_group_expiry_watchdog(app.clone());
     let shutdown = app.shutdown.clone();
     axum::serve(listener, app.router())
         .with_graceful_shutdown(production::shutdown(shutdown))
@@ -1499,6 +1954,20 @@ struct GroupTravelProposalPath {
     proposal_id: coop_cloud::GroupTravelProposalId,
 }
 
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct StoryTravelRecoveryPath {
+    character_id: coop_cloud::CharacterId,
+    proposal_id: coop_cloud::GroupTravelProposalId,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct BattlePath {
+    group_id: coop_cloud::GroupId,
+    battle_id: uuid::Uuid,
+}
+
 async fn group_no_store(request: Request, next: Next) -> Response {
     let mut response = next.run(request).await;
     response
@@ -1511,12 +1980,22 @@ async fn online_snapshot(
     State(app): State<Phase2App>,
     headers: axum::http::HeaderMap,
     Phase2Json(request): Phase2Json<coop_cloud::OnlineSnapshotRequest>,
-) -> Result<Json<coop_cloud::OnlineSnapshotResponse>, Phase2Error> {
-    Ok(Json(online::snapshot(
-        &app,
-        actor(&headers, &app)?,
-        &request,
-    )?))
+) -> Result<Json<serde_json::Value>, Phase2Error> {
+    let snapshot = online::snapshot(&app, actor(&headers, &app)?, &request)?;
+    let mut response = serde_json::to_value(snapshot).map_err(|_| Phase2Error::Internal)?;
+    /* Legacy launchers reject unknown V1 fields. Only opt-in clients receive
+     * the new safety bit. An older server ignores the header, and the new
+     * launcher treats an omitted bit as join possible. */
+    if headers
+        .get("x-coop-online-remote-join")
+        .and_then(|value| value.to_str().ok())
+        != Some("1")
+    {
+        if let Some(object) = response.as_object_mut() {
+            object.remove("remote_join_possible");
+        }
+    }
+    Ok(Json(response))
 }
 
 async fn online_action(
@@ -1531,6 +2010,227 @@ async fn online_action(
     )?))
 }
 
+async fn get_partner_status(
+    State(app): State<Phase2App>,
+    headers: axum::http::HeaderMap,
+) -> Result<Json<coop_cloud::PartnerStatusResponse>, Phase2Error> {
+    Ok(Json(partner::status(&app, actor(&headers, &app)?)?))
+}
+
+async fn get_progress_feed(
+    State(app): State<Phase2App>,
+    headers: axum::http::HeaderMap,
+) -> Result<Json<coop_cloud::ProgressFeedResponse>, Phase2Error> {
+    let events = realtime::progress_feed::recent_for_partner(&app.store, actor(&headers, &app)?)?;
+    Ok(Json(coop_cloud::ProgressFeedResponse {
+        api_version: coop_cloud::ApiVersion::V1,
+        events,
+    }))
+}
+
+async fn reserve_battle(
+    State(app): State<Phase2App>,
+    headers: axum::http::HeaderMap,
+    Path(path): Path<GroupPath>,
+    Phase2Json(request): Phase2Json<battles::BattleReservationRequest>,
+) -> Result<(StatusCode, Json<battles::BattleReservationView>), Phase2Error> {
+    let actor = actor(&headers, &app)?;
+    let fence = auth::fence_from_headers(&headers, actor.character_id, &app)?;
+    let response = app.reserve_battle(actor, path.group_id, fence, request)?;
+    Ok((StatusCode::CREATED, Json(response)))
+}
+
+async fn current_battle(
+    State(app): State<Phase2App>,
+    headers: axum::http::HeaderMap,
+    Path(path): Path<GroupPath>,
+) -> Result<Json<battles::BattleReservationView>, Phase2Error> {
+    let actor = actor(&headers, &app)?;
+    let fence = auth::fence_from_headers(&headers, actor.character_id, &app)?;
+    Ok(Json(app.current_battle(actor, path.group_id, fence)?))
+}
+
+async fn accept_battle(
+    State(app): State<Phase2App>,
+    headers: axum::http::HeaderMap,
+    Path(path): Path<BattlePath>,
+    Phase2Json(request): Phase2Json<battles::BattleReservationActionRequest>,
+) -> Result<Json<battles::BattleReservationView>, Phase2Error> {
+    let actor = actor(&headers, &app)?;
+    let fence = auth::fence_from_headers(&headers, actor.character_id, &app)?;
+    Ok(Json(app.accept_battle(
+        actor,
+        path.group_id,
+        path.battle_id,
+        fence,
+        request,
+    )?))
+}
+
+async fn decline_battle(
+    State(app): State<Phase2App>,
+    headers: axum::http::HeaderMap,
+    Path(path): Path<BattlePath>,
+    Phase2Json(request): Phase2Json<battles::BattleReservationActionRequest>,
+) -> Result<Json<battles::BattleReservationView>, Phase2Error> {
+    let actor = actor(&headers, &app)?;
+    let fence = auth::fence_from_headers(&headers, actor.character_id, &app)?;
+    Ok(Json(app.decline_battle(
+        actor,
+        path.group_id,
+        path.battle_id,
+        fence,
+        request,
+    )?))
+}
+
+async fn cancel_battle(
+    State(app): State<Phase2App>,
+    headers: axum::http::HeaderMap,
+    Path(path): Path<BattlePath>,
+    Phase2Json(request): Phase2Json<battles::BattleReservationActionRequest>,
+) -> Result<Json<battles::BattleReservationView>, Phase2Error> {
+    let actor = actor(&headers, &app)?;
+    let fence = auth::fence_from_headers(&headers, actor.character_id, &app)?;
+    Ok(Json(app.cancel_battle(
+        actor,
+        path.group_id,
+        path.battle_id,
+        fence,
+        request,
+    )?))
+}
+
+async fn commit_battle_snapshot(
+    State(app): State<Phase2App>,
+    headers: axum::http::HeaderMap,
+    Path(path): Path<BattlePath>,
+    Phase2Json(request): Phase2Json<battles::BattleSnapshotCommitRequest>,
+) -> Result<Json<battles::BattleConsensusView>, Phase2Error> {
+    let actor = actor(&headers, &app)?;
+    let fence = auth::fence_from_headers(&headers, actor.character_id, &app)?;
+    Ok(Json(app.commit_battle_snapshot(
+        actor,
+        path.group_id,
+        path.battle_id,
+        fence,
+        request,
+    )?))
+}
+
+async fn inspect_battle_consensus(
+    State(app): State<Phase2App>,
+    headers: axum::http::HeaderMap,
+    Path(path): Path<BattlePath>,
+) -> Result<Json<battles::BattleConsensusView>, Phase2Error> {
+    let actor = actor(&headers, &app)?;
+    let fence = auth::fence_from_headers(&headers, actor.character_id, &app)?;
+    Ok(Json(app.inspect_battle_consensus(
+        actor,
+        path.group_id,
+        path.battle_id,
+        fence,
+    )?))
+}
+
+async fn ready_battle(
+    State(app): State<Phase2App>,
+    headers: axum::http::HeaderMap,
+    Path(path): Path<BattlePath>,
+    Phase2Json(request): Phase2Json<battles::BattleReadyRequest>,
+) -> Result<Json<battles::BattleConsensusView>, Phase2Error> {
+    let actor = actor(&headers, &app)?;
+    let fence = auth::fence_from_headers(&headers, actor.character_id, &app)?;
+    Ok(Json(app.ready_battle(
+        actor,
+        path.group_id,
+        path.battle_id,
+        fence,
+        request,
+    )?))
+}
+
+async fn get_battle_peer_party(
+    State(app): State<Phase2App>,
+    headers: axum::http::HeaderMap,
+    Path(path): Path<BattlePath>,
+) -> Result<Json<battles::BattlePeerPartyView>, Phase2Error> {
+    let actor = actor(&headers, &app)?;
+    let fence = auth::fence_from_headers(&headers, actor.character_id, &app)?;
+    Ok(Json(app.battle_peer_party(
+        actor,
+        path.group_id,
+        path.battle_id,
+        fence,
+    )?))
+}
+
+async fn submit_battle_action(
+    State(app): State<Phase2App>,
+    headers: axum::http::HeaderMap,
+    Path(path): Path<BattlePath>,
+    Phase2Json(request): Phase2Json<battles::BattleActionIntentRequest>,
+) -> Result<Json<battles::BattleConsensusView>, Phase2Error> {
+    let actor = actor(&headers, &app)?;
+    let fence = auth::fence_from_headers(&headers, actor.character_id, &app)?;
+    Ok(Json(app.submit_battle_action(
+        actor,
+        path.group_id,
+        path.battle_id,
+        fence,
+        request,
+    )?))
+}
+
+async fn acknowledge_battle_hash(
+    State(app): State<Phase2App>,
+    headers: axum::http::HeaderMap,
+    Path(path): Path<BattlePath>,
+    Phase2Json(request): Phase2Json<battles::BattleStateHashRequest>,
+) -> Result<Json<battles::BattleConsensusView>, Phase2Error> {
+    let actor = actor(&headers, &app)?;
+    let fence = auth::fence_from_headers(&headers, actor.character_id, &app)?;
+    Ok(Json(app.acknowledge_battle_hash(
+        actor,
+        path.group_id,
+        path.battle_id,
+        fence,
+        request,
+    )?))
+}
+
+async fn finish_battle(
+    State(app): State<Phase2App>,
+    headers: axum::http::HeaderMap,
+    Path(path): Path<BattlePath>,
+    Phase2Json(request): Phase2Json<battles::BattleFinishRequest>,
+) -> Result<Json<battles::BattleReservationView>, Phase2Error> {
+    let actor = actor(&headers, &app)?;
+    let fence = auth::fence_from_headers(&headers, actor.character_id, &app)?;
+    Ok(Json(app.finish_battle(
+        actor,
+        path.group_id,
+        path.battle_id,
+        fence,
+        request,
+    )?))
+}
+
+async fn get_battle_commit_grant(
+    State(app): State<Phase2App>,
+    headers: axum::http::HeaderMap,
+    Path(path): Path<BattlePath>,
+) -> Result<Json<battles::BattleCommitGrant>, Phase2Error> {
+    let actor = actor(&headers, &app)?;
+    let fence = auth::fence_from_headers(&headers, actor.character_id, &app)?;
+    Ok(Json(app.battle_commit_grant(
+        actor,
+        path.group_id,
+        path.battle_id,
+        fence,
+    )?))
+}
+
 async fn create_group_invitation(
     State(app): State<Phase2App>,
     headers: axum::http::HeaderMap,
@@ -1538,6 +2238,25 @@ async fn create_group_invitation(
 ) -> Result<(StatusCode, Json<coop_cloud::CreateGroupInvitationResponse>), Phase2Error> {
     let response = app.create_group_invitation(actor(&headers, &app)?, request)?;
     Ok((StatusCode::CREATED, Json(response)))
+}
+
+async fn create_pairing_code(
+    State(app): State<Phase2App>,
+    headers: axum::http::HeaderMap,
+    Phase2Json(request): Phase2Json<coop_cloud::CreatePairingCodeRequest>,
+) -> Result<(StatusCode, Json<coop_cloud::CreatePairingCodeResponse>), Phase2Error> {
+    let response = app.create_pairing_code(actor(&headers, &app)?, request)?;
+    Ok((StatusCode::CREATED, Json(response)))
+}
+
+async fn redeem_pairing_code(
+    State(app): State<Phase2App>,
+    headers: axum::http::HeaderMap,
+    Phase2Json(request): Phase2Json<coop_cloud::RedeemPairingCodeRequest>,
+) -> Result<Json<coop_cloud::RedeemPairingCodeResponse>, Phase2Error> {
+    Ok(Json(
+        app.redeem_pairing_code(actor(&headers, &app)?, request)?,
+    ))
 }
 
 async fn accept_group_invitation(
@@ -1561,27 +2280,15 @@ async fn inspect_group(
     Ok(Json(app.inspect_group(actor, path.group_id, fence)?))
 }
 
-async fn travel_group(
-    State(app): State<Phase2App>,
-    headers: axum::http::HeaderMap,
-    Path(path): Path<GroupPath>,
-    Phase2Json(request): Phase2Json<coop_cloud::GroupTravelRequest>,
-) -> Result<Json<coop_cloud::GroupTravelResponse>, Phase2Error> {
-    Ok(Json(app.travel_group(
-        actor(&headers, &app)?,
-        path.group_id,
-        request,
-    )?))
-}
-
 async fn create_group_travel_proposal(
     State(app): State<Phase2App>,
     headers: axum::http::HeaderMap,
     Path(path): Path<GroupPath>,
     Phase2Json(request): Phase2Json<coop_cloud::GroupTravelProposalRequest>,
 ) -> Result<(StatusCode, Json<coop_cloud::GroupTravelProposalView>), Phase2Error> {
-    let response =
+    let mut response =
         app.create_group_travel_proposal(actor(&headers, &app)?, path.group_id, request)?;
+    response.server_now = Some(coop_cloud::UnixTimestampMillis::new(app.store.now()));
     Ok((StatusCode::CREATED, Json(response)))
 }
 
@@ -1592,11 +2299,9 @@ async fn current_group_travel_proposal(
 ) -> Result<Json<coop_cloud::GroupTravelProposalView>, Phase2Error> {
     let actor = actor(&headers, &app)?;
     let fence = auth::fence_from_headers(&headers, actor.character_id, &app)?;
-    Ok(Json(app.current_group_travel_proposal(
-        actor,
-        path.group_id,
-        fence,
-    )?))
+    let mut response = app.current_group_travel_proposal(actor, path.group_id, fence)?;
+    response.server_now = Some(coop_cloud::UnixTimestampMillis::new(app.store.now()));
+    Ok(Json(response))
 }
 
 async fn get_group_travel_proposal(
@@ -1606,12 +2311,10 @@ async fn get_group_travel_proposal(
 ) -> Result<Json<coop_cloud::GroupTravelProposalView>, Phase2Error> {
     let actor = actor(&headers, &app)?;
     let fence = auth::fence_from_headers(&headers, actor.character_id, &app)?;
-    Ok(Json(app.get_group_travel_proposal(
-        actor,
-        path.group_id,
-        path.proposal_id,
-        fence,
-    )?))
+    let mut response =
+        app.get_group_travel_proposal(actor, path.group_id, path.proposal_id, fence)?;
+    response.server_now = Some(coop_cloud::UnixTimestampMillis::new(app.store.now()));
+    Ok(Json(response))
 }
 
 async fn act_on_group_travel_proposal(
@@ -1620,12 +2323,155 @@ async fn act_on_group_travel_proposal(
     Path(path): Path<GroupTravelProposalPath>,
     Phase2Json(request): Phase2Json<coop_cloud::GroupTravelActionRequest>,
 ) -> Result<Json<coop_cloud::GroupTravelProposalView>, Phase2Error> {
-    Ok(Json(app.act_on_group_travel_proposal(
+    let mut response = app.act_on_group_travel_proposal(
         actor(&headers, &app)?,
         path.group_id,
         path.proposal_id,
         request,
+    )?;
+    response.server_now = Some(coop_cloud::UnixTimestampMillis::new(app.store.now()));
+    Ok(Json(response))
+}
+
+async fn discover_story_travel_recovery(
+    State(app): State<Phase2App>,
+    headers: axum::http::HeaderMap,
+    Path(path): Path<CharacterPath>,
+) -> Result<Json<coop_cloud::StoryTravelRecoveryView>, Phase2Error> {
+    let actor = actor(&headers, &app)?;
+    let fence = auth::fence_from_headers(&headers, path.character_id, &app)?;
+    if actor.character_id != path.character_id {
+        return Err(Phase2Error::NotFound);
+    }
+    Ok(Json(app.discover_story_travel_recovery(actor, fence)?))
+}
+
+async fn get_open_ledger_entry(
+    State(app): State<Phase2App>,
+    headers: axum::http::HeaderMap,
+    Path(path): Path<CharacterPath>,
+) -> Result<Json<ledger::LedgerEntryView>, Phase2Error> {
+    let actor = actor(&headers, &app)?;
+    let fence = auth::fence_from_headers(&headers, path.character_id, &app)?;
+    if actor.character_id != path.character_id {
+        return Err(Phase2Error::NotFound);
+    }
+    Ok(Json(app.open_ledger_entry(
+        actor,
+        path.character_id,
+        fence,
     )?))
+}
+
+async fn resolve_story_travel_recovery(
+    State(app): State<Phase2App>,
+    headers: axum::http::HeaderMap,
+    Path(path): Path<StoryTravelRecoveryPath>,
+    Phase2Json(request): Phase2Json<coop_cloud::StoryTravelRecoveryActionRequest>,
+) -> Result<Json<coop_cloud::StoryTravelRecoveryResolutionView>, Phase2Error> {
+    let actor = actor(&headers, &app)?;
+    if actor.character_id != path.character_id {
+        return Err(Phase2Error::NotFound);
+    }
+    let fence = auth::fence_from_headers(&headers, path.character_id, &app)?;
+    Ok(Json(app.resolve_story_travel_recovery(
+        actor,
+        path.proposal_id,
+        fence,
+        request,
+    )?))
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct TradeOfferPath {
+    group_id: coop_cloud::GroupId,
+    offer_id: coop_cloud::TradeOfferId,
+}
+
+async fn create_trade_offer(
+    State(app): State<Phase2App>,
+    headers: axum::http::HeaderMap,
+    Path(path): Path<GroupPath>,
+    Phase2Json(request): Phase2Json<coop_cloud::TradeOfferRequest>,
+) -> Result<(StatusCode, Json<coop_cloud::TradeOfferView>), Phase2Error> {
+    let response = app.create_trade_offer(actor(&headers, &app)?, path.group_id, request)?;
+    Ok((StatusCode::CREATED, Json(response)))
+}
+
+async fn current_trade_offer(
+    State(app): State<Phase2App>,
+    headers: axum::http::HeaderMap,
+    Path(path): Path<GroupPath>,
+) -> Result<Json<coop_cloud::TradeOfferCurrentView>, Phase2Error> {
+    let actor = actor(&headers, &app)?;
+    let fence = auth::fence_from_headers(&headers, actor.character_id, &app)?;
+    Ok(Json(app.current_trade_offer(
+        actor,
+        path.group_id,
+        fence,
+    )?))
+}
+
+async fn get_trade_offer(
+    State(app): State<Phase2App>,
+    headers: axum::http::HeaderMap,
+    Path(path): Path<TradeOfferPath>,
+) -> Result<Json<coop_cloud::TradeOfferView>, Phase2Error> {
+    let actor = actor(&headers, &app)?;
+    let fence = auth::fence_from_headers(&headers, actor.character_id, &app)?;
+    Ok(Json(app.get_trade_offer(
+        actor,
+        path.group_id,
+        path.offer_id,
+        fence,
+    )?))
+}
+
+async fn decide_trade_offer(
+    State(app): State<Phase2App>,
+    headers: axum::http::HeaderMap,
+    Path(path): Path<TradeOfferPath>,
+    Phase2Json(request): Phase2Json<coop_cloud::TradeDecisionRequest>,
+) -> Result<Json<coop_cloud::TradeOfferView>, Phase2Error> {
+    Ok(Json(app.decide_trade_offer(
+        actor(&headers, &app)?,
+        path.group_id,
+        path.offer_id,
+        request,
+    )?))
+}
+
+async fn mark_group_travel_scene(
+    State(app): State<Phase2App>,
+    headers: axum::http::HeaderMap,
+    Path(path): Path<GroupTravelProposalPath>,
+    Phase2Json(request): Phase2Json<coop_cloud::group::GroupTravelSceneMarkerRequest>,
+) -> Result<Json<coop_cloud::GroupTravelProposalView>, Phase2Error> {
+    let mut response = app.mark_group_travel_scene(
+        actor(&headers, &app)?,
+        path.group_id,
+        path.proposal_id,
+        request,
+    )?;
+    response.server_now = Some(coop_cloud::UnixTimestampMillis::new(app.store.now()));
+    Ok(Json(response))
+}
+
+async fn receipt_group_travel_scene(
+    State(app): State<Phase2App>,
+    headers: axum::http::HeaderMap,
+    Path(path): Path<GroupTravelProposalPath>,
+    Phase2Json(request): Phase2Json<coop_cloud::group::GroupTravelSceneReceiptRequest>,
+) -> Result<Json<coop_cloud::GroupTravelProposalView>, Phase2Error> {
+    let mut response = app.receipt_group_travel_scene(
+        actor(&headers, &app)?,
+        path.group_id,
+        path.proposal_id,
+        request,
+    )?;
+    response.server_now = Some(coop_cloud::UnixTimestampMillis::new(app.store.now()));
+    Ok(Json(response))
 }
 
 async fn resume_package(
@@ -1811,12 +2657,52 @@ mod tests {
         character_sav_with_generation(with_rtc, 1, status_flags)
     }
 
-    fn valid_character_sav(with_rtc: bool) -> Vec<u8> {
+    pub(super) fn valid_character_sav(with_rtc: bool) -> Vec<u8> {
         character_sav_with_status(with_rtc, 0)
     }
 
     fn valid_character_sav_generation(with_rtc: bool, generation: u32) -> Vec<u8> {
         character_sav_with_generation(with_rtc, generation, 0)
+    }
+
+    /// A checksum-valid party record. Its OT ID equals `personality`, so the
+    /// substructs are stored unencrypted; a multiple of 24 keeps the growth
+    /// substruct (and its species word) first.
+    pub(super) fn test_party_record(personality: u32, species: u16) -> [u8; 100] {
+        assert_eq!(personality % 24, 0, "fixture substruct order");
+        let mut mon = [0_u8; 100];
+        mon[0..4].copy_from_slice(&personality.to_le_bytes());
+        mon[4..8].copy_from_slice(&personality.to_le_bytes());
+        mon[19] = 2; // hasSpecies
+        mon[28..30].copy_from_slice(&species.to_le_bytes()); // checksum
+        mon[32..34].copy_from_slice(&species.to_le_bytes());
+        mon[85] = 0xff; // MAIL_NONE, as ZeroMonData leaves it
+        mon
+    }
+
+    /// A valid character save of `generation` whose selected slot holds
+    /// exactly `records` as its party and empty PC boxes.
+    pub(super) fn party_character_sav(generation: u32, records: &[[u8; 100]]) -> Vec<u8> {
+        let mut bytes = valid_character_sav_generation(false, generation);
+        for physical in 0..coop_save::SECTORS_PER_SLOT {
+            let start = (coop_save::SECTORS_PER_SLOT + physical) * coop_save::SECTOR_SIZE;
+            let logical = usize::from(read_u16(&bytes, start + TEST_SECTOR_ID_OFFSET));
+            let size = coop_save::LOGICAL_SECTOR_DATA_SIZES[logical];
+            match logical {
+                1 => {
+                    bytes[start + 0x234] = u8::try_from(records.len()).expect("party size");
+                    for (index, record) in records.iter().enumerate() {
+                        let offset = start + 0x238 + index * record.len();
+                        bytes[offset..offset + record.len()].copy_from_slice(record);
+                    }
+                }
+                6..=14 => bytes[start..start + size].fill(0),
+                _ => continue,
+            }
+            let checksum = coop_save::sector_checksum(&bytes[start..start + size]);
+            write_u16(&mut bytes, start + TEST_SECTOR_CHECKSUM_OFFSET, checksum);
+        }
+        bytes
     }
 
     fn mutate_selected_coop_byte(bytes: &mut [u8], payload_offset: usize) {
@@ -2398,6 +3284,183 @@ mod tests {
             saves::resume_artifact(&app.store, actor, fence, "character.sav", None)
                 .expect("sav artifact"),
             valid_character_sav(false)
+        );
+    }
+
+    /// Production contract without the test-only `fixture_auto_bind`: a legacy
+    /// `/v1/sessions/acquire` lease is never runtime-bound, so resume packages
+    /// are refused, while `/v1/sessions/acquire-world` binds the lease to the
+    /// trusted catalog world and is accepted by the resume path.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    #[allow(clippy::too_many_lines)]
+    async fn production_contract_rejects_legacy_acquire_resume_and_binds_acquire_world() {
+        let build = saves::current_runtime_build_identity().expect("test build");
+        let catalog = serde_json::to_vec(&serde_json::json!({
+            "schema_version": 1,
+            "worlds": [{"world_id": 1, "build": build}]
+        }))
+        .expect("catalog bytes");
+        let config = Phase2Config::local(
+            vec![0x55; 32],
+            SigningPrivateKey::from_bytes([7; 32]),
+            "local-test-key",
+        )
+        .expect("test config")
+        .with_release_catalog_bytes(&catalog, coop_cloud::Sha256Digest::of_bytes(&catalog))
+        .expect("trusted catalog")
+        .with_test_adapters(
+            Arc::new(FixedClock::new(1_700_000_000_000)),
+            Arc::new(FixedEntropy::new((0_u8..=255).collect())),
+        )
+        .with_password_engine(Arc::new(
+            ArgonPasswordEngine::new(8_192, 1, 1).expect("test Argon2 policy"),
+        ));
+        assert!(!config.fixture_auto_bind);
+        let app = Phase2App::new(config).expect("production-shaped app");
+        app.add_invitation("contract-invite").expect("invite");
+        let registered = app
+            .register(
+                RegisterRequest::new(
+                    "ContractUser",
+                    password(),
+                    InvitationCode::new("contract-invite").expect("invite"),
+                )
+                .expect("registration request"),
+            )
+            .expect("registration");
+        let login = app
+            .login(LoginRequest::new("contractuser", password()).expect("login request"))
+            .expect("login");
+        let actor = AuthenticatedActor {
+            user_id: login.user_id,
+            character_id: registered.character_id,
+        };
+        let bearer = format!("Bearer {}", login.access_token.expose_secret());
+        let text = |value: serde_json::Value| value.as_str().expect("string id").to_owned();
+        let character = text(serde_json::to_value(registered.character_id).unwrap());
+        let client = id(ClientInstanceId::new);
+
+        let post_json = |uri: &'static str, body: Vec<u8>| {
+            axum::http::Request::builder()
+                .method(axum::http::Method::POST)
+                .uri(uri)
+                .header("content-type", "application/json")
+                .header(axum::http::header::AUTHORIZATION, &bearer)
+                .body(axum::body::Body::from(body))
+                .expect("request")
+        };
+        let resume = |lease: &coop_cloud::LeaseContract| {
+            axum::http::Request::builder()
+                .method(axum::http::Method::GET)
+                .uri(format!("/v1/characters/{character}/resume-package"))
+                .header(axum::http::header::AUTHORIZATION, &bearer)
+                .header(
+                    "x-coop-session-id",
+                    text(serde_json::to_value(lease.session_id).unwrap()),
+                )
+                .header(
+                    "x-coop-session-epoch",
+                    lease.session_epoch.value().to_string(),
+                )
+                .header(
+                    "x-coop-client-instance-id",
+                    text(serde_json::to_value(lease.client_instance_id).unwrap()),
+                )
+                .body(axum::body::Body::empty())
+                .expect("resume request")
+        };
+        async fn body_json(response: axum::response::Response) -> serde_json::Value {
+            let bytes = response
+                .into_body()
+                .collect()
+                .await
+                .expect("body")
+                .to_bytes();
+            serde_json::from_slice(&bytes).expect("JSON body")
+        }
+
+        let legacy = app
+            .router()
+            .oneshot(post_json(
+                "/v1/sessions/acquire",
+                serde_json::to_vec(&AcquireLeaseRequest::new(
+                    registered.character_id,
+                    client,
+                    id(IdempotencyKey::new),
+                ))
+                .expect("acquire JSON"),
+            ))
+            .await
+            .expect("legacy acquire response");
+        assert_eq!(
+            legacy.status(),
+            StatusCode::OK,
+            "legacy acquire still leases"
+        );
+        let legacy: coop_cloud::LeaseContract =
+            serde_json::from_value(body_json(legacy).await).expect("lease contract");
+        let refused = app
+            .router()
+            .oneshot(resume(&legacy))
+            .await
+            .expect("legacy resume response");
+        assert_eq!(
+            refused.status(),
+            StatusCode::UNAUTHORIZED,
+            "an unbound legacy lease must never receive a resume package"
+        );
+        app.release(
+            actor,
+            coop_cloud::ReleaseLeaseRequest::new(legacy.fence(), id(IdempotencyKey::new)),
+        )
+        .expect("release legacy lease");
+
+        let world = app
+            .router()
+            .oneshot(post_json(
+                "/v1/sessions/acquire-world",
+                serde_json::to_vec(&AcquireLeaseRequest::new(
+                    registered.character_id,
+                    client,
+                    id(IdempotencyKey::new),
+                ))
+                .expect("acquire-world JSON"),
+            ))
+            .await
+            .expect("acquire-world response");
+        assert_eq!(
+            world.status(),
+            StatusCode::OK,
+            "acquire-world binds the lease"
+        );
+        let world = body_json(world).await;
+        assert_eq!(world["active_world_id"], 1);
+        let bound: coop_cloud::LeaseContract =
+            serde_json::from_value(world["lease"].clone()).expect("bound lease");
+        let bound_binding = app
+            .store
+            .read_transaction(|state| {
+                Ok::<_, Phase2Error>(
+                    state
+                        .leases
+                        .get(&registered.character_id)
+                        .and_then(|lease| lease.runtime_binding.as_ref())
+                        .map(|binding| binding.world_id),
+                )
+            })
+            .expect("lease state");
+        assert_eq!(bound_binding, coop_protocol::RomWorldId::new(1).ok());
+        let resumed = app
+            .router()
+            .oneshot(resume(&bound))
+            .await
+            .expect("bound resume response");
+        // The world-bound lease passes runtime-binding authentication and the
+        // catalog check; a fresh character simply has no snapshot to resume.
+        assert_eq!(
+            resumed.status(),
+            StatusCode::NOT_FOUND,
+            "a world-bound lease must reach snapshot lookup, not 401/500"
         );
     }
 
@@ -5576,5 +6639,164 @@ mod tests {
         assert!(migration.contains("snapshot artifact identity cannot be changed"));
         assert!(migration.contains("NEW.object_key IS DISTINCT FROM expected_key"));
         assert!(migration.contains("characters/%s/snapshots/%s/%s"));
+    }
+
+    fn finalize_party_revision(
+        app: &Phase2App,
+        actor: AuthenticatedActor,
+        client: ClientInstanceId,
+        sav: &[u8],
+        commit: Option<coop_cloud::CommitId>,
+    ) -> (
+        SnapshotFinalizeRequest,
+        Result<coop_cloud::SnapshotRecord, Phase2Error>,
+    ) {
+        let lease = app
+            .store
+            .inspect_state(|state| state.leases[&actor.character_id].contract)
+            .expect("active lease");
+        let (request, sav_file, pending) = snapshot_request_for_sav(lease, actor, client, sav);
+        let prepared = app.prepare(actor, request).expect("prepare");
+        app.upload(
+            &upload_ticket(&prepared, ArtifactIdentity::CharacterSav),
+            sav.to_vec(),
+        )
+        .expect("SAV upload");
+        app.upload(
+            &upload_ticket(&prepared, ArtifactIdentity::PendingCommits),
+            b"{}".to_vec(),
+        )
+        .expect("pending upload");
+        let finalize = SnapshotFinalizeRequest::new(
+            prepared.snapshot_id,
+            SnapshotFinalizeFence::new(
+                lease.session_id,
+                actor.character_id,
+                lease.current_revision,
+                lease.session_epoch,
+                client,
+                id(IdempotencyKey::new),
+            ),
+            vec![sav_file, pending.clone()],
+            pending.sha256,
+            commit,
+        )
+        .expect("finalize request");
+        let result = app.finalize(actor, finalize.clone());
+        (finalize, result)
+    }
+
+    #[test]
+    fn finalize_applies_a_declared_trade_entry_once_and_replays_its_record() {
+        let (app, _) = deterministic_app();
+        let (actor, _, client) = account_and_lease(&app);
+        let outgoing = test_party_record(24, 1);
+        let kept = test_party_record(48, 2);
+        let incoming = test_party_record(72, 3);
+        finalize_party_revision(
+            &app,
+            actor,
+            client,
+            &party_character_sav(1, &[outgoing, kept]),
+            None,
+        )
+        .1
+        .expect("first revision");
+        let commit_id = coop_cloud::CommitId::new(Uuid::from_u128(0x1ed1)).expect("commit id");
+        app.store
+            .write_transaction(|state| {
+                let base_snapshot_id = state.characters[&actor.character_id]
+                    .active_snapshot
+                    .expect("head");
+                ledger::issue(
+                    state,
+                    vec![ledger::LedgerEntry {
+                        commit_id,
+                        character_id: actor.character_id,
+                        origin: ledger::LedgerOrigin::Trade {
+                            offer_id: coop_cloud::TradeOfferId::new(Uuid::from_u128(0x1ed2))
+                                .expect("offer id"),
+                        },
+                        base_snapshot_id,
+                        base_revision: Revision::new(1),
+                        expected: ledger::ExpectedDelta::Trade {
+                            slot: coop_cloud::PartyPosition::new(0).expect("slot"),
+                            outgoing: ledger::PokemonKey {
+                                personality: 24,
+                                ot_id: 24,
+                            },
+                            incoming_raw: incoming,
+                            incoming_key: ledger::PokemonKey {
+                                personality: 72,
+                                ot_id: 72,
+                            },
+                        },
+                        status: ledger::LedgerStatus::Issued,
+                        issued_at: 0,
+                        applied_snapshot_id: None,
+                    }],
+                )
+            })
+            .expect("issue entry");
+
+        // An undeclared save that already holds the incoming Pokémon fails.
+        assert_eq!(
+            finalize_party_revision(
+                &app,
+                actor,
+                client,
+                &party_character_sav(2, &[incoming, kept]),
+                None,
+            )
+            .1,
+            Err(Phase2Error::Forbidden)
+        );
+        let (declared, applied) = finalize_party_revision(
+            &app,
+            actor,
+            client,
+            &party_character_sav(2, &[incoming, kept]),
+            Some(commit_id),
+        );
+        let applied = applied.expect("declared trade applies");
+        assert_eq!(applied.last_applied_commit, Some(commit_id));
+        let entry = app
+            .store
+            .inspect_state(|state| {
+                (
+                    state.ledger_entries[&commit_id].clone(),
+                    state
+                        .ledger_open_by_character
+                        .get(&actor.character_id)
+                        .copied(),
+                )
+            })
+            .expect("ledger");
+        assert_eq!(entry.0.status, ledger::LedgerStatus::Applied);
+        assert_eq!(entry.0.applied_snapshot_id, Some(applied.snapshot_id));
+        assert_eq!(entry.1, None);
+        // The exact retry returns the stored record before any ledger check.
+        assert_eq!(app.finalize(actor, declared), Ok(applied));
+        // Another snapshot cannot declare the applied entry again.
+        assert_eq!(
+            finalize_party_revision(
+                &app,
+                actor,
+                client,
+                &party_character_sav(3, &[incoming, kept]),
+                Some(commit_id),
+            )
+            .1,
+            Err(Phase2Error::Conflict)
+        );
+        finalize_party_revision(
+            &app,
+            actor,
+            client,
+            &party_character_sav(3, &[incoming, kept]),
+            None,
+        )
+        .1
+        .expect("later ordinary save");
     }
 }

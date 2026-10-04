@@ -36,7 +36,7 @@ Run the following from this directory on the target host only when ready to depl
 
 ```sh
 cp .env.example .env
-# Edit the domain, bucket and release image digest in .env.
+# Edit the domain, bucket, release image digest and release catalog in .env.
 bash init-secrets.sh
 # Copy the service account JSON securely to secrets/firebase-service-account.json.
 chmod 444 secrets/firebase-service-account.json
@@ -247,6 +247,22 @@ a legacy `current -> releases/<sha>` symlink is migrated on the next
 promotion. The server receives `COOP_RELEASE_ROOT=/srv/hoenn` and a read-only
 `/srv/hoenn` parent mount. See [RELEASES.md](RELEASES.md) for the private-pilot
 layout, secure signing, rollback, and verification procedure.
+
+The server also requires a trusted release catalog and refuses to start
+without one, because every world acquisition, snapshot and resume package is
+checked against it. Set both variables in `.env`; `docker compose config`
+fails while either is unset:
+
+| Variable | Meaning |
+| --- | --- |
+| `COOP_PHASE2_RELEASE_CATALOG_PATH` | Catalog file inside the read-only `/srv/hoenn` mount, for example `/srv/hoenn/game/<release-id>/release_catalog.json`. Pinned arrival saves are loaded from the same directory. |
+| `COOP_PHASE2_RELEASE_CATALOG_SHA256` | Lowercase hex SHA-256 of the exact catalog bytes, taken from release configuration rather than from the catalog itself. |
+
+A missing, unreadable, oversized (over 64 KiB) or mismatched catalog, or an
+arrival save that fails validation, stops startup with a
+`co-op production startup refused: ...` message. The catalog is read once at
+startup, so after promoting a game release that changes the catalog, update
+both values and recreate the server container.
 
 Before any runtime build, the workflow streams `probe-release-status.sh` over
 the pinned SSH connection. `ABSENT` means no association or generation exists

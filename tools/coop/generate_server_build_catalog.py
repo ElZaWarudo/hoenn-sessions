@@ -21,6 +21,10 @@ BUILD_ID = re.compile(r"[A-Za-z0-9._+:-]{1,128}\Z")
 MGBA_VERSION = re.compile(r"(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\Z")
 EMULATOR_FIELDS = frozenset(("name", "version", "build_id", "source_commit", "platform",
                              "variant", "archive_sha256", "executable_sha256"))
+# The server deserializes each catalog build identity through coop-cloud
+# ProtocolVersion::new (coop/crates/coop-cloud/src/ids.rs), which accepts
+# exactly 1..=5. Mirror that range; a test fails if the two ever diverge.
+SERVER_GAME_PROTOCOL_VERSIONS = frozenset(range(1, 6))
 
 
 def _manifest_identity(world: dict, release_root: Path) -> dict:
@@ -44,7 +48,7 @@ def _manifest_identity(world: dict, release_root: Path) -> dict:
             or not isinstance(rom_sha256, str) or not DIGEST.fullmatch(rom_sha256)
             or rom_sha256 != world["rom_sha256"]
             or type(abi) is not int or abi != 1
-            or type(protocol) is not int or protocol != 1):
+            or type(protocol) is not int or protocol not in SERVER_GAME_PROTOCOL_VERSIONS):
         raise ValueError(f"{world['name']} has invalid bridge build identity")
     if (not isinstance(emulator, dict) or set(emulator) != EMULATOR_FIELDS
             or emulator["name"] != "mGBA"

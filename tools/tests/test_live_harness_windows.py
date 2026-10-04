@@ -64,6 +64,44 @@ class LiveHarnessWindowsTests(unittest.TestCase):
         adapter.user32.GetForegroundWindow.return_value = 99
         return adapter
 
+    def test_settled_click_hovers_then_presses_only_on_unmoved_foreground(self):
+        adapter = self.caption_adapter()
+        with mock.patch.object(harness.time, "sleep") as sleep:
+            adapter.click_window_pixel(99, 30, 40, settle=.15)
+        sleep.assert_any_call(.15)
+        self.assertEqual(adapter.user32.SetCursorPos.call_args_list,
+                         [mock.call(40, 60), mock.call(40, 60)])
+        self.assertEqual(adapter.user32.mouse_event.call_args_list,
+                         [mock.call(0x0002, 0, 0, 0, None), mock.call(0x0004, 0, 0, 0, None)])
+
+    def test_settled_click_sends_no_press_after_focus_loss_or_move(self):
+        for change in ("foreground", "moved"):
+            adapter = self.caption_adapter()
+            if change == "foreground":
+                adapter.user32.GetForegroundWindow.return_value = 100
+                expected = "lost foreground"
+            else:
+                rects = iter([(10, 20), (11, 20)])
+                def rect(handle, pointer):
+                    pointer._obj.left, pointer._obj.top = next(rects)
+                    pointer._obj.right, pointer._obj.bottom = 800, 600
+                    return True
+                adapter.user32.GetWindowRect.side_effect = rect
+                expected = "moved"
+            with mock.patch.object(harness.time, "sleep"):
+                with self.assertRaisesRegex(harness.WindowControlError, expected):
+                    adapter.click_window_pixel(99, 30, 40, settle=.15)
+            adapter.user32.mouse_event.assert_not_called()
+
+    def test_click_desktop_passes_settle_only_when_requested(self):
+        window = harness.Window(99, 7, "Hoenn Sessions", True)
+        adapter = FakeAdapter([window], foreground=99)
+        adapter.click_window_pixel = mock.Mock()
+        harness.click_desktop(7, 5, 6, adapter)
+        harness.click_desktop(7, 5, 6, adapter, settle=.15)
+        self.assertEqual(adapter.click_window_pixel.call_args_list,
+                         [mock.call(99, 5, 6), mock.call(99, 5, 6, settle=.15)])
+
     def test_native_caption_activation_checks_target_and_nonclient_hit(self):
         adapter = self.caption_adapter()
         with mock.patch.object(harness.time, "sleep"):

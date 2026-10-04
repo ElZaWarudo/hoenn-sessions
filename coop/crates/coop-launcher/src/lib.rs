@@ -4,19 +4,24 @@
 
 pub mod arrival_verifier;
 pub mod auth;
+pub mod battle;
 pub mod compat;
 pub mod desktop;
 pub mod epoch;
 pub mod group_travel;
 pub mod keychain;
+pub mod ledger;
+pub mod live_requests;
 pub mod online;
-pub mod paired_travel;
 pub mod paired_coordinator;
+pub mod paired_travel;
 pub mod process;
 pub mod realtime;
 pub mod recovery;
 pub mod rom_travel;
 pub mod session;
+pub mod trade;
+pub mod trade_offer;
 pub mod travel_coordinator;
 pub mod update;
 #[cfg(windows)]
@@ -48,6 +53,10 @@ pub use recovery::{
     RecoveryOutcome, RecoveryReconciler, RecoverySession,
 };
 pub use session::{CloudApi, SessionConfig, SessionError, SessionLifecycle, SessionWorkspace};
+pub use trade::{
+    TRADE_PARTICIPANTS, TradeCommitReceipt, TradeHandoff, TradeHandoffError, TradeHeartbeat,
+    TradePhase, TradePublishedHead, TradeRecoveryJournal, TradeSourceHead, TradeStageToken,
+};
 pub use update::{
     AcceptedGeneration, ArtifactIdentity, ArtifactPayload, ArtifactSet, GenerationArtifact,
     GenerationHandoff, GenerationStore, InstalledGeneration, MAX_ARTIFACT_BYTES,
@@ -195,6 +204,16 @@ impl ReqwestCloudApi {
             .build()
             .map_err(HttpClientError::Transport)?;
         Ok(Self { client, base })
+    }
+
+    /// Fetches the authenticated account's group partner for the desktop panel.
+    pub async fn partner_status(
+        &self,
+        auth: &AuthSession,
+    ) -> Result<coop_cloud::PartnerStatusResponse, HttpClientError> {
+        let url = self.url("v1/group/partner")?;
+        let request = self.authenticated(Method::GET, url, auth)?;
+        self.send_json(request, 4 * 1024).await
     }
 
     fn url(&self, path: &str) -> Result<Url, HttpClientError> {
@@ -713,6 +732,233 @@ impl CloudApi for ReqwestCloudApi {
             Ok(response)
         })
     }
+    fn ledger_open(
+        &self,
+        token: coop_cloud::AccessToken,
+        character_id: CharacterId,
+        fence: coop_cloud::LeaseFence,
+    ) -> ledger::LedgerFuture<'_, Option<ledger::LedgerEntryView>> {
+        self.ledger_open_http(token, character_id, fence)
+    }
+    fn story_travel_recovery(
+        &self,
+        token: coop_cloud::AccessToken,
+        fence: coop_cloud::LeaseFence,
+    ) -> group_travel::GroupTravelFuture<'_, Option<coop_cloud::StoryTravelRecoveryView>> {
+        self.story_travel_recovery_http(token, fence)
+    }
+    fn story_travel_recovery_action(
+        &self,
+        token: coop_cloud::AccessToken,
+        proposal_id: coop_cloud::GroupTravelProposalId,
+        fence: coop_cloud::LeaseFence,
+        action: coop_cloud::StoryTravelRecoveryAction,
+    ) -> group_travel::GroupTravelFuture<'_, coop_cloud::StoryTravelRecoveryResolutionView> {
+        self.story_travel_recovery_action_http(token, proposal_id, fence, action)
+    }
+    fn battle_peer_party(
+        &self,
+        token: coop_cloud::AccessToken,
+        group_id: coop_cloud::GroupId,
+        battle_id: uuid::Uuid,
+        fence: coop_cloud::LeaseFence,
+    ) -> battle::BattleFuture<'_, battle::BattlePeerPartyView> {
+        Box::pin(async move {
+            self.battle_peer_party_http(&token, group_id, battle_id, fence)
+                .await
+        })
+    }
+    fn battle_commit_snapshot(
+        &self,
+        token: coop_cloud::AccessToken,
+        group_id: coop_cloud::GroupId,
+        battle_id: uuid::Uuid,
+        fence: coop_cloud::LeaseFence,
+        key: coop_cloud::IdempotencyKey,
+        hash: &str,
+        party_records: Option<Vec<String>>,
+    ) -> battle::BattleFuture<'_, battle::BattleConsensusView> {
+        let hash = hash.to_owned();
+        Box::pin(async move {
+            self.battle_commit_snapshot_http(
+                &token,
+                group_id,
+                battle_id,
+                fence,
+                key,
+                &hash,
+                party_records.as_deref(),
+            )
+            .await
+        })
+    }
+    fn battle_ready(
+        &self,
+        token: coop_cloud::AccessToken,
+        group_id: coop_cloud::GroupId,
+        battle_id: uuid::Uuid,
+        fence: coop_cloud::LeaseFence,
+        key: coop_cloud::IdempotencyKey,
+        digest: coop_protocol::BattleDigest,
+    ) -> battle::BattleFuture<'_, battle::BattleConsensusView> {
+        Box::pin(async move {
+            self.battle_ready_http(&token, group_id, battle_id, fence, key, digest)
+                .await
+        })
+    }
+    fn battle_inspect_consensus(
+        &self,
+        token: coop_cloud::AccessToken,
+        group_id: coop_cloud::GroupId,
+        battle_id: uuid::Uuid,
+        fence: coop_cloud::LeaseFence,
+    ) -> battle::BattleFuture<'_, battle::BattleConsensusView> {
+        Box::pin(async move {
+            self.battle_inspect_consensus_http(&token, group_id, battle_id, fence)
+                .await
+        })
+    }
+    fn battle_submit_action(
+        &self,
+        token: coop_cloud::AccessToken,
+        group_id: coop_cloud::GroupId,
+        battle_id: uuid::Uuid,
+        fence: coop_cloud::LeaseFence,
+        key: coop_cloud::IdempotencyKey,
+        turn: u16,
+        action: &str,
+    ) -> battle::BattleFuture<'_, battle::BattleConsensusView> {
+        let action = action.to_owned();
+        Box::pin(async move {
+            self.battle_submit_action_http(&token, group_id, battle_id, fence, key, turn, &action)
+                .await
+        })
+    }
+    fn battle_acknowledge_hash(
+        &self,
+        token: coop_cloud::AccessToken,
+        group_id: coop_cloud::GroupId,
+        battle_id: uuid::Uuid,
+        fence: coop_cloud::LeaseFence,
+        key: coop_cloud::IdempotencyKey,
+        turn: u16,
+        hash: &str,
+    ) -> battle::BattleFuture<'_, battle::BattleConsensusView> {
+        let hash = hash.to_owned();
+        Box::pin(async move {
+            self.battle_acknowledge_hash_http(&token, group_id, battle_id, fence, key, turn, &hash)
+                .await
+        })
+    }
+    fn battle_reserve(
+        &self,
+        token: coop_cloud::AccessToken,
+        group_id: coop_cloud::GroupId,
+        fence: coop_cloud::LeaseFence,
+        kind: battle::BattleKind,
+        trainer_id: Option<coop_protocol::TrainerInstanceId>,
+        friendly_rules: Option<coop_protocol::FriendlyBattleRules>,
+        key: coop_cloud::IdempotencyKey,
+    ) -> battle::BattleFuture<'_, battle::BattleReservationView> {
+        Box::pin(async move {
+            self.reserve_battle_http(
+                &token,
+                group_id,
+                fence,
+                kind,
+                trainer_id,
+                friendly_rules,
+                key,
+            )
+            .await
+        })
+    }
+    fn battle_current(
+        &self,
+        token: coop_cloud::AccessToken,
+        group_id: coop_cloud::GroupId,
+        fence: coop_cloud::LeaseFence,
+    ) -> battle::BattleFuture<'_, Option<battle::BattleReservationView>> {
+        Box::pin(async move { self.current_battle_http(&token, group_id, fence).await })
+    }
+    fn battle_action(
+        &self,
+        token: coop_cloud::AccessToken,
+        group_id: coop_cloud::GroupId,
+        battle_id: uuid::Uuid,
+        fence: coop_cloud::LeaseFence,
+        action: &str,
+        key: coop_cloud::IdempotencyKey,
+    ) -> battle::BattleFuture<'_, battle::BattleReservationView> {
+        let action = action.to_owned();
+        Box::pin(async move {
+            self.battle_reservation_action_http(&token, group_id, battle_id, fence, &action, key)
+                .await
+        })
+    }
+    fn battle_finish(
+        &self,
+        token: coop_cloud::AccessToken,
+        group_id: coop_cloud::GroupId,
+        battle_id: uuid::Uuid,
+        fence: coop_cloud::LeaseFence,
+        key: coop_cloud::IdempotencyKey,
+        result: coop_protocol::BattleFinishedResult,
+        turn: u16,
+        state_hash: coop_protocol::BattleDigest,
+    ) -> battle::BattleFuture<'_, battle::BattleReservationView> {
+        Box::pin(async move {
+            self.battle_finish_http(
+                &token, group_id, battle_id, fence, key, result, turn, state_hash,
+            )
+            .await
+        })
+    }
+    fn battle_commit_grant(
+        &self,
+        token: coop_cloud::AccessToken,
+        group_id: coop_cloud::GroupId,
+        battle_id: uuid::Uuid,
+        fence: coop_cloud::LeaseFence,
+        expected_trainer: coop_protocol::TrainerInstanceId,
+        expected_source_digest: coop_protocol::BattleDigest,
+        expected_terminal_turn: u16,
+        expected_terminal_hash: coop_protocol::BattleDigest,
+    ) -> battle::BattleFuture<'_, battle::BattleCommitGrantView> {
+        Box::pin(async move {
+            self.battle_commit_grant_http(
+                &token,
+                group_id,
+                battle_id,
+                fence,
+                &expected_trainer,
+                expected_source_digest,
+                expected_terminal_turn,
+                expected_terminal_hash,
+            )
+            .await
+        })
+    }
+    fn pairing_create(
+        &self,
+        token: coop_cloud::AccessToken,
+        request: coop_cloud::CreatePairingCodeRequest,
+    ) -> online::OnlineFuture<'_, coop_cloud::CreatePairingCodeResponse> {
+        self.pairing_create_http(token, request)
+    }
+    fn pairing_redeem(
+        &self,
+        token: coop_cloud::AccessToken,
+        request: coop_cloud::RedeemPairingCodeRequest,
+    ) -> online::OnlineFuture<'_, coop_cloud::RedeemPairingCodeResponse> {
+        self.pairing_redeem_http(token, request)
+    }
+    fn partner_status(
+        &self,
+        token: coop_cloud::AccessToken,
+    ) -> online::OnlineFuture<'_, coop_cloud::PartnerStatusResponse> {
+        self.partner_status_http(token)
+    }
     fn group_travel_create(
         &self,
         token: coop_cloud::AccessToken,
@@ -751,12 +997,69 @@ impl CloudApi for ReqwestCloudApi {
         self.group_travel_action_http(token, group_id, proposal_id, request)
     }
 
+    fn group_travel_scene_marker(
+        &self,
+        token: coop_cloud::AccessToken,
+        group_id: coop_cloud::GroupId,
+        proposal_id: coop_cloud::GroupTravelProposalId,
+        request: coop_cloud::GroupTravelSceneMarkerRequest,
+    ) -> group_travel::GroupTravelFuture<'_, coop_cloud::GroupTravelProposalView> {
+        self.group_travel_scene_marker_http(token, group_id, proposal_id, request)
+    }
+
+    fn group_travel_scene_receipt(
+        &self,
+        token: coop_cloud::AccessToken,
+        group_id: coop_cloud::GroupId,
+        proposal_id: coop_cloud::GroupTravelProposalId,
+        request: coop_cloud::GroupTravelSceneReceiptRequest,
+    ) -> group_travel::GroupTravelFuture<'_, coop_cloud::GroupTravelProposalView> {
+        self.group_travel_scene_receipt_http(token, group_id, proposal_id, request)
+    }
+
     fn online_snapshot(
         &self,
         token: coop_cloud::AccessToken,
         request: coop_cloud::OnlineSnapshotRequest,
     ) -> online::OnlineFuture<'_, coop_cloud::OnlineSnapshotResponse> {
         self.online_snapshot_http(token, request)
+    }
+
+    fn trade_offer_create(
+        &self,
+        token: coop_cloud::AccessToken,
+        group_id: coop_cloud::GroupId,
+        request: coop_cloud::TradeOfferRequest,
+    ) -> trade_offer::TradeOfferFuture<'_, coop_cloud::TradeOfferView> {
+        self.trade_offer_create_http(token, group_id, request)
+    }
+
+    fn trade_offer_get(
+        &self,
+        token: coop_cloud::AccessToken,
+        group_id: coop_cloud::GroupId,
+        offer_id: coop_cloud::TradeOfferId,
+        fence: coop_cloud::LeaseFence,
+    ) -> trade_offer::TradeOfferFuture<'_, coop_cloud::TradeOfferView> {
+        self.trade_offer_get_http(token, group_id, offer_id, fence)
+    }
+
+    fn trade_offer_current(
+        &self,
+        token: coop_cloud::AccessToken,
+        group_id: coop_cloud::GroupId,
+        fence: coop_cloud::LeaseFence,
+    ) -> trade_offer::TradeOfferFuture<'_, Option<coop_cloud::TradeOfferCurrentView>> {
+        self.trade_offer_current_http(token, group_id, fence)
+    }
+
+    fn trade_offer_decide(
+        &self,
+        token: coop_cloud::AccessToken,
+        group_id: coop_cloud::GroupId,
+        request: coop_cloud::TradeDecisionRequest,
+    ) -> trade_offer::TradeOfferFuture<'_, coop_cloud::TradeOfferView> {
+        self.trade_offer_decide_http(token, group_id, request)
     }
 
     fn online_action(

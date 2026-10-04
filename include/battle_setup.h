@@ -6,6 +6,8 @@
 
 #define REMATCHES_COUNT 5
 
+struct Pokemon;
+
 struct RematchTrainer
 {
     u16 trainerIds[REMATCHES_COUNT];
@@ -83,8 +85,35 @@ bool8 HasTrainerBeenFought(u16 trainerId);
 void SetTrainerFlag(u16 trainerId);
 void ClearTrainerFlag(u16 trainerId);
 void ToggleTrainerFlag(u16 trainerId);
+/* dotrainerbattle entry. An eligible co-op encounter parks the trainer script
+ * here (context stopped, controls locked) until CoopBattleConsent_Poll starts
+ * either the co-op battle or BattleSetup_StartVanillaTrainerBattle. */
 void BattleSetup_StartTrainerBattle(void);
+/* The unmodified single-player trainer battle start. It reads the trainer
+ * parameters and approaching-trainer count left by the script, so a deferred
+ * call behaves exactly like the original dotrainerbattle. */
+void BattleSetup_StartVanillaTrainerBattle(void);
+/* Starts the server-authorized co-op trainer battle path. The caller must
+ * have a validated trainer manifest and a complete peer party snapshot. */
+bool8 BattleSetup_StartCoopTrainerBattle(void);
+/* Starts a released friendly battle against the grouped partner. team is
+ * this ROM's picked team (the snapshot it sent); the partner's team comes
+ * from the peer snapshot. The whole party is restored afterwards. */
+bool8 BattleSetup_StartCoopFriendlyBattle(const struct Pokemon *team, u8 count);
+/* special BattleSetup_StartRematchBattle: the same co-op hook as
+ * BattleSetup_StartTrainerBattle, for the match-call rematch modes. */
 void BattleSetup_StartRematchBattle(void);
+/* The unmodified rematch start, used directly or as the co-op fallback. */
+void BattleSetup_StartVanillaRematchBattle(void);
+bool8 IsRematchBattleMode(u8 mode);
+/* TRUE when trainerId is a later gRematchTable entry (CALVIN_2 ... 5,
+ * ROXANNE_2 ... 5), with the table's first-battle trainer in *baseTrainerId. */
+bool8 BattleSetup_GetRematchBaseTrainer(u16 trainerId, u16 *baseTrainerId);
+/* Exactly what a vanilla rematch win records for this trainer: match-call
+ * registration, the trainer flag and the cleared "wants a rematch" state. */
+void BattleSetup_ApplyCoopRematchWin(u16 trainerId);
+/* The vanilla end-of-battle match-call registration for this trainer. */
+void BattleSetup_RegisterTrainerInMatchCall(u16 trainerId);
 void ShowTrainerIntroSpeech(void);
 const u8 *BattleSetup_GetScriptAddrAfterBattle(void);
 const u8 *BattleSetup_GetTrainerPostBattleScript(void);

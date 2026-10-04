@@ -75,6 +75,9 @@
 #include "test/battle.h"
 #include "follower_npc.h"
 #include "load_save.h"
+#include "coop/battle_items.h"
+#include "coop/battle_runtime.h"
+#include "coop/net_bridge.h"
 
 // Helper for accessing command arguments and advancing gBattlescriptCurrInstr.
 //
@@ -1106,8 +1109,11 @@ static void AccuracyCheck(bool32 recalcDragonDarts, const u8 *nextInstr, const u
     enum MoveTarget moveTarget = GetBattlerMoveTargetType(gBattlerAttacker, gCurrentMove);
     bool32 calcSpreadMove = IsSpreadMove(moveTarget);
 
-    for (enum BattlerId battlerDef = 0; battlerDef < gBattlersCount; battlerDef++)
+    /* Spread-move accuracy rolls in canonical battler order. */
+    for (enum BattlerId i = 0; i < gBattlersCount; i++)
     {
+        enum BattlerId battlerDef = CoopBattleRuntime_CanonicalBattler(i);
+
         if (gBattleStruct->calculatedSpreadMoveAccuracy)
             break;
 
@@ -1287,8 +1293,11 @@ static void Cmd_damagecalc(void)
 
     if (IsSpreadMove(GetBattlerMoveTargetType(gBattlerAttacker, gCurrentMove)))
     {
-        for (enum BattlerId battlerDef = 0; battlerDef < gBattlersCount; battlerDef++)
+        /* Damage and critical-hit rolls in canonical battler order. */
+        for (enum BattlerId i = 0; i < gBattlersCount; i++)
         {
+            enum BattlerId battlerDef = CoopBattleRuntime_CanonicalBattler(i);
+
             if (IsBattlerInvalidForSpreadMove(gBattlerAttacker, battlerDef))
                 continue;
 
@@ -3426,8 +3435,10 @@ void SetMoveEffect(enum BattlerId battlerAtk, enum BattlerId effectBattler, enum
     case MOVE_EFFECT_SANDBLAST_SIDE:
     case MOVE_EFFECT_FIRE_SPIN_SIDE:
         // Affects both opponents, but doesn't print strings so we can handle it here.
-        for (enum BattlerId battler = 0; battler < MAX_BATTLERS_COUNT; ++battler)
+        for (enum BattlerId i = 0; i < MAX_BATTLERS_COUNT; ++i)
         {
+            enum BattlerId battler = CoopBattleRuntime_CanonicalBattler(i);
+
             if (!IsBattlerAlly(battler, effectBattler))
                 continue;
             if (!gBattleMons[battler].volatiles.wrapped)
@@ -5644,13 +5655,16 @@ static void Cmd_openpartyscreen(void)
 
         hitmarkerFaintBits = gHitMarker >> 28;
 
+        /* Fainted battlers are replaced in canonical battler order. */
         gBattlerFainted = 0;
-        while (!((1u << gBattlerFainted) & hitmarkerFaintBits)
+        while (!((1u << CoopBattleRuntime_CanonicalBattler(gBattlerFainted)) & hitmarkerFaintBits)
                && gBattlerFainted < gBattlersCount)
             gBattlerFainted++;
 
         if (gBattlerFainted == gBattlersCount)
             gBattlescriptCurrInstr = failInstr;
+        else
+            gBattlerFainted = CoopBattleRuntime_CanonicalBattler(gBattlerFainted);
     }
     else
     {
@@ -5812,14 +5826,20 @@ static void Cmd_switchineffects(void)
 
     if (cmd->battler == BS_FAINTED_MULTIPLE_1)
     {
+        /* Counts in canonical battler order (the identity outside a co-op
+         * trainer battle); gBattlersCount still ends the list. */
+        u32 next = CoopBattleRuntime_CanonicalBattler(gBattlerFainted);
+
         do // Increment fainted battler
         {
-            gBattlerFainted++;
-            if (gBattlerFainted >= gBattlersCount)
+            next++;
+            if (next >= gBattlersCount)
                 break;
-            if (gHitMarker & HITMARKER_FAINTED(gBattlerFainted) && !(gAbsentBattlerFlags & (1u << gBattlerFainted)))
+            if (gHitMarker & HITMARKER_FAINTED(CoopBattleRuntime_CanonicalBattler(next))
+             && !(gAbsentBattlerFlags & (1u << CoopBattleRuntime_CanonicalBattler(next))))
                 break;
         } while (1);
+        gBattlerFainted = next >= gBattlersCount ? next : CoopBattleRuntime_CanonicalBattler(next);
     }
 
     gBattleStruct->eventState.switchIn = 0;
@@ -6164,9 +6184,7 @@ static void Cmd_hitanimation(void)
 
 static u32 GetTrainerMoneyToGive(u16 trainerId)
 {
-    u32 lastMonLevel = 0;
     u32 moneyReward;
-    u8 trainerMoney = 0;
 
     if (trainerId == TRAINER_SECRET_BASE)
     {
@@ -6174,21 +6192,29 @@ static u32 GetTrainerMoneyToGive(u16 trainerId)
     }
     else
     {
-        const struct TrainerMon *party = GetTrainerPartyFromId(trainerId);
-        if (party == NULL)
-            return 20;
-        lastMonLevel = party[GetTrainerPartySizeFromId(trainerId) - 1].lvl;
-        trainerMoney = gTrainerClasses[GetTrainerClassFromId(trainerId)].money ?: 5;
-
-        if (gBattleTypeFlags & BATTLE_TYPE_TWO_OPPONENTS)
-            moneyReward = 4 * lastMonLevel * gBattleStruct->moneyMultiplier * trainerMoney;
-        else if (IsDoubleBattle())
-            moneyReward = 4 * lastMonLevel * gBattleStruct->moneyMultiplier * 2 * trainerMoney;
-        else
-            moneyReward = 4 * lastMonLevel * gBattleStruct->moneyMultiplier * trainerMoney;
+        moneyReward = GetTrainerPrizeMoney(trainerId, gBattleStruct->moneyMultiplier,
+                                           !(gBattleTypeFlags & BATTLE_TYPE_TWO_OPPONENTS)
+                                           && IsDoubleBattle());
     }
 
     return moneyReward;
+}
+
+/* The prize for one ordinary trainer; doubleBattle doubles it as in a
+ * single-trainer double battle. Shared with the co-op trainer rewards. */
+u32 GetTrainerPrizeMoney(u16 trainerId, u32 multiplier, bool32 doubleBattle)
+{
+    u32 lastMonLevel;
+    u8 trainerMoney;
+    const struct TrainerMon *party = GetTrainerPartyFromId(trainerId);
+
+    if (party == NULL)
+        return 20;
+    lastMonLevel = party[GetTrainerPartySizeFromId(trainerId) - 1].lvl;
+    trainerMoney = gTrainerClasses[GetTrainerClassFromId(trainerId)].money ?: 5;
+    if (doubleBattle)
+        return 4 * lastMonLevel * multiplier * 2 * trainerMoney;
+    return 4 * lastMonLevel * multiplier * trainerMoney;
 }
 
 static void Cmd_getmoneyreward(void)
@@ -11136,7 +11162,12 @@ static void Cmd_trysetcaughtmondexflags(void)
     }
     else
     {
-        HandleSetPokedexFlag(SpeciesToNationalPokedexNum(species), FLAG_SET_CAUGHT, personality);
+        u16 nationalDexNumber = SpeciesToNationalPokedexNum(species);
+        enum CoopRegion region;
+
+        HandleSetPokedexFlag(nationalDexNumber, FLAG_SET_CAUGHT, personality);
+        if (CoopRegion_TryGetActive(&region))
+            (void)CoopNetBridge_ObserveProgress(2, region, nationalDexNumber);
         gBattlescriptCurrInstr = cmd->nextInstr;
     }
 }
@@ -11818,7 +11849,13 @@ void BS_JumpIfCantLoseItem(void)
 void BS_GetBattlerSide(void)
 {
     NATIVE_ARGS(u8 battler);
-    gBattleCommunication[0] = GetBattlerSide(GetBattlerForBattleScript(cmd->battler));
+    enum BattlerId battler = GetBattlerForBattleScript(cmd->battler);
+
+    gBattleCommunication[0] = GetBattlerSide(battler);
+    // Only the item-use message reads this: a co-op partner's item is
+    // announced with the partner's name, not as "You used".
+    if (CoopBattleItems_IsBagOpen() && GetBattlerPosition(battler) == B_POSITION_PLAYER_RIGHT)
+        gBattleCommunication[0] = B_SIDE_OPPONENT;
     gBattlescriptCurrInstr = cmd->nextInstr;
 }
 
@@ -11921,15 +11958,23 @@ u8 GetFirstFaintedPartyIndex(enum BattlerId battler)
 
 void ApplyExperienceMultipliers(s32 *expAmount, u8 expGetterMonId, u8 faintedBattler)
 {
-    enum HoldEffect holdEffect = GetMonHoldEffect(&gParties[B_TRAINER_0][expGetterMonId]);
+    ApplyMonExperienceMultipliers(expAmount, &gParties[B_TRAINER_0][expGetterMonId],
+                                  gBattleMons[faintedBattler].level);
+}
 
-    if (IsTradedMon(&gParties[B_TRAINER_0][expGetterMonId]))
+/* The battle-free core of ApplyExperienceMultipliers: co-op trainer rewards
+ * apply the same multipliers after the battle has been torn down. */
+void ApplyMonExperienceMultipliers(s32 *expAmount, struct Pokemon *expGetter, u8 faintedLevel)
+{
+    enum HoldEffect holdEffect = GetMonHoldEffect(expGetter);
+
+    if (IsTradedMon(expGetter))
         *expAmount = (*expAmount * 150) / 100;
     if (holdEffect == HOLD_EFFECT_LUCKY_EGG)
         *expAmount = (*expAmount * 150) / 100;
-    if (B_UNEVOLVED_EXP_MULTIPLIER >= GEN_6 && IsMonPastEvolutionLevel(&gParties[B_TRAINER_0][expGetterMonId]))
+    if (B_UNEVOLVED_EXP_MULTIPLIER >= GEN_6 && IsMonPastEvolutionLevel(expGetter))
         *expAmount = (*expAmount * 4915) / 4096;
-    if (B_AFFECTION_MECHANICS == TRUE && GetMonAffectionHearts(&gParties[B_TRAINER_0][expGetterMonId]) >= AFFECTION_FOUR_HEARTS)
+    if (B_AFFECTION_MECHANICS == TRUE && GetMonAffectionHearts(expGetter) >= AFFECTION_FOUR_HEARTS)
         *expAmount = (*expAmount * 4915) / 4096;
     if (CheckBagHasItem(ITEM_EXP_CHARM, 1)) //is also for other exp boosting Powers if/when implemented
         *expAmount = (*expAmount * 150) / 100;
@@ -11939,8 +11984,7 @@ void ApplyExperienceMultipliers(s32 *expAmount, u8 expGetterMonId, u8 faintedBat
         // Note: There is an edge case where if a Pokémon receives a large amount of exp, it wouldn't be properly calculated
         //       because of multiplying by scaling factor(the value would simply be larger than an u32 can hold). Hence u64 is needed.
         u64 value = *expAmount;
-        u8 faintedLevel = gBattleMons[faintedBattler].level;
-        u8 expGetterLevel = GetMonData(&gParties[B_TRAINER_0][expGetterMonId], MON_DATA_LEVEL);
+        u8 expGetterLevel = GetMonData(expGetter, MON_DATA_LEVEL);
 
         value *= sExperienceScalingFactors[(faintedLevel * 2) + 10];
         value /= sExperienceScalingFactors[faintedLevel + expGetterLevel + 10];
@@ -11970,10 +12014,12 @@ void BS_ItemRestoreHP(void)
         if (hp == 0 && IsOnPlayerSide(gBattlerAttacker) && gBattleResults.numRevivesUsed < 255)
             gBattleResults.numRevivesUsed++;
 
-        // Check if the recipient is an active battler.
+        // Check if the recipient is an active battler. In a multi battle the
+        // partner's party index points into the partner's own party.
         if (gBattleStruct->itemPartyIndex[gBattlerAttacker] == gBattlerPartyIndexes[gBattlerAttacker])
             battler = gBattlerAttacker;
-        else if (IsDoubleBattle() && gBattleStruct->itemPartyIndex[gBattlerAttacker] == gBattlerPartyIndexes[BATTLE_PARTNER(gBattlerAttacker)])
+        else if (IsDoubleBattle() && gBattleStruct->itemPartyIndex[gBattlerAttacker] == gBattlerPartyIndexes[BATTLE_PARTNER(gBattlerAttacker)]
+              && BattlersShareParty(gBattlerAttacker, BATTLE_PARTNER(gBattlerAttacker)))
             battler = BATTLE_PARTNER(gBattlerAttacker);
 
         // Get amount to heal.
@@ -12010,8 +12056,10 @@ void BS_ItemRestoreHP(void)
             SetMonData(&party[gBattleStruct->itemPartyIndex[gBattlerAttacker]], MON_DATA_HP, &hp);
 
             enum BattlerId partner = BATTLE_PARTNER(gBattlerAttacker);
-            // Absent battlers on the field need to be replaced
-            if (IsDoubleBattle() && (gAbsentBattlerFlags & (1u << partner)))
+            // Absent battlers on the field need to be replaced (never with a
+            // Pokemon from another trainer's party)
+            if (IsDoubleBattle() && (gAbsentBattlerFlags & (1u << partner))
+             && BattlersShareParty(gBattlerAttacker, partner))
             {
                 gAbsentBattlerFlags &= ~(1u << partner);
                 gBattleCommunication[MULTIUSE_STATE] = TRUE;
@@ -12037,7 +12085,8 @@ void BS_ItemCureStatus(void)
         targetBattler = gBattlerAttacker;
     }
     else if (IsDoubleBattle()
-     && gBattleStruct->itemPartyIndex[gBattlerAttacker] == gBattlerPartyIndexes[BATTLE_PARTNER(gBattlerAttacker)])
+     && gBattleStruct->itemPartyIndex[gBattlerAttacker] == gBattlerPartyIndexes[BATTLE_PARTNER(gBattlerAttacker)]
+     && BattlersShareParty(gBattlerAttacker, BATTLE_PARTNER(gBattlerAttacker)))
     {
         statusChanged = ItemHealMonVolatile(BATTLE_PARTNER(gBattlerAttacker), gLastUsedItem);
         targetBattler = BATTLE_PARTNER(gBattlerAttacker);
@@ -12080,7 +12129,8 @@ void BS_ItemIncreaseStat(void)
         SET_STATCHANGER(statId, stages, FALSE);
     } // else EFFECT_ITEM_INCREASE_ALL_STATS or EFFECT_ITEM_SET_FOCUS_ENERGY
 
-    if (gBattlerPartyIndexes[gBattlerAttacker] != gBattleStruct->itemPartyIndex[gBattlerAttacker])
+    if (gBattlerPartyIndexes[gBattlerAttacker] != gBattleStruct->itemPartyIndex[gBattlerAttacker]
+     && BattlersShareParty(gBattlerAttacker, BATTLE_PARTNER(gBattlerAttacker)))
         gBattlerAttacker = BATTLE_PARTNER(gBattlerAttacker);
 
     gBattlescriptCurrInstr = cmd->nextInstr;
@@ -12111,7 +12161,8 @@ void BS_ItemRestorePP(void)
     if (gBattleStruct->itemPartyIndex[gBattlerAttacker] == gBattlerPartyIndexes[gBattlerAttacker])
         battler = gBattlerAttacker;
     else if (IsDoubleBattle()
-                && gBattleStruct->itemPartyIndex[gBattlerAttacker] == gBattlerPartyIndexes[BATTLE_PARTNER(gBattlerAttacker)])
+                && gBattleStruct->itemPartyIndex[gBattlerAttacker] == gBattlerPartyIndexes[BATTLE_PARTNER(gBattlerAttacker)]
+                && BattlersShareParty(gBattlerAttacker, BATTLE_PARTNER(gBattlerAttacker)))
         battler = BATTLE_PARTNER(gBattlerAttacker);
 
     // Heal PP!
@@ -14554,8 +14605,10 @@ void BS_GetTotemBoost(void)
 void BS_ActivateItemEffects(void)
 {
     NATIVE_ARGS();
-    for (enum BattlerId battler = 0; battler < gBattlersCount; battler++)
+    for (enum BattlerId i = 0; i < gBattlersCount; i++)
     {
+        enum BattlerId battler = CoopBattleRuntime_CanonicalBattler(i);
+
         if (ItemBattleEffects(battler, 0, GetBattlerHoldEffect(battler), IsForceTriggerItemActivation))
             return;
     }

@@ -3077,8 +3077,9 @@ bool8 ScrCmd_setmonmetlocation(struct ScriptContext *ctx)
 
     Script_RequestEffects(SCREFF_V1 | SCREFF_SAVE);
 
+    // The script operand is a legacy met-location byte (e.g. METLOC_*).
     if (partyIndex < PARTY_SIZE)
-        SetMonData(&gParties[B_TRAINER_0][partyIndex], MON_DATA_MET_LOCATION, &location);
+        SetMonMetLocation(&gParties[B_TRAINER_0][partyIndex], MetLocationFromLegacyByte(location));
     return FALSE;
 }
 

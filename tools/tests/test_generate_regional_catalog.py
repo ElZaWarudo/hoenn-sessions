@@ -2,7 +2,9 @@
 """Focused tests for the complete co-op regional map catalog."""
 
 import importlib.util
+import re
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -49,6 +51,23 @@ class RegionalCatalogTests(unittest.TestCase):
                 "REGION_CORMORIA", "MAPSEC_LITTLEROOT_TOWN", sections, sevii, special_area
             )
 
+    def test_group_fly_ordinals_keep_host_prefix_and_reject_unassigned_cormoria(self):
+        source = (ROOT / "src/region_map.c").read_text(encoding="utf-8")
+        table = source.split("static const struct FlyLocation sFlyLocations[] =", 1)[1].split("\n};", 1)[0]
+        sections = re.findall(r"\bMAPSEC_[A-Z0-9_]+", table)
+        # These positions define main's group routes 8..17, not just menu order.
+        self.assertEqual(sections[:10], [
+            "MAPSEC_NEW_BARK_TOWN", "MAPSEC_JOHTO_CHERRYGROVE_CITY", "MAPSEC_JOHTO_VIOLET_CITY",
+            "MAPSEC_JOHTO_AZALEA_TOWN", "MAPSEC_JOHTO_GOLDENROD_CITY", "MAPSEC_JOHTO_ECRUTEAK_CITY",
+            "MAPSEC_JOHTO_OLIVINE_CITY", "MAPSEC_JOHTO_CIANWOOD_CITY", "MAPSEC_JOHTO_MAHOGANY_TOWN",
+            "MAPSEC_JOHTO_BLACKTHORN_CITY"])
+        cormoria = [section for section in sections if section.startswith("MAPSEC_CORMORIA_")]
+        self.assertEqual(len(cormoria), 11)
+        self.assertEqual(sections[-11:], cormoria)
+        selector = source.split("u8 CoopRegionMap_GroupFlyRouteForSelection", 1)[1].split("\nbool8 CoopRegionMap_GroupFlyFields", 1)[0]
+        self.assertRegex(selector, r"if \(location->regionMapType == REGION_MAP_CORMORIA\)\s+return 0;")
+        self.assertLess(selector.index("location->regionMapType == REGION_MAP_CORMORIA"), selector.index("index = location - sFlyLocations"))
+
     def test_geographic_kanto_routes_use_engine_region_authority(self):
         sections, sevii, special_area = catalog.source_sections()
 
@@ -64,6 +83,58 @@ class RegionalCatalogTests(unittest.TestCase):
                     catalog.protocol_region(
                         "REGION_JOHTO", section, sections, sevii, special_area
                     )
+
+    def test_catalog_carries_layout_bounds_and_vanilla_escape_endpoints(self):
+        records = catalog._build_catalog_records()
+        targets, ranges = catalog.build_escape_targets(records)
+        granite = next(record for record in records if record.map_key == "GRANITE_CAVE_1F")
+
+        self.assertEqual((granite.width, granite.height), (42, 15))
+        self.assertTrue(granite.allow_escaping)
+        start, length = ranges[granite.map_key]
+        self.assertIn((0, 21, 48, 17), targets[start : start + length])
+
+        littleroot = next(record for record in records if record.map_key == "LITTLEROOT_TOWN")
+        self.assertEqual((littleroot.width, littleroot.height), (20, 20))
+        self.assertFalse(littleroot.allow_escaping)
+        self.assertEqual(ranges[littleroot.map_key][1], 0)
+
+    def test_escape_endpoints_follow_scripts_and_indoor_chains(self):
+        records = catalog._build_catalog_records()
+        targets, ranges = catalog.build_escape_targets(records)
+        by_coordinates = {(record.group, record.number): record for record in records}
+
+        def endpoints(map_key):
+            start, length = ranges[map_key]
+            return {
+                (by_coordinates[(group, number)].map_key, x, y)
+                for group, number, x, y in targets[start : start + length]
+            }
+
+        # Deeper floors inherit the entrance endpoint set by UpdateEscapeWarp.
+        self.assertEqual(endpoints("GRANITE_CAVE_B2F"), {("ROUTE106", 48, 17)})
+        # A map-local setescapewarp supplies the endpoint for outdoor-typed maps.
+        self.assertEqual(
+            endpoints("SIX_ISLAND_PATTERN_BUSH"),
+            {("SIX_ISLAND_GREEN_PATH", 45, 10), ("SIX_ISLAND_GREEN_PATH", 64, 10)},
+        )
+        self.assertIn(("SOOTOPOLIS_CITY", 31, 17), endpoints("CAVE_OF_ORIGIN_B1F"))
+        # The shared abnormal-weather script seeds the Marine Cave dive entry.
+        self.assertIn(("ROUTE105", 11, 29), endpoints("MARINE_CAVE_END"))
+        # Every endpoint lies inside its target layout.
+        for group, number, x, y in targets:
+            target = by_coordinates[(group, number)]
+            self.assertLess(x, target.width)
+            self.assertLess(y, target.height)
+
+    def test_setescapewarp_parser_rejects_warp_id_form(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "scripts.inc"
+            path.write_text("Label::\n\tsetescapewarp MAP_ROUTE101, 255, 3, 4\n", encoding="utf-8")
+            self.assertEqual(catalog.parse_setescapewarps(path), [("MAP_ROUTE101", 3, 4)])
+            path.write_text("Label::\n\tsetescapewarp MAP_ROUTE101, 2, 3, 4\n", encoding="utf-8")
+            with self.assertRaises(catalog.CatalogError):
+                catalog.parse_setescapewarps(path)
 
 
 if __name__ == "__main__":

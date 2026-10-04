@@ -64,6 +64,10 @@ LilycoveCity_Harbor_EventScript_FerryRegularLocationSelect::
 	end
 
 LilycoveCity_Harbor_EventScript_GoToSouthernIsland::
+	setvar VAR_0x8004, 85
+	call LilycoveCity_Harbor_EventScript_RequestGroupTravel
+	goto_if_eq VAR_RESULT, 1, LilycoveCity_Harbor_EventScript_GroupTravelWaiting
+	goto_if_eq VAR_RESULT, 2, LilycoveCity_Harbor_EventScript_GroupTravelFailed
 	call LilycoveCity_Harbor_EventScript_BoardFerry
 	warp MAP_SOUTHERN_ISLAND_EXTERIOR, 13, 22
 	waitstate
@@ -71,6 +75,10 @@ LilycoveCity_Harbor_EventScript_GoToSouthernIsland::
 	end
 
 LilycoveCity_Harbor_EventScript_GoToNavelRock::
+	setvar VAR_0x8004, 86
+	call LilycoveCity_Harbor_EventScript_RequestGroupTravel
+	goto_if_eq VAR_RESULT, 1, LilycoveCity_Harbor_EventScript_GroupTravelWaiting
+	goto_if_eq VAR_RESULT, 2, LilycoveCity_Harbor_EventScript_GroupTravelFailed
 	call LilycoveCity_Harbor_EventScript_BoardFerry
 	warp MAP_NAVEL_ROCK_HARBOR, 8, 4
 	waitstate
@@ -78,6 +86,10 @@ LilycoveCity_Harbor_EventScript_GoToNavelRock::
 	end
 
 LilycoveCity_Harbor_EventScript_GoToBirthIsland::
+	setvar VAR_0x8004, 87
+	call LilycoveCity_Harbor_EventScript_RequestGroupTravel
+	goto_if_eq VAR_RESULT, 1, LilycoveCity_Harbor_EventScript_GroupTravelWaiting
+	goto_if_eq VAR_RESULT, 2, LilycoveCity_Harbor_EventScript_GroupTravelFailed
 	call LilycoveCity_Harbor_EventScript_BoardFerry
 	warp MAP_BIRTH_ISLAND_HARBOR, 8, 4
 	waitstate
@@ -85,6 +97,10 @@ LilycoveCity_Harbor_EventScript_GoToBirthIsland::
 	end
 
 LilycoveCity_Harbor_EventScript_GoToFarawayIsland::
+	setvar VAR_0x8004, 88
+	call LilycoveCity_Harbor_EventScript_RequestGroupTravel
+	goto_if_eq VAR_RESULT, 1, LilycoveCity_Harbor_EventScript_GroupTravelWaiting
+	goto_if_eq VAR_RESULT, 2, LilycoveCity_Harbor_EventScript_GroupTravelFailed
 	call LilycoveCity_Harbor_EventScript_BoardFerry
 	warp MAP_FARAWAY_ISLAND_ENTRANCE, 13, 38
 	waitstate
@@ -94,6 +110,8 @@ LilycoveCity_Harbor_EventScript_GoToFarawayIsland::
 LilycoveCity_Harbor_EventScript_GoToSlateport::
 	msgbox LilycoveCity_Harbor_Text_SlateportItIs, MSGBOX_YESNO
 	goto_if_eq VAR_RESULT, NO, LilycoveCity_Harbor_EventScript_FerryDestinationChangeMind
+	special Special_CoopGroupTravelIsGrouped
+	goto_if_eq VAR_RESULT, TRUE, LilycoveCity_Harbor_EventScript_SlateportGroupBoard
 	setvar VAR_SS_TIDAL_STATE, SS_TIDAL_BOARD_LILYCOVE
 	call LilycoveCity_Harbor_EventScript_BoardFerry
 	warp MAP_SS_TIDAL_CORRIDOR, 1, 10
@@ -104,9 +122,38 @@ LilycoveCity_Harbor_EventScript_GoToSlateport::
 LilycoveCity_Harbor_EventScript_GoToBattleFrontier::
 	msgbox LilycoveCity_Harbor_Text_BattleFrontierItIs, MSGBOX_YESNO
 	goto_if_eq VAR_RESULT, NO, LilycoveCity_Harbor_EventScript_FerryDestinationChangeMind
+	setvar VAR_0x8004, 89
+	call LilycoveCity_Harbor_EventScript_RequestGroupTravel
+	goto_if_eq VAR_RESULT, 1, LilycoveCity_Harbor_EventScript_GroupTravelWaiting
+	goto_if_eq VAR_RESULT, 2, LilycoveCity_Harbor_EventScript_GroupTravelFailed
 	call LilycoveCity_Harbor_EventScript_BoardFerry
 	warp MAP_BATTLE_FRONTIER_OUTSIDE_WEST, 19, 67
 	waitstate
+	release
+	end
+
+LilycoveCity_Harbor_EventScript_SlateportGroupBoard::
+	setvar VAR_0x8004, 93
+	call LilycoveCity_Harbor_EventScript_RequestGroupTravel
+	goto_if_eq VAR_RESULT, 1, LilycoveCity_Harbor_EventScript_GroupTravelWaiting
+	goto_if_eq VAR_RESULT, 2, LilycoveCity_Harbor_EventScript_GroupTravelFailed
+	goto LilycoveCity_Harbor_EventScript_SSTidalGroupUnavailable
+	end
+
+LilycoveCity_Harbor_EventScript_RequestGroupTravel::
+	setvar VAR_0x8005, 2
+	special Special_CoopGroupTravelBegin
+	return
+
+LilycoveCity_Harbor_EventScript_GroupTravelWaiting::
+	end
+
+LilycoveCity_Harbor_EventScript_GroupTravelFailed::
+	release
+	end
+
+LilycoveCity_Harbor_EventScript_SSTidalGroupUnavailable::
+	msgbox LilycoveCity_Harbor_Text_SSTidalGroupUnavailable, MSGBOX_DEFAULT
 	release
 	end
 
@@ -199,6 +246,10 @@ LilycoveCity_Harbor_EventScript_SetHasMysticTicket::
 	return
 
 LilycoveCity_Harbor_EventScript_EonTicketFirstTime::
+	setvar VAR_0x8004, 85
+	call LilycoveCity_Harbor_EventScript_RequestGroupTravel
+	goto_if_eq VAR_RESULT, 1, LilycoveCity_Harbor_EventScript_GroupTravelWaiting
+	goto_if_eq VAR_RESULT, 2, LilycoveCity_Harbor_EventScript_GroupTravelFailed
 	setflag FLAG_SHOWN_EON_TICKET
 	msgbox EventTicket_Text_ThatPass, MSGBOX_DEFAULT
 	closemessage
@@ -208,6 +259,10 @@ LilycoveCity_Harbor_EventScript_EonTicketFirstTime::
 	end
 
 LilycoveCity_Harbor_EventScript_GoToSouthernIslandFirstTime::
+	setvar VAR_0x8004, 85
+	call LilycoveCity_Harbor_EventScript_RequestGroupTravel
+	goto_if_eq VAR_RESULT, 1, LilycoveCity_Harbor_EventScript_GroupTravelWaiting
+	goto_if_eq VAR_RESULT, 2, LilycoveCity_Harbor_EventScript_GroupTravelFailed
 	closemessage
 	call LilycoveCity_Harbor_EventScript_BoardFerryWithSailor
 	warp MAP_SOUTHERN_ISLAND_EXTERIOR, 13, 22
@@ -216,6 +271,10 @@ LilycoveCity_Harbor_EventScript_GoToSouthernIslandFirstTime::
 	end
 
 LilycoveCity_Harbor_EventScript_AuroraTicketFirstTime::
+	setvar VAR_0x8004, 87
+	call LilycoveCity_Harbor_EventScript_RequestGroupTravel
+	goto_if_eq VAR_RESULT, 1, LilycoveCity_Harbor_EventScript_GroupTravelWaiting
+	goto_if_eq VAR_RESULT, 2, LilycoveCity_Harbor_EventScript_GroupTravelFailed
 	setflag FLAG_SHOWN_AURORA_TICKET
 	msgbox EventTicket_Text_ThatPass, MSGBOX_DEFAULT
 	closemessage
@@ -225,6 +284,10 @@ LilycoveCity_Harbor_EventScript_AuroraTicketFirstTime::
 	end
 
 LilycoveCity_Harbor_EventScript_GoToBirthIslandFirstTime::
+	setvar VAR_0x8004, 87
+	call LilycoveCity_Harbor_EventScript_RequestGroupTravel
+	goto_if_eq VAR_RESULT, 1, LilycoveCity_Harbor_EventScript_GroupTravelWaiting
+	goto_if_eq VAR_RESULT, 2, LilycoveCity_Harbor_EventScript_GroupTravelFailed
 	closemessage
 	call LilycoveCity_Harbor_EventScript_BoardFerryWithSailor
 	warp MAP_BIRTH_ISLAND_HARBOR, 8, 4
@@ -233,6 +296,10 @@ LilycoveCity_Harbor_EventScript_GoToBirthIslandFirstTime::
 	end
 
 LilycoveCity_Harbor_EventScript_OldSeaMapFirstTime::
+	setvar VAR_0x8004, 88
+	call LilycoveCity_Harbor_EventScript_RequestGroupTravel
+	goto_if_eq VAR_RESULT, 1, LilycoveCity_Harbor_EventScript_GroupTravelWaiting
+	goto_if_eq VAR_RESULT, 2, LilycoveCity_Harbor_EventScript_GroupTravelFailed
 	setflag FLAG_SHOWN_OLD_SEA_MAP
 	msgbox EventTicket_Text_ShowOldSeaMap, MSGBOX_DEFAULT
 	closemessage
@@ -266,6 +333,10 @@ LilycoveCity_Harbor_EventScript_OldSeaMapFirstTime::
 	end
 
 LilycoveCity_Harbor_EventScript_GoToFarawayIslandFirstTime::
+	setvar VAR_0x8004, 88
+	call LilycoveCity_Harbor_EventScript_RequestGroupTravel
+	goto_if_eq VAR_RESULT, 1, LilycoveCity_Harbor_EventScript_GroupTravelWaiting
+	goto_if_eq VAR_RESULT, 2, LilycoveCity_Harbor_EventScript_GroupTravelFailed
 	closemessage
 	call LilycoveCity_Harbor_EventScript_BoardFerryWithSailor
 	warp MAP_FARAWAY_ISLAND_ENTRANCE, 13, 38
@@ -274,6 +345,10 @@ LilycoveCity_Harbor_EventScript_GoToFarawayIslandFirstTime::
 	end
 
 LilycoveCity_Harbor_EventScript_MysticTicketFirstTime::
+	setvar VAR_0x8004, 86
+	call LilycoveCity_Harbor_EventScript_RequestGroupTravel
+	goto_if_eq VAR_RESULT, 1, LilycoveCity_Harbor_EventScript_GroupTravelWaiting
+	goto_if_eq VAR_RESULT, 2, LilycoveCity_Harbor_EventScript_GroupTravelFailed
 	setflag FLAG_SHOWN_MYSTIC_TICKET
 	msgbox EventTicket_Text_ThatPass, MSGBOX_DEFAULT
 	closemessage
@@ -283,6 +358,10 @@ LilycoveCity_Harbor_EventScript_MysticTicketFirstTime::
 	end
 
 LilycoveCity_Harbor_EventScript_GoToNavelRockFirstTime::
+	setvar VAR_0x8004, 86
+	call LilycoveCity_Harbor_EventScript_RequestGroupTravel
+	goto_if_eq VAR_RESULT, 1, LilycoveCity_Harbor_EventScript_GroupTravelWaiting
+	goto_if_eq VAR_RESULT, 2, LilycoveCity_Harbor_EventScript_GroupTravelFailed
 	closemessage
 	call LilycoveCity_Harbor_EventScript_BoardFerryWithSailor
 	warp MAP_NAVEL_ROCK_HARBOR, 8, 4
@@ -291,6 +370,8 @@ LilycoveCity_Harbor_EventScript_GoToNavelRockFirstTime::
 	end
 
 LilycoveCity_Harbor_EventScript_MultipleEventTicketsFirstTime::
+	special Special_CoopGroupTravelIsGrouped
+	goto_if_eq VAR_RESULT, 1, LilycoveCity_Harbor_EventScript_MultipleEventTicketsGrouped
 	msgbox EventTicket_Text_ThatPass, MSGBOX_DEFAULT
 	closemessage
 	call LilycoveCity_Harbor_EventScript_GetEventTicketSailor
@@ -309,6 +390,57 @@ LilycoveCity_Harbor_EventScript_MultipleEventTicketsFirstTime::
 	case MULTI_B_PRESSED, LilycoveCity_Harbor_EventScript_ExitFirstTimeTicketSailSelect
 	release
 	end
+
+@ In a group, select the destination before changing the attendant and sailor.
+@ A cancelled vote can then leave both actors exactly as they were.
+LilycoveCity_Harbor_EventScript_MultipleEventTicketsGrouped::
+	message EventTicket_Text_OddTicketsWhereTo
+	waitmessage
+	setvar VAR_0x8004, 2
+	special ScriptMenu_CreateLilycoveSSTidalMultichoice
+	waitstate
+	special GetLilycoveSSTidalSelection
+	switch VAR_RESULT
+	case 2, LilycoveCity_Harbor_EventScript_GroupedFirstTimeSouthern
+	case 3, LilycoveCity_Harbor_EventScript_GroupedFirstTimeNavel
+	case 4, LilycoveCity_Harbor_EventScript_GroupedFirstTimeBirth
+	case 5, LilycoveCity_Harbor_EventScript_GroupedFirstTimeFaraway
+	case 6, LilycoveCity_Harbor_EventScript_GroupTravelFailed
+	case MULTI_B_PRESSED, LilycoveCity_Harbor_EventScript_GroupTravelFailed
+	release
+	end
+
+LilycoveCity_Harbor_EventScript_GroupedFirstTimeSouthern::
+	setvar VAR_0x8004, 85
+	call LilycoveCity_Harbor_EventScript_RequestGroupTravel
+	goto_if_eq VAR_RESULT, 1, LilycoveCity_Harbor_EventScript_GroupTravelWaiting
+	goto_if_eq VAR_RESULT, 2, LilycoveCity_Harbor_EventScript_GroupTravelFailed
+	call LilycoveCity_Harbor_EventScript_GetEventTicketSailor
+	goto LilycoveCity_Harbor_EventScript_GoToSouthernIslandFirstTime
+
+LilycoveCity_Harbor_EventScript_GroupedFirstTimeNavel::
+	setvar VAR_0x8004, 86
+	call LilycoveCity_Harbor_EventScript_RequestGroupTravel
+	goto_if_eq VAR_RESULT, 1, LilycoveCity_Harbor_EventScript_GroupTravelWaiting
+	goto_if_eq VAR_RESULT, 2, LilycoveCity_Harbor_EventScript_GroupTravelFailed
+	call LilycoveCity_Harbor_EventScript_GetEventTicketSailor
+	goto LilycoveCity_Harbor_EventScript_GoToNavelRockFirstTime
+
+LilycoveCity_Harbor_EventScript_GroupedFirstTimeBirth::
+	setvar VAR_0x8004, 87
+	call LilycoveCity_Harbor_EventScript_RequestGroupTravel
+	goto_if_eq VAR_RESULT, 1, LilycoveCity_Harbor_EventScript_GroupTravelWaiting
+	goto_if_eq VAR_RESULT, 2, LilycoveCity_Harbor_EventScript_GroupTravelFailed
+	call LilycoveCity_Harbor_EventScript_GetEventTicketSailor
+	goto LilycoveCity_Harbor_EventScript_GoToBirthIslandFirstTime
+
+LilycoveCity_Harbor_EventScript_GroupedFirstTimeFaraway::
+	setvar VAR_0x8004, 88
+	call LilycoveCity_Harbor_EventScript_RequestGroupTravel
+	goto_if_eq VAR_RESULT, 1, LilycoveCity_Harbor_EventScript_GroupTravelWaiting
+	goto_if_eq VAR_RESULT, 2, LilycoveCity_Harbor_EventScript_GroupTravelFailed
+	call LilycoveCity_Harbor_EventScript_GetEventTicketSailor
+	goto LilycoveCity_Harbor_EventScript_GoToFarawayIslandFirstTime
 
 LilycoveCity_Harbor_EventScript_ExitFirstTimeTicketSailSelect::
 	msgbox EventTicket_Text_AsYouLike, MSGBOX_DEFAULT
@@ -378,6 +510,8 @@ LilycoveCity_Harbor_EventScript_NoTicket::
 LilycoveCity_Harbor_EventScript_GoToSlateportUnused::
 	msgbox LilycoveCity_Harbor_Text_SlateportItIs, MSGBOX_YESNO
 	goto_if_eq VAR_RESULT, NO, LilycoveCity_Harbor_EventScript_FerryDestinationChangeMind
+	special Special_CoopGroupTravelIsGrouped
+	goto_if_eq VAR_RESULT, TRUE, LilycoveCity_Harbor_EventScript_SlateportGroupBoard
 	setvar VAR_SS_TIDAL_STATE, SS_TIDAL_BOARD_LILYCOVE
 	call LilycoveCity_Harbor_EventScript_BoardFerry
 	warp MAP_SS_TIDAL_CORRIDOR, 1, 10
@@ -389,6 +523,10 @@ LilycoveCity_Harbor_EventScript_GoToSlateportUnused::
 LilycoveCity_Harbor_EventScript_GoToBattleFrontierUnused::
 	msgbox LilycoveCity_Harbor_Text_BattleFrontierItIs, MSGBOX_YESNO
 	goto_if_eq VAR_RESULT, NO, LilycoveCity_Harbor_EventScript_FerryDestinationChangeMind
+	setvar VAR_0x8004, 89
+	call LilycoveCity_Harbor_EventScript_RequestGroupTravel
+	goto_if_eq VAR_RESULT, 1, LilycoveCity_Harbor_EventScript_GroupTravelWaiting
+	goto_if_eq VAR_RESULT, 2, LilycoveCity_Harbor_EventScript_GroupTravelFailed
 	call LilycoveCity_Harbor_EventScript_BoardFerry
 	warp MAP_BATTLE_FRONTIER_OUTSIDE_WEST, 19, 67
 	waitstate
@@ -587,6 +725,10 @@ LilycoveCity_Harbor_Text_SailAnotherTime:
 
 LilycoveCity_Harbor_Text_SlateportItIs:
 	.string "SLATEPORT CITY it is, then!$"
+
+LilycoveCity_Harbor_Text_SSTidalGroupUnavailable:
+	.string "We can't board the S.S. TIDAL\n"
+	.string "together today.$"
 
 LilycoveCity_Harbor_Text_BattleFrontierItIs:
 	.string "BATTLE FRONTIER it is, then!$"

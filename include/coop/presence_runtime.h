@@ -46,14 +46,20 @@ bool8 CoopPresenceRuntime_GetLocalState(struct CoopPresenceLocalState *out);
  * and atomic; accepted values wait for the normal overworld callback before
  * they can mutate the reducer or object-event renderer. */
 bool8 CoopPresenceRuntime_QueueBridgeFrame(u16 type, const u8 *payload, u16 length);
+bool8 CoopPresenceRuntime_QueueGroupEnded(const u8 *groupId, u16 length);
 void CoopPresenceRuntime_Update(void);
 void CoopPresenceRuntime_OnWarpCommit(void);
 
 enum CoopPresenceInteractionResult CoopPresenceRuntime_TryInteract(void);
-/* L (raw) sends a position ping; L + SELECT sends the next emote in the
- * fixed 1..8 cycle. Both are rate-limited and no-ops while hidden. */
+/* TRUE when the partner is visible, fresh, on this or an edge-connected map,
+ * projects inside the local view window and lies within maxTiles
+ * (Chebyshev distance) of the local player. Independent of field locks. */
+bool8 CoopPresenceRuntime_IsPartnerNearby(u8 maxTiles);
+/* L (raw) sends a position ping; L + a direction sends a chosen emote.
+ * Both are rate-limited and no-ops while hidden. */
 bool8 CoopPresenceRuntime_TryPing(void);
-bool8 CoopPresenceRuntime_TryEmote(void);
+bool8 CoopPresenceRuntime_TryEmote(u8 emote);
+void CoopPresenceRuntime_HidePartnerName(void);
 bool8 CoopPresenceRuntime_IsRemoteObject(const struct ObjectEvent *object_event);
 bool8 CoopPresenceRuntime_IsFollowerObject(const struct ObjectEvent *object_event);
 /* Latest remote ping tile while its time-to-live has not expired. */

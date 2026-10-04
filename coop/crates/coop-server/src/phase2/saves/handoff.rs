@@ -2,12 +2,13 @@
 //! world; a separate acknowledged commit performs that transition.
 
 use coop_cloud::{
-    ApiVersion, ArtifactIdentity, CharacterCloudState, RomHandoffCommitRequest, RomHandoffPrepareRequest,
-    RomHandoffPrepareResponse, RomHandoffRecoveryRequest, RomHandoffRecoveryStatus, Sha256Digest,
-    SnapshotFence, SnapshotFile, SnapshotId, SnapshotRecord,
+    ApiVersion, ArtifactIdentity, CharacterCloudState, RomHandoffCommitRequest,
+    RomHandoffPrepareRequest, RomHandoffPrepareResponse, RomHandoffRecoveryRequest,
+    RomHandoffRecoveryStatus, Sha256Digest, SnapshotFence, SnapshotFile, SnapshotId,
+    SnapshotRecord,
 };
-use coop_save::{TransferDescriptorPair, project_arrival};
 use coop_protocol::{RegionalProgress, WorldLocation, WorldZone};
+use coop_save::{TransferDescriptorPair, project_arrival};
 
 use super::super::storage::{
     MAX_RETIRED_SNAPSHOTS, MAX_ROM_HANDOFF_ABORT_TOMBSTONES_PER_CHARACTER,
@@ -111,13 +112,82 @@ fn snapshot_retirement_plan(
         .characters
         .get(&character_id)
         .ok_or(Phase2Error::NotFound)?;
-    let protected = character
+    let mut protected = character
         .world_heads
         .values()
         .copied()
         .chain(character.active_snapshot)
         .chain(protected_source)
         .collect::<std::collections::HashSet<_>>();
+    // Exact sources and replayable terminal records must outlive history pruning.
+    for stage in state.rom_handoff_staging.values() {
+        protected.insert(stage.request.source_snapshot_id);
+    }
+    for (_, record) in state.rom_handoff_commits.values() {
+        protected.insert(record.snapshot_id);
+    }
+    for stage in state.group_rom_handoff_stages.values() {
+        protected.extend(
+            stage
+                .intent
+                .members
+                .iter()
+                .map(|member| member.source_snapshot_id),
+        );
+    }
+    for proposal in state.group_rom_handoff_proposals.values() {
+        protected.extend(
+            proposal
+                .members
+                .iter()
+                .flatten()
+                .map(|member| member.source_snapshot_id),
+        );
+    }
+    for receipt in state.group_rom_handoff_receipts.values() {
+        use super::super::storage::GroupRomHandoffReceipt;
+        match receipt {
+            GroupRomHandoffReceipt::Committed {
+                intent, snapshots, ..
+            } => {
+                protected.extend(
+                    intent
+                        .members
+                        .iter()
+                        .map(|member| member.source_snapshot_id),
+                );
+                protected.extend(snapshots.iter().map(|snapshot| snapshot.snapshot_id));
+            }
+            GroupRomHandoffReceipt::Aborted { intent, .. } => protected.extend(
+                intent
+                    .members
+                    .iter()
+                    .map(|member| member.source_snapshot_id),
+            ),
+            GroupRomHandoffReceipt::Withdrawn { proposal, .. } => protected.extend(
+                proposal
+                    .members
+                    .iter()
+                    .flatten()
+                    .map(|member| member.source_snapshot_id),
+            ),
+        }
+    }
+    for stage in state
+        .trade_staging
+        .values()
+        .filter(|stage| stage.status != super::super::storage::TradeStageStatus::Published)
+    {
+        protected.extend(stage.sources.iter().map(|source| source.snapshot_id));
+    }
+    for offer in state.trade_offers.values().filter(|offer| {
+        matches!(
+            offer.view.status,
+            coop_cloud::TradeOfferStatus::Pending | coop_cloud::TradeOfferStatus::Accepted
+        )
+    }) {
+        protected.extend(offer.view.snapshots);
+    }
     let mut candidates = state
         .snapshots
         .values()
@@ -134,12 +204,18 @@ fn snapshot_retirement_plan(
         .values()
         .filter(|snapshot| snapshot.character_id == character_id)
         .count();
+    let (reserved_count, reserved_bytes) =
+        super::trade_reservation_usage(state, character_id, None)?;
+    count = count
+        .checked_add(reserved_count)
+        .ok_or(Phase2Error::Internal)?;
     let snapshots_used = super::snapshot_storage_usage(state, character_id)?;
     let prepared_used = super::prepared_storage_usage(state, character_id, excluded_prepared)?;
     let restore_used = super::restore_staging_storage_usage(state, character_id, excluded_restore)?;
     let mut used = snapshots_used
         .checked_add(prepared_used)
         .and_then(|bytes| bytes.checked_add(restore_used))
+        .and_then(|bytes| bytes.checked_add(reserved_bytes))
         .ok_or(Phase2Error::Internal)?;
     let requested = super::files_storage_usage(files)?;
     let mut victims = Vec::new();
@@ -151,7 +227,7 @@ fn snapshot_retirement_plan(
         {
             break;
         }
-        count -= 1;
+        count = count.checked_sub(1).ok_or(Phase2Error::Internal)?;
         used = used
             .checked_sub(super::files_storage_usage(&candidate.files)?)
             .ok_or(Phase2Error::Internal)?;
@@ -696,14 +772,8 @@ pub(crate) fn commit(
     if !catalog.allows_presence_region(stage.destination_world_id, map.region) {
         return Err(Phase2Error::Forbidden);
     }
-    let destination_location = WorldLocation::new(
-        map.region,
-        map_group,
-        map_number,
-        0,
-        0,
-    )
-    .map_err(|_| Phase2Error::Conflict)?;
+    let destination_location = WorldLocation::new(map.region, map_group, map_number, 0, 0)
+        .map_err(|_| Phase2Error::Conflict)?;
     let source_save = snapshot_save(store, request.character_id, &source)?;
     if projected.character_lineage() != source_save.character_lineage()
         || projected.coop().save_generation
@@ -792,24 +862,22 @@ pub(crate) fn commit(
         {
             return Err(Phase2Error::Conflict);
         }
-        let destination_zone = WorldZone::from_location(
-            &destination_location,
-            character.state.world_zone.channel,
-        )
-        .map_err(|_| Phase2Error::Conflict)?;
+        let destination_zone =
+            WorldZone::from_location(&destination_location, character.state.world_zone.channel)
+                .map_err(|_| Phase2Error::Conflict)?;
         let mut progress = character.state.regional_progress.clone();
-        if !progress.iter().any(|entry| entry.region == destination_zone.region) {
+        if !progress
+            .iter()
+            .any(|entry| entry.region == destination_zone.region)
+        {
             progress.push(
                 RegionalProgress::new(destination_zone.region, 0, 0, vec![], vec![])
                     .map_err(|_| Phase2Error::Conflict)?,
             );
         }
-        let destination_state = CharacterCloudState::new(
-            request.character_id,
-            destination_zone,
-            progress,
-        )
-        .map_err(|_| Phase2Error::Conflict)?;
+        let destination_state =
+            CharacterCloudState::new(request.character_id, destination_zone, progress)
+                .map_err(|_| Phase2Error::Conflict)?;
         make_snapshot_room(state, request.character_id, &files, None, None, None)?;
         state.snapshots.insert(stage.stage_id, record.clone());
         state

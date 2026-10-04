@@ -50,6 +50,7 @@
 #include "constants/items.h"
 #include "constants/rgb.h"
 #include "constants/songs.h"
+#include "coop/battle_items.h"
 
 #define TAG_POCKET_SCROLL_ARROW 110
 #define TAG_BAG_SCROLL_ARROW    111
@@ -2096,6 +2097,12 @@ static void ItemMenu_UseInBattle(u8 taskId)
         return;
 
     RemoveContextWindow();
+    // Co-op trainer battle: refuse before anything is chosen or sent.
+    if (CoopBattleItems_IsBagOpen() && CoopBattleItems_RefuseItem(gSpecialVar_ItemId) != NULL)
+    {
+        DisplayItemMessage(taskId, FONT_NORMAL, CoopBattleItems_RefuseItem(gSpecialVar_ItemId), CloseItemMessage);
+        return;
+    }
     if (type == ITEM_USE_BAG_MENU || (type == ITEM_USE_BATTLER && !IsDoubleBattle()))
         ItemUseInBattle_BagMenu(taskId);
     else if (type == ITEM_USE_PARTY_MENU || (type == ITEM_USE_BATTLER && IsDoubleBattle()))

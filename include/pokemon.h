@@ -314,6 +314,30 @@ struct Pokemon
 bool32 GetBoxMonMetLocationV2(const struct BoxPokemon *boxMon, u16 *location);
 bool32 SetBoxMonMetLocationV2(struct BoxPokemon *boxMon, u16 location);
 
+// Logical met-location values for the legacy special bytes 0xFD..0xFF
+// (METLOC_SPECIAL_EGG, METLOC_IN_GAME_TRADE, METLOC_FATEFUL_ENCOUNTER).
+// Cormoria map sections 253..255 share those byte values, so callers that
+// interpret a logical location compare against these instead.
+#define MET_LOCATION_V2_SPECIAL_EGG       MET_LOCATION_V2_LEGACY_253
+#define MET_LOCATION_V2_IN_GAME_TRADE     MET_LOCATION_V2_LEGACY_254
+#define MET_LOCATION_V2_FATEFUL_ENCOUNTER MET_LOCATION_V2_LEGACY_255
+
+// Gameplay met-location accessors. MON_DATA_MET_LOCATION is the raw legacy
+// byte; producers and readers that interpret the location use these instead.
+// When the active save is a met-location-normalized V2 save the V2 codec is
+// used, so map sections 250..300 round-trip exactly. Otherwise (legacy or
+// migration-ambiguous save) the legacy byte is read/written exactly as before
+// and a location with no legacy encoding is stored as "none" (byte 250)
+// instead of wrapping onto a different section. Locations below 250 always
+// produce the same bytes as the legacy setter.
+bool32 IsMetLocationV2FormatActive(void);
+u16 MetLocationFromLegacyByte(u8 legacyByte);
+u8 MetLocationToLegacyByte(u16 location);
+u16 GetBoxMonMetLocation(struct BoxPokemon *boxMon);
+u16 GetMonMetLocation(struct Pokemon *mon);
+void SetBoxMonMetLocation(struct BoxPokemon *boxMon, u16 location);
+void SetMonMetLocation(struct Pokemon *mon, u16 location);
+
 struct MonSpritesGfxManager
 {
     u32 numSprites:4;

@@ -508,6 +508,29 @@ bool8 CoopPresence_EncodeDespawn(const struct CoopPresenceDespawn *value,
     return TRUE;
 }
 
+bool8 CoopPresence_DecodeRemoteInteraction(
+    const u8 *bytes, u32 length, struct CoopPresenceRemoteInteraction *out)
+{
+    struct CoopPresenceRemoteInteraction candidate = {0};
+    u8 i;
+
+    if (out == NULL || !IsExactLength(bytes, length, COOP_PRESENCE_REMOTE_INTERACTION_SIZE))
+        return FALSE;
+    for (i = COOP_PRESENCE_REMOTE_INTERACTION_RESERVED_OFFSET;
+         i < COOP_PRESENCE_REMOTE_INTERACTION_SIZE; i++)
+    {
+        if (bytes[i] != 0)
+            return FALSE;
+    }
+    candidate.handle = ReadLe64(&bytes[COOP_PRESENCE_REMOTE_INTERACTION_HANDLE_OFFSET]);
+    candidate.server_sequence = ReadLe32(
+        &bytes[COOP_PRESENCE_REMOTE_INTERACTION_SERVER_SEQUENCE_OFFSET]);
+    if (!IsHandleValid(candidate.handle) || !IsSequenceValid(candidate.server_sequence))
+        return FALSE;
+    *out = candidate;
+    return TRUE;
+}
+
 bool8 CoopPresence_DecodeInteraction(const u8 *bytes, u32 length,
                                      struct CoopPresenceInteraction *out)
 {
@@ -783,20 +806,25 @@ static bool8 SamePartition(const struct CoopPresencePartition *partition,
 
 static bool8 RemoteLocationMatchesPartition(
     const struct CoopPresenceReducer *reducer,
-    const struct CoopPresenceLocalState *state)
+    const struct CoopPresenceLocalState *state,
+    bool8 connected)
 {
     return reducer->context_valid
         && reducer->partition.region == state->pose.location.region
-        && reducer->partition.map_group == state->pose.location.map_group
-        && reducer->partition.map_number == state->pose.location.map_number;
+        && (connected
+         || (reducer->partition.map_group == state->pose.location.map_group
+          && reducer->partition.map_number == state->pose.location.map_number));
 }
 
 static bool8 RemoteWarpMatchesActiveTarget(
     const struct CoopPresenceReducer *reducer,
-    const struct CoopPresenceLocalState *state)
+    const struct CoopPresenceLocalState *state,
+    bool8 connected)
 {
-    return reducer->remote.state.pose.warp_sequence
-        == state->pose.warp_sequence;
+    return (connected
+         && (reducer->remote.state.pose.location.map_group != state->pose.location.map_group
+          || reducer->remote.state.pose.location.map_number != state->pose.location.map_number))
+        || reducer->remote.state.pose.warp_sequence == state->pose.warp_sequence;
 }
 
 void CoopPresenceReducer_Init(struct CoopPresenceReducer *reducer)
@@ -859,21 +887,22 @@ const struct CoopPresenceRemote *CoopPresenceReducer_GetRemote(
     return &reducer->remote;
 }
 
-enum CoopPresenceApplyResult CoopPresenceReducer_ApplySpawn(
+static enum CoopPresenceApplyResult ApplySpawn(
     struct CoopPresenceReducer *reducer,
-    const struct CoopPresenceSpawn *spawn)
+    const struct CoopPresenceSpawn *spawn,
+    bool8 connected)
 {
     if (reducer == NULL || spawn == NULL || !reducer->context_valid
      || !IsHandleValid(spawn->handle) || !IsSequenceValid(spawn->server_sequence)
      || !IsLocalStateValid(&spawn->state) || !ValidateUsername(&spawn->username))
         return COOP_PRESENCE_APPLY_REJECTED;
-    if (!RemoteLocationMatchesPartition(reducer, &spawn->state))
+    if (!RemoteLocationMatchesPartition(reducer, &spawn->state, connected))
         return COOP_PRESENCE_APPLY_PARTITION_MISMATCH;
     if (reducer->remote_active)
     {
         if (reducer->remote.handle != spawn->handle)
             return COOP_PRESENCE_APPLY_CAPACITY;
-        if (!RemoteWarpMatchesActiveTarget(reducer, &spawn->state))
+        if (!RemoteWarpMatchesActiveTarget(reducer, &spawn->state, connected))
             return COOP_PRESENCE_APPLY_PARTITION_MISMATCH;
         if (!CoopPresence_SequenceIsNewer(spawn->server_sequence,
                                           reducer->remote.server_sequence))
@@ -887,9 +916,24 @@ enum CoopPresenceApplyResult CoopPresenceReducer_ApplySpawn(
     return COOP_PRESENCE_APPLY_APPLIED;
 }
 
-enum CoopPresenceApplyResult CoopPresenceReducer_ApplyUpdate(
+enum CoopPresenceApplyResult CoopPresenceReducer_ApplySpawn(
     struct CoopPresenceReducer *reducer,
-    const struct CoopPresenceUpdate *update)
+    const struct CoopPresenceSpawn *spawn)
+{
+    return ApplySpawn(reducer, spawn, FALSE);
+}
+
+enum CoopPresenceApplyResult CoopPresenceReducer_ApplySpawnConnected(
+    struct CoopPresenceReducer *reducer,
+    const struct CoopPresenceSpawn *spawn)
+{
+    return ApplySpawn(reducer, spawn, TRUE);
+}
+
+static enum CoopPresenceApplyResult ApplyUpdate(
+    struct CoopPresenceReducer *reducer,
+    const struct CoopPresenceUpdate *update,
+    bool8 connected)
 {
     if (reducer == NULL || update == NULL || !reducer->context_valid
      || !IsHandleValid(update->handle) || !IsSequenceValid(update->server_sequence)
@@ -899,9 +943,9 @@ enum CoopPresenceApplyResult CoopPresenceReducer_ApplyUpdate(
         return COOP_PRESENCE_APPLY_NOT_ACTIVE;
     if (reducer->remote.handle != update->handle)
         return COOP_PRESENCE_APPLY_HANDLE_MISMATCH;
-    if (!RemoteLocationMatchesPartition(reducer, &update->state))
+    if (!RemoteLocationMatchesPartition(reducer, &update->state, connected))
         return COOP_PRESENCE_APPLY_PARTITION_MISMATCH;
-    if (!RemoteWarpMatchesActiveTarget(reducer, &update->state))
+    if (!RemoteWarpMatchesActiveTarget(reducer, &update->state, connected))
         return COOP_PRESENCE_APPLY_PARTITION_MISMATCH;
     if (!CoopPresence_SequenceIsNewer(update->server_sequence,
                                       reducer->remote.server_sequence))
@@ -914,6 +958,20 @@ enum CoopPresenceApplyResult CoopPresenceReducer_ApplyUpdate(
     reducer->remote.server_sequence = update->server_sequence;
     reducer->remote.state = update->state;
     return COOP_PRESENCE_APPLY_APPLIED;
+}
+
+enum CoopPresenceApplyResult CoopPresenceReducer_ApplyUpdate(
+    struct CoopPresenceReducer *reducer,
+    const struct CoopPresenceUpdate *update)
+{
+    return ApplyUpdate(reducer, update, FALSE);
+}
+
+enum CoopPresenceApplyResult CoopPresenceReducer_ApplyUpdateConnected(
+    struct CoopPresenceReducer *reducer,
+    const struct CoopPresenceUpdate *update)
+{
+    return ApplyUpdate(reducer, update, TRUE);
 }
 
 enum CoopPresenceApplyResult CoopPresenceReducer_ApplyDespawn(

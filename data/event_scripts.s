@@ -1863,6 +1863,10 @@ KantoOriginal_VermilionCity_PortInside_EventScript_Sailor::
 	faceplayer
 	msgbox KantoOriginal_Text_ReturnToJohtoByShip, MSGBOX_YESNO
 	goto_if_eq VAR_RESULT, FALSE, KantoOriginal_EventScript_Declined
+	setvar VAR_0x8004, 66
+	special Special_CoopGroupTravelBegin
+	goto_if_eq VAR_RESULT, 1, KantoOriginal_EventScript_GroupTravelWaiting
+	goto_if_eq VAR_RESULT, 2, KantoOriginal_EventScript_Declined
 	special Johto_ChooseJohto
 	goto_if_eq VAR_RESULT, FALSE, KantoOriginal_EventScript_Declined
 	special Johto_RecordCurrentHeal
@@ -1884,6 +1888,10 @@ KantoOriginal_SaffronCity_TrainStation_EventScript_Attendant::
 	faceplayer
 	msgbox KantoOriginal_Text_ReturnToJohtoByTrain, MSGBOX_YESNO
 	goto_if_eq VAR_RESULT, FALSE, KantoOriginal_EventScript_Declined
+	setvar VAR_0x8004, 68
+	special Special_CoopGroupTravelBegin
+	goto_if_eq VAR_RESULT, 1, KantoOriginal_EventScript_GroupTravelWaiting
+	goto_if_eq VAR_RESULT, 2, KantoOriginal_EventScript_Declined
 	special Johto_ChooseJohto
 	goto_if_eq VAR_RESULT, FALSE, KantoOriginal_EventScript_Declined
 	special Johto_RecordCurrentHeal
@@ -2025,6 +2033,7 @@ KantoOriginal_Route22_Overland_EventScript_Attendant::
 	faceplayer
 	msgbox KantoOriginal_Route22_Overland_Text_ReturnToJohto, MSGBOX_YESNO
 	goto_if_eq VAR_RESULT, FALSE, KantoOriginal_EventScript_Declined
+	setvar VAR_0x8004, 70
 	goto Kanto_Overland_EventScript_ReturnToJohto
 
 KantoLater_Route22_Overland_EventScript_Attendant::
@@ -2032,8 +2041,12 @@ KantoLater_Route22_Overland_EventScript_Attendant::
 	faceplayer
 	msgbox KantoLater_Route22_Overland_Text_ReturnToJohto, MSGBOX_YESNO
 	goto_if_eq VAR_RESULT, FALSE, KantoOriginal_EventScript_Declined
+	setvar VAR_0x8004, 71
 
 Kanto_Overland_EventScript_ReturnToJohto::
+	special Special_CoopGroupTravelBegin
+	goto_if_eq VAR_RESULT, 1, KantoOriginal_EventScript_GroupTravelWaiting
+	goto_if_eq VAR_RESULT, 2, KantoOriginal_EventScript_Declined
 	special Johto_ChooseJohto
 	goto_if_eq VAR_RESULT, FALSE, KantoOriginal_EventScript_Declined
 	special Johto_RecordCurrentHeal
@@ -2052,6 +2065,9 @@ KantoOriginal_EventScript_Declined::
 	release
 	end
 
+KantoOriginal_EventScript_GroupTravelWaiting::
+	end
+
 KantoOriginal_Text_ReturnToJohtoByShip:
 	.string "Sail back to JOHTO?$"
 
@@ -2067,10 +2083,14 @@ KantoOriginal_Route22_Overland_Text_ReturnToJohto:
 KantoLater_Route22_Overland_Text_ReturnToJohto:
 	.string "Return through the gate to JOHTO?$"
 
-
 EventScript_CoopGroupTravelOffer::
 	special Special_CoopGroupTravelGetOffer
 	goto_if_ne VAR_RESULT, 2, EventScript_CoopGroupTravelOffer_Invalid
+	goto_if_ge VAR_0x8004, 162, EventScript_CoopGroupTravelOffer_Invalid
+	goto_if_ge VAR_0x8004, 160, EventScript_CoopGroupTravelOffer_Bill
+	goto_if_ge VAR_0x8004, 72, EventScript_CoopGroupTravelOffer_Ship
+	goto_if_ge VAR_0x8004, 66, EventScript_CoopGroupTravelOffer_Reverse
+	goto_if_ge VAR_0x8004, 7, EventScript_CoopGroupTravelOffer_Fly
 	switch VAR_0x8004
 	case 1, EventScript_CoopGroupTravelOffer_TrainOriginal
 	case 2, EventScript_CoopGroupTravelOffer_TrainLater
@@ -2078,6 +2098,16 @@ EventScript_CoopGroupTravelOffer::
 	case 4, EventScript_CoopGroupTravelOffer_FerryLater
 	case 5, EventScript_CoopGroupTravelOffer_GateOriginal
 	case 6, EventScript_CoopGroupTravelOffer_GateLater
+	goto EventScript_CoopGroupTravelOffer_Invalid
+
+EventScript_CoopGroupTravelOffer_Reverse::
+	switch VAR_0x8004
+	case 66, EventScript_CoopGroupTravelOffer_ReturnFerryOriginal
+	case 67, EventScript_CoopGroupTravelOffer_ReturnFerryLater
+	case 68, EventScript_CoopGroupTravelOffer_ReturnTrainOriginal
+	case 69, EventScript_CoopGroupTravelOffer_ReturnTrainLater
+	case 70, EventScript_CoopGroupTravelOffer_ReturnGateOriginal
+	case 71, EventScript_CoopGroupTravelOffer_ReturnGateLater
 	goto EventScript_CoopGroupTravelOffer_Invalid
 
 EventScript_CoopGroupTravelOffer_TrainOriginal::
@@ -2112,11 +2142,214 @@ EventScript_CoopGroupTravelOffer_GateOriginal::
 
 EventScript_CoopGroupTravelOffer_GateLater::
 	msgbox Text_CoopGroupTravelOffer_GateLater, MSGBOX_YESNO
+	goto EventScript_CoopGroupTravelOffer_Respond
+
+EventScript_CoopGroupTravelOffer_ReturnFerryOriginal::
+	msgbox Text_CoopGroupTravelOffer_ReturnFerryOriginal, MSGBOX_YESNO
+	goto EventScript_CoopGroupTravelOffer_Respond
+
+EventScript_CoopGroupTravelOffer_ReturnFerryLater::
+	msgbox Text_CoopGroupTravelOffer_ReturnFerryLater, MSGBOX_YESNO
+	goto EventScript_CoopGroupTravelOffer_Respond
+
+EventScript_CoopGroupTravelOffer_ReturnTrainOriginal::
+	msgbox Text_CoopGroupTravelOffer_ReturnTrainOriginal, MSGBOX_YESNO
+	goto EventScript_CoopGroupTravelOffer_Respond
+
+EventScript_CoopGroupTravelOffer_ReturnTrainLater::
+	msgbox Text_CoopGroupTravelOffer_ReturnTrainLater, MSGBOX_YESNO
+	goto EventScript_CoopGroupTravelOffer_Respond
+
+EventScript_CoopGroupTravelOffer_ReturnGateOriginal::
+	msgbox Text_CoopGroupTravelOffer_ReturnGateOriginal, MSGBOX_YESNO
+	goto EventScript_CoopGroupTravelOffer_Respond
+
+EventScript_CoopGroupTravelOffer_ReturnGateLater::
+	msgbox Text_CoopGroupTravelOffer_ReturnGateLater, MSGBOX_YESNO
+	goto EventScript_CoopGroupTravelOffer_Respond
+
+EventScript_CoopGroupTravelOffer_Fly::
+	msgbox Text_CoopGroupTravelOffer_Fly, MSGBOX_YESNO
+	goto EventScript_CoopGroupTravelOffer_Respond
+
+EventScript_CoopGroupTravelOffer_Ship::
+	msgbox Text_CoopGroupTravelOffer_Ship, MSGBOX_YESNO
+	goto EventScript_CoopGroupTravelOffer_Respond
+
+EventScript_CoopGroupTravelOffer_Bill::
+	msgbox Text_CoopGroupTravelOffer_Bill, MSGBOX_YESNO
 
 EventScript_CoopGroupTravelOffer_Respond::
 	copyvar VAR_0x8004, VAR_RESULT
 	special Special_CoopGroupTravelRespond
 	end
+
+EventScript_CoopBattleConsentOffer::
+	special Special_CoopBattleConsentGetOffer
+	goto_if_eq VAR_RESULT, 1, EventScript_CoopBattleConsentCoop
+	goto_if_eq VAR_RESULT, 2, EventScript_CoopBattleConsentFriendly
+	end
+
+EventScript_CoopBattleConsentCoop::
+	special Special_CoopBattleConsentMarkPrompt
+	msgbox Text_CoopBattleConsentCoop, MSGBOX_YESNO
+	goto EventScript_CoopBattleConsentRespond
+
+EventScript_CoopBattleConsentFriendly::
+	special Special_CoopFriendlyBufferRules
+	goto_if_eq VAR_RESULT, FALSE, EventScript_CoopFriendlyCantAccept
+	special Special_CoopBattleConsentMarkPrompt
+	msgbox Text_CoopBattleConsentFriendly, MSGBOX_YESNO
+	copyvar VAR_0x8004, VAR_RESULT
+	special Special_CoopBattleConsentRespond
+	goto_if_eq VAR_0x8004, NO, EventScript_CoopBattleConsentFriendlyEnd
+	special Special_CoopFriendlyBeginResponderPicks
+	goto_if_eq VAR_RESULT, FALSE, EventScript_CoopFriendlyResult
+	goto EventScript_CoopFriendlyPickLoop
+
+EventScript_CoopFriendlyCantAccept::
+	setvar VAR_0x8004, NO
+	special Special_CoopBattleConsentRespond
+	msgbox Text_CoopFriendlyNotEnough, MSGBOX_DEFAULT
+	closemessage
+EventScript_CoopBattleConsentFriendlyEnd::
+	end
+
+EventScript_CoopBattleConsentRespond::
+	copyvar VAR_0x8004, VAR_RESULT
+	special Special_CoopBattleConsentRespond
+	end
+
+@ ONLINE > Battle partner (src/coop/friendly_battle.c). The first pick step
+@ sends the challenge; both players then pick their team in order and the
+@ field stays locked until the battle has been fought or called off.
+EventScript_CoopFriendlyChallenge::
+	lockall
+EventScript_CoopFriendlyPickLoop::
+	special Special_CoopFriendlyBufferPick
+	goto_if_eq VAR_RESULT, 0, EventScript_CoopFriendlyResult
+	goto_if_eq VAR_RESULT, 2, EventScript_CoopFriendlyWait
+	msgbox Text_CoopFriendlyPick, MSGBOX_DEFAULT
+	closemessage
+	special ChoosePartyMon
+	waitstate
+	special Special_CoopFriendlyPickMon
+	goto_if_eq VAR_RESULT, 2, EventScript_CoopFriendlyPickRefused
+	goto EventScript_CoopFriendlyPickLoop
+
+EventScript_CoopFriendlyPickRefused::
+	msgbox Text_CoopFriendlyPickRefused, MSGBOX_DEFAULT
+	goto EventScript_CoopFriendlyPickLoop
+
+EventScript_CoopFriendlyWait::
+	message Text_CoopFriendlyWaiting
+	waitmessage
+	special Special_CoopFriendlyWait
+	waitstate
+EventScript_CoopFriendlyResult::
+	special Special_CoopFriendlyBufferResult
+	msgbox gStringVar4, MSGBOX_DEFAULT
+	closemessage
+	special Special_CoopFriendlyFinish
+	releaseall
+	end
+
+Text_CoopFriendlyPick:
+	.string "Choose POKéMON {STR_VAR_1} of {STR_VAR_2}.$"
+
+Text_CoopFriendlyPickRefused:
+	.string "That POKéMON can't battle\nor is already chosen.$"
+
+Text_CoopFriendlyWaiting:
+	.string "Waiting for your partner…\nB: Cancel$"
+
+Text_CoopFriendlyNotEnough:
+	.string "Your partner wants to battle,\nbut you need {STR_VAR_3} POKéMON.$"
+
+@ Replaces the parked trainer script after an aborted co-op trainer battle
+@ or a requester's lost co-op battle: no flag was set, so the trainer stays fightable.
+EventScript_CoopTrainerEncounterRelease::
+	releaseall
+	end
+
+@ ONLINE > Trade with partner (src/coop/trade_offer.c). The field stays
+@ locked from the party selection until the outcome is shown.
+EventScript_CoopTradeRequest::
+	lockall
+	special ChoosePartyMon
+	waitstate
+	goto_if_ge VAR_0x8004, PARTY_SIZE, EventScript_CoopTradeRelease
+	special Special_CoopTradeBeginOffer
+	goto_if_eq VAR_RESULT, FALSE, EventScript_CoopTradeResult
+	message Text_CoopTradeWaiting
+	waitmessage
+	special Special_CoopTradeWait
+	waitstate
+EventScript_CoopTradeResult::
+	special Special_CoopTradeBufferResult
+	msgbox gStringVar4, MSGBOX_DEFAULT
+	closemessage
+EventScript_CoopTradeRelease::
+	special Special_CoopTradeFinish
+	releaseall
+	end
+
+@ The partner's offer, started by the trade offer poll when the field is free.
+EventScript_CoopTradeOffer::
+	lockall
+	special Special_CoopTradeBufferOffer
+	goto_if_eq VAR_RESULT, 0, EventScript_CoopTradeResult
+	goto_if_eq VAR_RESULT, 2, EventScript_CoopTradeOfferEgg
+	msgbox Text_CoopTradeOffer, MSGBOX_YESNO
+	goto EventScript_CoopTradeOfferAnswer
+
+EventScript_CoopTradeOfferEgg::
+	msgbox Text_CoopTradeOfferEgg, MSGBOX_YESNO
+EventScript_CoopTradeOfferAnswer::
+	goto_if_eq VAR_RESULT, NO, EventScript_CoopTradeOfferDecline
+	special Special_CoopTradeBufferOffer
+	goto_if_eq VAR_RESULT, 0, EventScript_CoopTradeResult
+	msgbox Text_CoopTradeChoose, MSGBOX_DEFAULT
+	closemessage
+	special ChoosePartyMon
+	waitstate
+	special Special_CoopTradeRespond
+	goto_if_eq VAR_RESULT, 2, EventScript_CoopTradeRelease
+	goto_if_eq VAR_RESULT, 0, EventScript_CoopTradeResult
+	message Text_CoopTradeTrading
+	waitmessage
+	special Special_CoopTradeWait
+	waitstate
+	goto EventScript_CoopTradeResult
+
+EventScript_CoopTradeOfferDecline::
+	setvar VAR_0x8004, PARTY_SIZE
+	special Special_CoopTradeRespond
+	goto EventScript_CoopTradeRelease
+
+Text_CoopTradeWaiting:
+	.string "Waiting for your partner…\nB: Cancel$"
+
+Text_CoopTradeOffer:
+	.string "Your partner offers {STR_VAR_1}\n({STR_VAR_2} Lv. {STR_VAR_3}). Trade?$"
+
+Text_CoopTradeOfferEgg:
+	.string "Your partner offers an EGG.\nTrade?$"
+
+Text_CoopTradeChoose:
+	.string "Choose a POKéMON to give.$"
+
+Text_CoopTradeTrading:
+	.string "Trading with your partner…$"
+
+	.include "data/scripts/coop_gym_rewards.inc"
+	.include "data/scripts/coop_story_rewards.inc"
+
+Text_CoopBattleConsentCoop:
+	.string "Battle alongside your partner?$"
+
+Text_CoopBattleConsentFriendly:
+	.string "Battle your partner? {STR_VAR_1},\n{STR_VAR_2}, {STR_VAR_3} POKéMON each.$"
 
 EventScript_CoopGroupTravelOffer_Invalid::
 	setvar VAR_0x8004, 0
@@ -2146,6 +2379,33 @@ Text_CoopGroupTravelOffer_GateOriginal:
 
 Text_CoopGroupTravelOffer_GateLater:
 	.string "Travel together through the gate\nto KANTO three years later?$"
+
+Text_CoopGroupTravelOffer_ReturnFerryOriginal:
+	.string "Sail together from original KANTO\nto JOHTO?$"
+
+Text_CoopGroupTravelOffer_ReturnFerryLater:
+	.string "Sail together from later KANTO\nto JOHTO?$"
+
+Text_CoopGroupTravelOffer_ReturnTrainOriginal:
+	.string "Take the train together from\noriginal KANTO to JOHTO?$"
+
+Text_CoopGroupTravelOffer_ReturnTrainLater:
+	.string "Take the train together from\nlater KANTO to JOHTO?$"
+
+Text_CoopGroupTravelOffer_ReturnGateOriginal:
+	.string "Return together through the gate\nfrom original KANTO to JOHTO?$"
+
+Text_CoopGroupTravelOffer_ReturnGateLater:
+	.string "Return together through the gate\nfrom later KANTO to JOHTO?$"
+
+Text_CoopGroupTravelOffer_Fly:
+	.string "Fly together to\n{STR_VAR_1}?$"
+
+Text_CoopGroupTravelOffer_Ship:
+	.string "Sail together to\n{STR_VAR_1}?$"
+
+Text_CoopGroupTravelOffer_Bill:
+	.string "Travel with BILL to\n{STR_VAR_1}?$"
 
 #if ROM_WORLD == 2
     .include "data/cormoria/scripts.inc"

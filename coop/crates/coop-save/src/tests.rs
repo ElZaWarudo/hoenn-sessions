@@ -23,8 +23,14 @@ fn rom_written_harbor_saves_project_out_and_back_without_losing_world_locations(
     };
 
     let arrival = project_arrival(&main, &cormoria, pair, true).unwrap();
-    assert!(main.character_lineage().same_trainer(arrival.character_lineage()));
-    assert_eq!(arrival.coop().save_generation, main.coop().save_generation + 1);
+    assert!(
+        main.character_lineage()
+            .same_trainer(arrival.character_lineage())
+    );
+    assert_eq!(
+        arrival.coop().save_generation,
+        main.coop().save_generation + 1
+    );
     assert_eq!(
         &arrival.logical_sector_payload(1).unwrap()[..8],
         &cormoria.logical_sector_payload(1).unwrap()[..8],
@@ -36,8 +42,14 @@ fn rom_written_harbor_saves_project_out_and_back_without_losing_world_locations(
     );
 
     let returned = project_arrival(&arrival, &main, pair, false).unwrap();
-    assert!(main.character_lineage().same_trainer(returned.character_lineage()));
-    assert_eq!(returned.coop().save_generation, arrival.coop().save_generation + 1);
+    assert!(
+        main.character_lineage()
+            .same_trainer(returned.character_lineage())
+    );
+    assert_eq!(
+        returned.coop().save_generation,
+        arrival.coop().save_generation + 1
+    );
     assert_eq!(
         &returned.logical_sector_payload(1).unwrap()[..8],
         &main.logical_sector_payload(1).unwrap()[..8],
@@ -70,6 +82,32 @@ fn stock_mgba_first_save_matches_linked_rom_sector_checksums() {
     assert!(save.coop().online_eligible());
     assert!(save.rtc_trailer().is_some());
     assert_eq!(save.raw_bytes(), bytes);
+    // A new game starts with 3000; this pins the money and key offsets to a
+    // genuine save rather than to the validator's own synthetic layout.
+    assert_eq!(save.money(), Some(3000));
+    assert_eq!(save.party_count(), Ok(0));
+}
+
+#[test]
+fn canonical_progress_identifies_trainer_clears_for_battle_eligibility() {
+    let save = parse(&valid_image(20, 21), TEST_REGISTRY).expect("valid save");
+    let first = resolve_ordinal(IdentityKind::Trainer, 0).expect("registered trainer");
+    let second = resolve_ordinal(IdentityKind::Trainer, 1).expect("registered trainer");
+    let first = TrainerInstanceId::parse(first.qualified_id).expect("qualified trainer");
+    let second = TrainerInstanceId::parse(second.qualified_id).expect("qualified trainer");
+
+    assert_eq!(save.coop().defeated_trainer(&first), Ok(true));
+    assert_eq!(save.coop().defeated_trainer(&second), Ok(false));
+    assert_eq!(
+        save.coop()
+            .progress_for(RegionId::Hoenn)
+            .map(|record| record.story_checkpoint),
+        Some(100),
+    );
+    assert!(save.coop().progress_for(RegionId::Unspecified).is_none());
+    let unknown = TrainerInstanceId::parse("HOENN:TRAINER_NOT_REGISTERED")
+        .expect("well-formed unknown trainer");
+    assert!(save.coop().defeated_trainer(&unknown).is_err());
 }
 
 fn write_u16(bytes: &mut [u8], offset: usize, value: u16) {
@@ -182,6 +220,652 @@ fn logical_sector_mut(bytes: &mut [u8], slot: SaveSlot, logical: usize) -> &mut 
         })
         .expect("fixture contains every logical sector");
     physical_sector_mut(bytes, slot, physical)
+}
+
+fn write_logical_range(
+    bytes: &mut [u8],
+    slot: SaveSlot,
+    first_sector: usize,
+    offset: usize,
+    data: &[u8],
+) {
+    for (index, byte) in data.iter().enumerate() {
+        let position = offset + index;
+        let logical = first_sector + position / SAVE_BLOCK3_CHUNK_OFFSET;
+        let sector = logical_sector_mut(bytes, slot, logical);
+        sector[position % SAVE_BLOCK3_CHUNK_OFFSET] = *byte;
+        let checksum = sector_checksum(&sector[..LOGICAL_SECTOR_DATA_SIZES[logical]]);
+        write_u16(sector, SECTOR_CHECKSUM_OFFSET, checksum);
+    }
+}
+
+fn write_save_block3_range(bytes: &mut [u8], slot: SaveSlot, offset: usize, data: &[u8]) {
+    for (index, byte) in data.iter().enumerate() {
+        let position = offset + index;
+        let logical = position / SAVE_BLOCK3_CHUNK_SIZE;
+        let sector = logical_sector_mut(bytes, slot, logical);
+        sector[SAVE_BLOCK3_CHUNK_OFFSET + position % SAVE_BLOCK3_CHUNK_SIZE] = *byte;
+        let checksum = sector_checksum(&sector[..LOGICAL_SECTOR_DATA_SIZES[logical]]);
+        write_u16(sector, SECTOR_CHECKSUM_OFFSET, checksum);
+    }
+}
+
+fn write_csp1_trainer_bit(bytes: &mut [u8], slot: SaveSlot, ordinal: u16, defeated: bool) {
+    let ordinal = usize::from(ordinal);
+    let byte_offset = COOP_SAVE_OFFSET + COOP_TRAINER_BITS_OFFSET + ordinal / 8;
+    let logical = byte_offset / SAVE_BLOCK3_CHUNK_SIZE;
+    let sector = logical_sector_mut(bytes, slot, logical);
+    let inside = SAVE_BLOCK3_CHUNK_OFFSET + byte_offset % SAVE_BLOCK3_CHUNK_SIZE;
+    let mut byte = sector[inside];
+    if defeated {
+        byte |= 1 << (ordinal % 8);
+    } else {
+        byte &= !(1 << (ordinal % 8));
+    }
+    write_save_block3_range(bytes, slot, byte_offset, &[byte]);
+
+    let mut payload = [0_u8; COOP_SAVE_V1_SIZE];
+    for (index, byte) in payload.iter_mut().enumerate() {
+        let position = COOP_SAVE_OFFSET + index;
+        let logical = position / SAVE_BLOCK3_CHUNK_SIZE;
+        let sector = logical_sector_mut(bytes, slot, logical);
+        *byte = sector[SAVE_BLOCK3_CHUNK_OFFSET + position % SAVE_BLOCK3_CHUNK_SIZE];
+    }
+    let crc = crc32fast::hash(&payload[..COOP_CRC_OFFSET]);
+    write_save_block3_range(
+        bytes,
+        slot,
+        COOP_SAVE_OFFSET + COOP_CRC_OFFSET,
+        &crc.to_le_bytes(),
+    );
+}
+
+fn write_wally_evidence(
+    bytes: &mut [u8],
+    slot: SaveSlot,
+    defeated_wally_flag: bool,
+    victory_road_1f_state: u16,
+    entrance_wally_hidden: bool,
+) {
+    write_logical_range(
+        bytes,
+        slot,
+        1,
+        SAVE_BLOCK1_VARS_OFFSET + 2 * (VAR_VICTORY_ROAD_1F_STATE - 0x4000),
+        &victory_road_1f_state.to_le_bytes(),
+    );
+    for (flag_id, value) in [
+        (FLAG_DEFEATED_WALLY_VICTORY_ROAD, defeated_wally_flag),
+        (FLAG_HIDE_VICTORY_ROAD_ENTRANCE_WALLY, entrance_wally_hidden),
+    ] {
+        let offset = SAVE_BLOCK1_FLAGS_OFFSET + flag_id / 8;
+        let mut byte = logical_sector_mut(bytes, slot, 1 + offset / SAVE_BLOCK3_CHUNK_OFFSET)
+            [offset % SAVE_BLOCK3_CHUNK_OFFSET];
+        if value {
+            byte |= 1 << (flag_id % 8);
+        } else {
+            byte &= !(1 << (flag_id % 8));
+        }
+        write_logical_range(bytes, slot, 1, offset, &[byte]);
+    }
+}
+
+fn write_briney_evidence(
+    bytes: &mut [u8],
+    slot: SaveSlot,
+    map_group: u8,
+    map_num: u8,
+    board_state: u16,
+    norman_match_call: bool,
+    dewford_briney_hidden: bool,
+    dewford_boat_hidden: bool,
+    route104_boat_hidden: bool,
+) {
+    write_logical_range(
+        bytes,
+        slot,
+        1,
+        SAVE_BLOCK1_LOCATION_OFFSET,
+        &[map_group, map_num],
+    );
+    write_logical_range(
+        bytes,
+        slot,
+        1,
+        SAVE_BLOCK1_BOARD_BRINEY_BOAT_STATE_OFFSET,
+        &board_state.to_le_bytes(),
+    );
+    let norman_flags = norman_match_call
+        .then_some(FLAG_NORMAN_MATCH_CALL_MASK)
+        .unwrap_or(0);
+    write_logical_range(
+        bytes,
+        slot,
+        1,
+        FLAG_NORMAN_MATCH_CALL_BYTE_OFFSET,
+        &[norman_flags],
+    );
+    let dewford_flags = (dewford_briney_hidden
+        .then_some(FLAG_HIDE_MR_BRINEY_DEWFORD_MASK)
+        .unwrap_or(0))
+        | (dewford_boat_hidden
+            .then_some(FLAG_HIDE_MR_BRINEY_BOAT_DEWFORD_MASK)
+            .unwrap_or(0))
+        | (route104_boat_hidden
+            .then_some(FLAG_HIDE_ROUTE_104_MR_BRINEY_BOAT_MASK)
+            .unwrap_or(0));
+    write_logical_range(
+        bytes,
+        slot,
+        1,
+        FLAG_BRINEY_DEWFORD_BYTE_OFFSET,
+        &[dewford_flags],
+    );
+}
+
+fn write_bill_evidence(
+    bytes: &mut [u8],
+    slot: SaveSlot,
+    map: (u8, u8),
+    scenes: (u16, u16, u16),
+    flags: (bool, bool, bool, bool),
+) {
+    write_logical_range(bytes, slot, 1, SAVE_BLOCK1_LOCATION_OFFSET, &[map.0, map.1]);
+    for (id, value) in [(0x4171, scenes.0), (0x4175, scenes.1), (0x4176, scenes.2)] {
+        write_logical_range(
+            bytes,
+            slot,
+            1,
+            SAVE_BLOCK1_VARS_OFFSET + 2 * (id - 0x4000),
+            &value.to_le_bytes(),
+        );
+    }
+    for (id, value) in [
+        (0x15f, flags.0),
+        (0x15e, flags.1),
+        (0x852, flags.2),
+        (0x853, flags.3),
+    ] {
+        let offset = SAVE_BLOCK1_FLAGS_OFFSET + id / 8;
+        let mut byte = logical_sector_mut(bytes, slot, 1 + offset / SAVE_BLOCK3_CHUNK_OFFSET)
+            [offset % SAVE_BLOCK3_CHUNK_OFFSET];
+        if value {
+            byte |= 1 << (id % 8);
+        } else {
+            byte &= !(1 << (id % 8));
+        }
+        write_logical_range(bytes, slot, 1, offset, &[byte]);
+    }
+}
+
+#[test]
+fn bill_story_evidence_requires_selected_slot_final_scene_and_exact_map() {
+    let mut bytes = valid_image(20, 21);
+    write_bill_evidence(
+        &mut bytes,
+        SaveSlot::First,
+        (64, 0),
+        (2, 3, 1),
+        (true, true, false, true),
+    );
+    write_bill_evidence(
+        &mut bytes,
+        SaveSlot::Second,
+        (64, 4),
+        (2, 2, 0),
+        (true, false, false, true),
+    );
+    let selected = parse(&bytes, TEST_REGISTRY).unwrap().bill_voyage_evidence();
+    assert!(!selected.is_cinnabar_to_one_post_scene());
+    write_bill_evidence(
+        &mut bytes,
+        SaveSlot::Second,
+        (64, 0),
+        (2, 3, 1),
+        (true, true, false, true),
+    );
+    assert!(
+        parse(&bytes, TEST_REGISTRY)
+            .unwrap()
+            .bill_voyage_evidence()
+            .is_cinnabar_to_one_post_scene()
+    );
+    write_bill_evidence(
+        &mut bytes,
+        SaveSlot::Second,
+        (37, 8),
+        (4, 3, 3),
+        (true, true, true, false),
+    );
+    assert!(
+        parse(&bytes, TEST_REGISTRY)
+            .unwrap()
+            .bill_voyage_evidence()
+            .is_one_to_cinnabar_post_scene()
+    );
+}
+
+#[test]
+fn wally_victory_road_evidence_uses_selected_slot_and_canonical_csp1_trainer() {
+    let wally = resolve_ordinal(IdentityKind::Trainer, WALLY_VICTORY_ROAD_TRAINER_ORDINAL)
+        .expect("Wally trainer is registered");
+    assert_eq!(wally.ordinal, Some(518));
+    assert_eq!(wally.qualified_id, "HOENN:TRAINER_WALLY_1");
+
+    let mut bytes = valid_image(20, 21);
+    // A stale completed first slot must not be used when the ROM selects the
+    // newer second slot. This also proves the fixture has valid sector and
+    // CSP1 checksums after evidence writes.
+    write_wally_evidence(&mut bytes, SaveSlot::First, true, 1, false);
+    write_csp1_trainer_bit(
+        &mut bytes,
+        SaveSlot::First,
+        WALLY_VICTORY_ROAD_TRAINER_ORDINAL,
+        true,
+    );
+    write_wally_evidence(&mut bytes, SaveSlot::Second, false, 0, true);
+
+    let save = parse(&bytes, TEST_REGISTRY).expect("valid pre-battle save");
+    assert_eq!(save.selected_slot(), SaveSlot::Second);
+    let pre_battle = save.wally_victory_road_evidence();
+    assert_eq!(pre_battle.victory_road_1f_state, 0);
+    assert!(!pre_battle.defeated_wally_flag);
+    assert!(pre_battle.entrance_wally_hidden);
+    assert!(!pre_battle.canonical_trainer_defeated);
+    assert!(!pre_battle.is_post_battle());
+
+    // The ROM's story flag and state alone are insufficient. Set those on the
+    // selected slot first, while leaving canonical CSP1 ordinal 518 clear.
+    write_wally_evidence(&mut bytes, SaveSlot::Second, true, 1, false);
+    let legacy_only = parse(&bytes, TEST_REGISTRY)
+        .expect("valid legacy-only save")
+        .wally_victory_road_evidence();
+    assert!(legacy_only.defeated_wally_flag);
+    assert!(!legacy_only.canonical_trainer_defeated);
+    assert!(!legacy_only.is_post_battle());
+
+    write_csp1_trainer_bit(
+        &mut bytes,
+        SaveSlot::Second,
+        WALLY_VICTORY_ROAD_TRAINER_ORDINAL,
+        true,
+    );
+    let post_battle = parse(&bytes, TEST_REGISTRY)
+        .expect("valid post-battle save")
+        .wally_victory_road_evidence();
+    assert_eq!(post_battle.victory_road_1f_state, 1);
+    assert!(post_battle.defeated_wally_flag);
+    assert!(!post_battle.entrance_wally_hidden);
+    assert!(post_battle.canonical_trainer_defeated);
+    assert!(post_battle.is_post_battle());
+}
+
+#[test]
+fn extracts_first_briney_voyage_post_scene_evidence_from_selected_slot() {
+    let mut bytes = valid_image(20, 21);
+    write_briney_evidence(
+        &mut bytes,
+        SaveSlot::Second,
+        7,
+        13,
+        0,
+        true,
+        false,
+        false,
+        true,
+    );
+
+    let save = parse(&bytes, TEST_REGISTRY).expect("valid save");
+    let evidence = save.briney_voyage_evidence();
+    assert_eq!(evidence.map_group, 7);
+    assert_eq!(evidence.map_num, 13);
+    assert_eq!(evidence.board_briney_boat_state, 0);
+    assert!(evidence.norman_match_call_enabled);
+    assert!(!evidence.dewford_briney_hidden);
+    assert!(!evidence.dewford_boat_hidden);
+    assert!(evidence.route104_boat_hidden);
+    assert!(evidence.is_first_voyage_post_scene_at(7, 13));
+    assert!(!evidence.is_first_voyage_post_scene_at(7, 14));
+}
+
+#[test]
+fn rejects_incomplete_briney_scene_evidence() {
+    let mut bytes = valid_image(20, 21);
+    write_briney_evidence(
+        &mut bytes,
+        SaveSlot::Second,
+        7,
+        13,
+        1,
+        false,
+        true,
+        true,
+        false,
+    );
+
+    let evidence = parse(&bytes, TEST_REGISTRY)
+        .expect("valid save")
+        .briney_voyage_evidence();
+    assert_eq!(evidence.board_briney_boat_state, 1);
+    assert!(!evidence.norman_match_call_enabled);
+    assert!(evidence.dewford_briney_hidden);
+    assert!(evidence.dewford_boat_hidden);
+    assert!(!evidence.route104_boat_hidden);
+    assert!(!evidence.is_first_voyage_post_scene_at(7, 13));
+}
+
+#[test]
+fn reads_briney_evidence_only_from_the_rom_selected_slot() {
+    let mut bytes = valid_image(20, 21);
+    write_briney_evidence(
+        &mut bytes,
+        SaveSlot::First,
+        7,
+        13,
+        0,
+        true,
+        false,
+        false,
+        true,
+    );
+    // The newer second slot is the mid-scene state. A stale completed first
+    // slot must not be used as evidence for the selected save.
+    write_briney_evidence(
+        &mut bytes,
+        SaveSlot::Second,
+        8,
+        14,
+        1,
+        false,
+        true,
+        true,
+        false,
+    );
+
+    let save = parse(&bytes, TEST_REGISTRY).expect("valid save");
+    assert_eq!(save.selected_slot(), SaveSlot::Second);
+    let evidence = save.briney_voyage_evidence();
+    assert_eq!((evidence.map_group, evidence.map_num), (8, 14));
+    assert!(!evidence.is_first_voyage_post_scene_at(7, 13));
+}
+
+#[test]
+fn corrupt_save_has_no_briney_evidence() {
+    let mut bytes = valid_image(20, 21);
+    for slot in [SaveSlot::First, SaveSlot::Second] {
+        write_u32(
+            physical_sector_mut(&mut bytes, slot, 0),
+            SECTOR_SIGNATURE_OFFSET,
+            0,
+        );
+    }
+
+    assert!(matches!(
+        parse(&bytes, TEST_REGISTRY),
+        Err(SaveError::NoValidSlot { .. })
+    ));
+}
+
+fn golden_box_pokemon() -> [u8; 80] {
+    // Raw BoxPokemon from the ROM's "BoxPokemon encryption works" test.
+    let words = [
+        990384375_u32,
+        2948624514,
+        3907508686,
+        14410461,
+        35316705,
+        3907508686,
+        64742109,
+        718729,
+        3102307966,
+        2160206402,
+        49956971,
+        2495766612,
+        1424318580,
+        273408756,
+        2371630199,
+        2708871082,
+        3059937332,
+        2529190026,
+        2290634828,
+        2870614922,
+    ];
+    let mut raw = [0_u8; 80];
+    for (index, word) in words.iter().enumerate() {
+        raw[index * 4..index * 4 + 4].copy_from_slice(&word.to_le_bytes());
+    }
+    raw
+}
+
+#[test]
+fn decodes_rom_golden_vector_from_rotated_selected_party_and_pc() {
+    let mut bytes = valid_image(20, 21);
+    let box_raw = golden_box_pokemon();
+    let mut party_raw = [0_u8; 100];
+    party_raw[..80].copy_from_slice(&box_raw);
+    party_raw[80..100].copy_from_slice(&[1; 20]);
+    write_logical_range(&mut bytes, SaveSlot::Second, 1, 0x238, &party_raw);
+    // Linear PC position 49 straddles logical storage sectors 6 and 7.
+    write_logical_range(&mut bytes, SaveSlot::Second, 6, 4 + 49 * 80, &box_raw);
+    write_logical_range(&mut bytes, SaveSlot::First, 1, 0x238, &[0; 100]);
+    let save = parse(&bytes, TEST_REGISTRY).unwrap();
+    assert_eq!(save.selected_slot(), SaveSlot::Second);
+    let PokemonSlot::Occupied(party) = save.party_pokemon(0).unwrap() else {
+        panic!("party record must be occupied")
+    };
+    let PokemonSlot::Occupied(boxed) = save.pc_pokemon(1, 19).unwrap() else {
+        panic!("PC record must be occupied")
+    };
+    assert_eq!(party.raw, party_raw);
+    assert_eq!(boxed.raw, box_raw);
+    assert_eq!(party.identity, boxed.identity);
+    assert_eq!(boxed.identity.species, 255); // Torchic
+    assert_eq!(boxed.identity.held_item, 520); // Oran Berry
+    assert_eq!(boxed.identity.moves, [33, 10, 1, 45]);
+    assert_eq!(save.pc_storage_range(4 + 49 * 80, 80).unwrap(), box_raw);
+}
+
+#[test]
+fn distinguishes_empty_slots_and_rejects_corrupt_nonempty_pokemon() {
+    let mut bytes = valid_image(20, 21);
+    write_logical_range(&mut bytes, SaveSlot::Second, 1, 0x238, &[0; 100]);
+    write_logical_range(&mut bytes, SaveSlot::Second, 6, 4, &[0; 80]);
+    let save = parse(&bytes, TEST_REGISTRY).unwrap();
+    assert!(matches!(save.party_pokemon(0), Ok(PokemonSlot::Empty { raw }) if raw == [0; 100]));
+    assert!(matches!(save.pc_pokemon(0, 0), Ok(PokemonSlot::Empty { raw }) if raw == [0; 80]));
+
+    // ZeroMonData writes MAIL_NONE (0xff) into an otherwise cleared party slot.
+    let mut empty_party = [0_u8; 100];
+    empty_party[0x55] = 0xff;
+    write_logical_range(&mut bytes, SaveSlot::Second, 1, 0x238, &empty_party);
+    let save = parse(&bytes, TEST_REGISTRY).unwrap();
+    assert!(matches!(save.party_pokemon(0), Ok(PokemonSlot::Empty { raw }) if raw == empty_party));
+
+    let mut bad = golden_box_pokemon();
+    bad[32] ^= 1;
+    write_logical_range(&mut bytes, SaveSlot::Second, 6, 4, &bad);
+    let save = parse(&bytes, TEST_REGISTRY).unwrap();
+    assert!(matches!(
+        save.pc_pokemon(0, 0),
+        Err(PokemonError::Checksum { .. })
+    ));
+}
+
+#[test]
+fn pokemon_and_logical_range_bounds_are_checked() {
+    let save = parse(&valid_image(20, 21), TEST_REGISTRY).unwrap();
+    assert_eq!(
+        save.party_pokemon(6),
+        Err(PokemonError::PartyIndex { index: 6 })
+    );
+    assert_eq!(
+        save.pc_pokemon(14, 0),
+        Err(PokemonError::BoxIndex { index: 14 })
+    );
+    assert_eq!(
+        save.pc_pokemon(0, 30),
+        Err(PokemonError::BoxPosition { index: 30 })
+    );
+    assert!(save.save_block1_range(SAVE_BLOCK1_SIZE, 1).is_none());
+    assert_eq!(PC_STORAGE_CAPACITY, 34_144);
+    assert!(save.pc_storage_range(PC_STORAGE_CAPACITY - 1, 1).is_some());
+    assert!(save.pc_storage_range(PC_STORAGE_CAPACITY - 1, 2).is_none());
+    assert!(save.pc_storage_range(usize::MAX, 2).is_none());
+}
+
+#[test]
+fn party_count_bounds_trade_eligibility() {
+    let mut bytes = valid_image(20, 21);
+    write_logical_range(&mut bytes, SaveSlot::Second, 1, 0x234, &[1]);
+    let save = parse(&bytes, TEST_REGISTRY).unwrap();
+    assert_eq!(save.party_count(), Ok(1));
+
+    write_logical_range(&mut bytes, SaveSlot::Second, 1, 0x234, &[7]);
+    let save = parse(&bytes, TEST_REGISTRY).unwrap();
+    assert_eq!(
+        save.party_count(),
+        Err(PokemonError::PartyCount { count: 7 })
+    );
+}
+
+fn trade_fixture(counter: u32, tag: u8) -> ValidatedSave {
+    let mut bytes = valid_image(counter.wrapping_sub(1), counter);
+    let slot = SaveSlot::from_counter(counter);
+    let mut record = [0_u8; 100];
+    record[..80].copy_from_slice(&golden_box_pokemon());
+    record[8] = tag;
+    record[85] = 0xff;
+    record[86] = tag;
+    write_logical_range(&mut bytes, slot, 1, 0x234, &[1]);
+    write_logical_range(&mut bytes, slot, 1, 0x238, &record);
+    bytes.extend_from_slice(&[tag; RTC_TRAILER_SIZE]);
+    parse(&bytes, TEST_REGISTRY).unwrap()
+}
+
+#[test]
+fn trade_swaps_exact_records_and_preserves_other_logical_bytes() {
+    let left = trade_fixture(21, 7);
+    let right = trade_fixture(31, 9);
+    let left_raw = left.raw_bytes().to_vec();
+    let right_raw = right.raw_bytes().to_vec();
+    let left_record = match left.party_pokemon(0).unwrap() {
+        PokemonSlot::Occupied(record) => record.raw,
+        _ => panic!("occupied fixture"),
+    };
+    let right_record = match right.party_pokemon(0).unwrap() {
+        PokemonSlot::Occupied(record) => record.raw,
+        _ => panic!("occupied fixture"),
+    };
+    assert_ne!(left_record[8], right_record[8]);
+    let (new_left, new_right) = trade_party_pokemon(&left, 0, &right, 0).unwrap();
+    assert_eq!(left.raw_bytes(), left_raw);
+    assert_eq!(right.raw_bytes(), right_raw);
+    for (before, after, expected) in [
+        (&left, &new_left, right_record),
+        (&right, &new_right, left_record),
+    ] {
+        assert_eq!(after.counter(), before.counter().wrapping_add(1));
+        assert_ne!(after.selected_slot(), before.selected_slot());
+        assert_eq!(
+            after.coop().save_generation,
+            before.coop().save_generation + 1
+        );
+        assert_eq!(after.rtc_trailer(), before.rtc_trailer());
+        assert!(
+            matches!(after.party_pokemon(0), Ok(PokemonSlot::Occupied(record)) if record.raw == expected)
+        );
+        assert!(parse(after.raw_bytes(), TEST_REGISTRY).is_ok());
+        for logical in 0..SECTORS_PER_SLOT {
+            let old = before.logical_sector_offsets[logical];
+            let new = after.logical_sector_offsets[logical];
+            for inside in 0..SECTOR_SIZE {
+                let logical_party_position =
+                    (logical.checked_sub(1)).map(|id| id * SAVE_BLOCK3_CHUNK_OFFSET + inside);
+                let is_party = logical_party_position
+                    .is_some_and(|position| (0x238..0x238 + 100).contains(&position));
+                let block3_position = logical * SAVE_BLOCK3_CHUNK_SIZE
+                    + inside.saturating_sub(SAVE_BLOCK3_CHUNK_OFFSET);
+                let is_coop_integrity = inside >= SAVE_BLOCK3_CHUNK_OFFSET
+                    && ((COOP_SAVE_OFFSET + COOP_GENERATION_OFFSET
+                        ..COOP_SAVE_OFFSET + COOP_GENERATION_OFFSET + 4)
+                        .contains(&block3_position)
+                        || (COOP_SAVE_OFFSET + COOP_CRC_OFFSET
+                            ..COOP_SAVE_OFFSET + COOP_CRC_OFFSET + 4)
+                            .contains(&block3_position));
+                let is_footer = (SECTOR_CHECKSUM_OFFSET..SECTOR_CHECKSUM_OFFSET + 2)
+                    .contains(&inside)
+                    || (SECTOR_COUNTER_OFFSET..SECTOR_COUNTER_OFFSET + 4).contains(&inside);
+                if !(is_party || is_coop_integrity || is_footer) {
+                    assert_eq!(
+                        after.raw_bytes()[new + inside],
+                        before.raw_bytes()[old + inside],
+                        "logical sector {logical}, byte {inside}"
+                    );
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn trade_rejects_empty_corrupt_and_mail_without_mutating_inputs() {
+    let left = trade_fixture(21, 7);
+    let right = trade_fixture(31, 9);
+    let original = left.raw_bytes().to_vec();
+    assert!(matches!(
+        trade_party_pokemon(&left, 1, &right, 0),
+        Err(TradeError::OutsideParty { .. })
+    ));
+    assert!(matches!(
+        trade_party_pokemon(&left, 6, &right, 0),
+        Err(TradeError::Pokemon {
+            reason: PokemonError::PartyIndex { .. },
+            ..
+        })
+    ));
+
+    let mut bytes = left.raw_bytes().to_vec();
+    write_logical_range(&mut bytes, SaveSlot::Second, 1, 0x238, &[0; 100]);
+    let empty = parse(&bytes, TEST_REGISTRY).unwrap();
+    assert!(matches!(
+        trade_party_pokemon(&empty, 0, &right, 0),
+        Err(TradeError::Empty { .. })
+    ));
+
+    let mut bytes = left.raw_bytes().to_vec();
+    let party = logical_sector_mut(&mut bytes, SaveSlot::Second, 1);
+    party[0x238 + 32] ^= 1;
+    write_u16(
+        party,
+        SECTOR_CHECKSUM_OFFSET,
+        sector_checksum(&party[..LOGICAL_SECTOR_DATA_SIZES[1]]),
+    );
+    let corrupt = parse(&bytes, TEST_REGISTRY).unwrap();
+    assert!(matches!(
+        trade_party_pokemon(&corrupt, 0, &right, 0),
+        Err(TradeError::Pokemon {
+            reason: PokemonError::Checksum { .. },
+            ..
+        })
+    ));
+
+    let mut bytes = left.raw_bytes().to_vec();
+    write_logical_range(&mut bytes, SaveSlot::Second, 1, 0x238 + 85, &[0]);
+    let mail = parse(&bytes, TEST_REGISTRY).unwrap();
+    assert!(matches!(
+        trade_party_pokemon(&mail, 0, &right, 0),
+        Err(TradeError::Mail { .. })
+    ));
+    let PokemonSlot::Occupied(with_mail) = mail.party_pokemon(0).unwrap() else {
+        panic!("mail fixture slot is occupied");
+    };
+    let PokemonSlot::Occupied(without_mail) = left.party_pokemon(0).unwrap() else {
+        panic!("fixture slot is occupied");
+    };
+    assert!(crate::party_record_holds_mail(&with_mail));
+    assert!(!crate::party_record_holds_mail(&without_mail));
+    assert_eq!(left.raw_bytes(), original);
+    assert_eq!(right.rtc_trailer(), Some(&[9; RTC_TRAILER_SIZE]));
 }
 
 fn rewrite_payload(
@@ -1744,4 +2428,518 @@ fn v2_coop_projection_maps_validated_record_into_rotated_destination_only() {
         Err(v2::SectorProjectionError::SourceMismatch)
     );
     assert_eq!(destination.raw_bytes(), destination_bytes);
+}
+
+#[test]
+fn reads_hoenn_badge_flags_in_gym_order() {
+    let mut bytes = valid_image(20, 21);
+    // Stone, Knuckle and Heat: badges 1, 2 and 4 (bits 0, 1 and 3). The
+    // synthetic filler may hold any bits, so every badge flag is written.
+    for badge in 0..8 {
+        let flag = crate::FLAG_BADGE01_GET + badge;
+        let offset = crate::SAVE_BLOCK1_FLAGS_OFFSET + flag / 8;
+        let save = parse(&bytes, TEST_REGISTRY).unwrap();
+        let current = save.save_block1_range(offset, 1).unwrap()[0];
+        let mask = 1 << (flag % 8);
+        let value = if [0, 1, 3].contains(&badge) {
+            current | mask
+        } else {
+            current & !mask
+        };
+        write_logical_range(&mut bytes, SaveSlot::Second, 1, offset, &[value]);
+    }
+    let save = parse(&bytes, TEST_REGISTRY).unwrap();
+    assert_eq!(save.hoenn_badges(), Some(0b0000_1011));
+    assert_eq!(save.event_flag(crate::FLAG_BADGE01_GET + 2), Some(false));
+    assert_eq!(save.event_flag(crate::SAVE_BLOCK1_FLAG_BYTES * 8), None);
+}
+
+#[test]
+fn reads_script_vars_as_var_get_does() {
+    let mut bytes = valid_image(20, 21);
+    // VAR_ROUTE110_STATE (0x4069) and the last saved variable.
+    let last = crate::VARS_START + crate::SAVE_BLOCK1_VAR_COUNT - 1;
+    for (var, value) in [(0x4069_usize, 0x0102_u16), (last, 7)] {
+        let offset = crate::SAVE_BLOCK1_VARS_OFFSET + 2 * (var - crate::VARS_START);
+        write_logical_range(
+            &mut bytes,
+            SaveSlot::Second,
+            1,
+            offset,
+            &value.to_le_bytes(),
+        );
+    }
+    let save = parse(&bytes, TEST_REGISTRY).unwrap();
+    assert_eq!(save.event_var(0x4069), Some(0x0102));
+    assert_eq!(save.event_var(last), Some(7));
+    assert_eq!(save.event_var(last + 1), None);
+    assert_eq!(save.event_var(crate::VARS_START - 1), None);
+}
+
+#[test]
+fn reads_money_trainer_flags_experience_and_locates_pokemon() {
+    let mut bytes = valid_image(20, 21);
+    // Money is stored XOR the SaveBlock2 encryption key, as GetMoney reads it.
+    write_logical_range(
+        &mut bytes,
+        SaveSlot::Second,
+        0,
+        crate::SAVE_BLOCK2_ENCRYPTION_KEY_OFFSET,
+        &0x5a5a_1234_u32.to_le_bytes(),
+    );
+    write_logical_range(
+        &mut bytes,
+        SaveSlot::Second,
+        1,
+        crate::SAVE_BLOCK1_MONEY_OFFSET,
+        &(3000_u32 ^ 0x5a5a_1234).to_le_bytes(),
+    );
+    // Trainer 0x2A is flag TRAINER_FLAGS_START + 0x2A.
+    let flag = crate::TRAINER_FLAGS_START + 0x2a;
+    write_logical_range(
+        &mut bytes,
+        SaveSlot::Second,
+        1,
+        crate::SAVE_BLOCK1_FLAGS_OFFSET + flag / 8,
+        &[1 << (flag % 8)],
+    );
+    let box_raw = golden_box_pokemon();
+    let mut party_raw = [0_u8; 100];
+    party_raw[..80].copy_from_slice(&box_raw);
+    write_logical_range(&mut bytes, SaveSlot::Second, 1, 0x238, &party_raw);
+    write_logical_range(&mut bytes, SaveSlot::Second, 1, 0x234, &[1]);
+    // Empty PC slots are zeroed in real saves; clear the synthetic filler.
+    write_logical_range(
+        &mut bytes,
+        SaveSlot::Second,
+        6,
+        4,
+        &vec![0; crate::pokemon::BOX_COUNT * crate::pokemon::BOX_SIZE * 80],
+    );
+    write_logical_range(&mut bytes, SaveSlot::Second, 6, 4 + 49 * 80, &box_raw);
+    let save = parse(&bytes, TEST_REGISTRY).unwrap();
+    assert_eq!(save.selected_slot(), SaveSlot::Second);
+
+    assert_eq!(save.money(), Some(3000));
+    assert_eq!(save.trainer_flag(0x2a), Some(true));
+    assert_eq!(save.trainer_flag(0x2b), Some(false));
+    let past_end =
+        u16::try_from(crate::TRAINER_FLAGS_END - crate::TRAINER_FLAGS_START + 1).unwrap();
+    assert_eq!(save.trainer_flag(past_end), None);
+
+    let PokemonSlot::Occupied(party) = save.party_pokemon(0).unwrap() else {
+        panic!("party record must be occupied")
+    };
+    // The ROM's golden vector asserts MON_DATA_EXP == 12345.
+    assert_eq!(party.identity.experience(), 12_345);
+    assert_eq!(
+        save.locate_pokemon(party.identity.personality, party.identity.ot_id)
+            .unwrap(),
+        vec![
+            crate::PokemonLocation::Party(0),
+            crate::PokemonLocation::Pc {
+                box_index: 1,
+                position: 19
+            }
+        ]
+    );
+    assert!(save.locate_pokemon(1, 2).unwrap().is_empty());
+}
+
+// Independent synthetic CSP2 saves, not a legacy-save conversion path.
+fn v2_trade_record(tag: u8, held_item: u16) -> [u8; 100] {
+    let mut raw = [0_u8; 100];
+    let personality = u32::from(tag) * 24; // GAEM physical order, permutation zero.
+    let ot_id = u32::from_le_bytes([tag; 4]);
+    write_u32(&mut raw, 0, personality);
+    write_u32(&mut raw, 4, ot_id);
+    raw[8..18].fill(tag);
+    raw[19] = 2;
+    raw[20..27].fill(tag);
+    let mut secure = [0_u8; 48];
+    write_u16(&mut secure, 0, u16::from(tag));
+    write_u16(&mut secure, 2, held_item);
+    write_u32(&mut secure, 4, 12345);
+    write_u16(&mut secure, 12, 33);
+    secure[20..24].copy_from_slice(&[10, 11, 12, 13]);
+    let checksum = secure.chunks_exact(2).fold(0_u16, |sum, word| {
+        sum.wrapping_add(u16::from_le_bytes(word.try_into().unwrap()))
+    });
+    write_u16(&mut raw, 28, checksum);
+    for (index, word) in secure.chunks_exact(4).enumerate() {
+        write_u32(
+            &mut raw,
+            32 + 4 * index,
+            u32::from_le_bytes(word.try_into().unwrap()) ^ personality ^ ot_id,
+        );
+    }
+    raw[85] = 0xff;
+    raw[84] = 5;
+    write_u16(&mut raw, 86, 20);
+    write_u16(&mut raw, 88, 25);
+    raw
+}
+
+fn v2_trade_fixture(counter: u32, tag: u8, rotation: usize) -> ValidatedSaveV2 {
+    let mut bytes = vec![0xff; FLASH_IMAGE_SIZE];
+    let selected = SaveSlot::from_counter(counter);
+    let other = SaveSlot::from_counter(counter.wrapping_sub(1));
+    let mut payload = v2_payload_array(true, true); // Preserve both known status bits.
+    write_u16(
+        &mut payload,
+        v2::COOP_SAVE_V2_CORMORIA_PROGRESS_OFFSET + 2,
+        0x15,
+    );
+    let crc = crc32fast::hash(&payload[..COOP_CRC_OFFSET]);
+    write_u32(&mut payload, COOP_CRC_OFFSET, crc);
+    write_slot(&mut bytes, other, counter.wrapping_sub(1), 3, &payload);
+    write_slot(&mut bytes, selected, counter, rotation, &payload);
+    write_logical_range(
+        &mut bytes,
+        selected,
+        0,
+        PLAYER_NAME_OFFSET,
+        &[tag; PLAYER_NAME_SIZE],
+    );
+    write_logical_range(&mut bytes, selected, 0, PLAYER_TRAINER_ID_OFFSET, &[tag; 4]);
+    write_logical_range(&mut bytes, selected, 1, 0x234, &[2]);
+    let mut party = [0; 600];
+    party[..100].copy_from_slice(&v2_trade_record(tag, 0));
+    party[100..200].copy_from_slice(&v2_trade_record(tag + 1, 0));
+    write_logical_range(&mut bytes, selected, 1, 0x238, &party);
+    // Initialize boxes in batches so fixture construction recomputes each
+    // sector checksum once, not once per cleared byte.
+    let boxes_end = 4 + pokemon::BOX_COUNT * pokemon::BOX_SIZE * 80;
+    for logical in 6..SECTORS_PER_SLOT {
+        let base = (logical - 6) * SAVE_BLOCK3_CHUNK_OFFSET;
+        let begin = 4_usize.saturating_sub(base);
+        let end = boxes_end.saturating_sub(base).min(SAVE_BLOCK3_CHUNK_OFFSET);
+        if begin >= end {
+            continue;
+        }
+        let sector = logical_sector_mut(&mut bytes, selected, logical);
+        sector[begin..end].fill(0);
+        let checksum = sector_checksum(&sector[..LOGICAL_SECTOR_DATA_SIZES[logical]]);
+        write_u16(sector, SECTOR_CHECKSUM_OFFSET, checksum);
+    }
+    write_logical_range(
+        &mut bytes,
+        selected,
+        6,
+        4 + 49 * 80,
+        &v2_trade_record(tag, 0)[..80],
+    );
+    bytes.extend_from_slice(&[tag; RTC_TRAILER_SIZE]);
+    parse_v2(&bytes, TEST_REGISTRY).unwrap()
+}
+
+#[test]
+fn v2_trade_preserves_every_nonparty_byte_and_fifth_campaign_across_counter_rollover() {
+    let left = v2_trade_fixture(21, 7, 1);
+    let right = v2_trade_fixture(u32::MAX, 9, 14);
+    assert!(
+        !left
+            .character_lineage()
+            .same_trainer(right.character_lineage())
+    );
+    let left_record = match left.party_pokemon(1).unwrap() {
+        PokemonSlot::Occupied(record) => record.raw,
+        _ => panic!("occupied"),
+    };
+    let right_record = match right.party_pokemon(0).unwrap() {
+        PokemonSlot::Occupied(record) => record.raw,
+        _ => panic!("occupied"),
+    };
+    let originals = (left.raw_bytes().to_vec(), right.raw_bytes().to_vec());
+    let (new_left, new_right) = trade_party_pokemon_v2(&left, 1, &right, 0).unwrap();
+    assert_eq!(left.raw_bytes(), originals.0);
+    assert_eq!(right.raw_bytes(), originals.1);
+    assert_eq!(new_right.counter(), 0);
+    for (before, after, index, incoming) in [
+        (&left, &new_left, 1, right_record),
+        (&right, &new_right, 0, left_record),
+    ] {
+        assert_eq!(after.character_lineage(), before.character_lineage());
+        assert_eq!(after.rtc_trailer(), before.rtc_trailer());
+        assert_eq!(after.money(), before.money());
+        assert_eq!(
+            after.pc_storage_range(0, PC_STORAGE_CAPACITY),
+            before.pc_storage_range(0, PC_STORAGE_CAPACITY)
+        );
+        assert_eq!(after.party_count(), before.party_count());
+        assert_eq!(
+            after.coop().regional_progress,
+            before.coop().regional_progress
+        );
+        assert_eq!(after.coop().status_flags, before.coop().status_flags);
+        assert_eq!(
+            after.coop().defeated_trainers,
+            before.coop().defeated_trainers
+        );
+        assert_eq!(after.coop().events, before.coop().events);
+        assert_eq!(
+            after.coop().unlocked_fly_points,
+            before.coop().unlocked_fly_points
+        );
+        assert_eq!(after.coop().gyms, before.coop().gyms);
+        assert_eq!(
+            after.coop().save_generation,
+            before.coop().save_generation + 1
+        );
+        assert_eq!(
+            after
+                .coop()
+                .progress_for(RegionId::Cormoria)
+                .unwrap()
+                .badge_mask,
+            0x15
+        );
+        assert!(
+            matches!(after.party_pokemon(index), Ok(PokemonSlot::Occupied(record)) if record.raw == incoming)
+        );
+        assert_eq!(after.counter(), before.counter().wrapping_add(1));
+        assert_ne!(after.selected_slot(), before.selected_slot());
+        let source_base = before.selected_slot().index() * SECTORS_PER_SLOT * SECTOR_SIZE;
+        assert_eq!(
+            &after.raw_bytes()[source_base..source_base + SECTORS_PER_SLOT * SECTOR_SIZE],
+            &before.raw_bytes()[source_base..source_base + SECTORS_PER_SLOT * SECTOR_SIZE]
+        );
+        assert_eq!(
+            &after.raw_bytes()[SECTOR_SIZE * SECTORS_PER_SLOT * 2..],
+            &before.raw_bytes()[SECTOR_SIZE * SECTORS_PER_SLOT * 2..]
+        );
+        for logical in 0..SECTORS_PER_SLOT {
+            let old = before.logical_sector_offsets[logical];
+            let new = after.logical_sector_offsets[logical];
+            for inside in 0..SECTOR_SIZE {
+                let party = logical
+                    .checked_sub(1)
+                    .map(|id| id * SAVE_BLOCK3_CHUNK_OFFSET + inside)
+                    .is_some_and(|position| {
+                        (0x238 + index * 100..0x238 + (index + 1) * 100).contains(&position)
+                    });
+                let block3 = logical * SAVE_BLOCK3_CHUNK_SIZE
+                    + inside.saturating_sub(SAVE_BLOCK3_CHUNK_OFFSET);
+                let coop_integrity = inside >= SAVE_BLOCK3_CHUNK_OFFSET
+                    && ((COOP_SAVE_OFFSET + COOP_GENERATION_OFFSET
+                        ..COOP_SAVE_OFFSET + COOP_GENERATION_OFFSET + 4)
+                        .contains(&block3)
+                        || (COOP_SAVE_OFFSET + COOP_CRC_OFFSET
+                            ..COOP_SAVE_OFFSET + COOP_CRC_OFFSET + 4)
+                            .contains(&block3));
+                let footer = (SECTOR_CHECKSUM_OFFSET..SECTOR_CHECKSUM_OFFSET + 2).contains(&inside)
+                    || (SECTOR_COUNTER_OFFSET..SECTOR_COUNTER_OFFSET + 4).contains(&inside);
+                if !(party || coop_integrity || footer) {
+                    assert_eq!(
+                        after.raw_bytes()[new + inside],
+                        before.raw_bytes()[old + inside],
+                        "logical{logical} byte{inside}"
+                    );
+                }
+            }
+        }
+        assert!(parse_v2(after.raw_bytes(), TEST_REGISTRY).is_ok());
+        assert!(parse(after.raw_bytes(), TEST_REGISTRY).is_err());
+    }
+}
+
+#[test]
+fn v2_trade_rotates_logical_sectors_from_each_physical_start() {
+    let right = v2_trade_fixture(31, 9, 3);
+    for rotation in 0..SECTORS_PER_SLOT {
+        let left = v2_trade_fixture(21, 7, rotation);
+        let (output, _) = trade_party_pokemon_v2(&left, 0, &right, 1).unwrap();
+        let old_base = left.selected_slot().index() * SECTOR_SIZE * SECTORS_PER_SLOT;
+        let new_base = output.selected_slot().index() * SECTOR_SIZE * SECTORS_PER_SLOT;
+        let old_zero = (left.logical_sector_offsets[0] - old_base) / SECTOR_SIZE;
+        assert_eq!(
+            (output.logical_sector_offsets[0] - new_base) / SECTOR_SIZE,
+            (old_zero + 1) % SECTORS_PER_SLOT
+        );
+    }
+}
+
+#[test]
+fn v2_trade_rejects_invalid_selected_records_without_either_output() {
+    let left = v2_trade_fixture(21, 7, 3);
+    let right = v2_trade_fixture(31, 9, 6);
+    assert!(matches!(
+        trade_party_pokemon_v2(&left, 2, &right, 0),
+        Err(TradeError::OutsideParty { side: "left", .. })
+    ));
+    assert!(matches!(
+        trade_party_pokemon_v2(&left, 6, &right, 0),
+        Err(TradeError::Pokemon {
+            reason: PokemonError::PartyIndex { .. },
+            ..
+        })
+    ));
+    for (record, expected) in [
+        ([0; 100], "empty"),
+        (
+            {
+                let mut r = v2_trade_record(7, 0);
+                r[32] ^= 1;
+                r
+            },
+            "checksum",
+        ),
+        (
+            {
+                let mut r = v2_trade_record(7, 0);
+                r[85] = 0;
+                r
+            },
+            "mail",
+        ),
+        (v2_trade_record(7, 200), "mail"),
+    ] {
+        let mut raw = right.raw_bytes().to_vec();
+        write_logical_range(&mut raw, right.selected_slot(), 1, 0x238, &record);
+        let bad = parse_v2(&raw, TEST_REGISTRY).unwrap();
+        let result = trade_party_pokemon_v2(&left, 0, &bad, 0);
+        assert!(match expected {
+            "empty" => matches!(result, Err(TradeError::Empty { side: "right", .. })),
+            "checksum" => matches!(
+                result,
+                Err(TradeError::Pokemon {
+                    side: "right",
+                    reason: PokemonError::Checksum { .. }
+                })
+            ),
+            _ => matches!(result, Err(TradeError::Mail { side: "right", .. })),
+        });
+        assert_eq!(bad.raw_bytes(), raw);
+    }
+}
+
+#[test]
+fn v2_trade_rejects_generation_overflow_on_either_side() {
+    let left = v2_trade_fixture(21, 7, 3);
+    let right = v2_trade_fixture(31, 9, 6);
+    for side in ["left", "right"] {
+        let save = if side == "left" { &left } else { &right };
+        let mut raw = save.raw_bytes().to_vec();
+        rewrite_payload(&mut raw, save.selected_slot(), |payload| {
+            write_u32(payload, COOP_GENERATION_OFFSET, u32::MAX);
+            let crc = crc32fast::hash(&payload[..COOP_CRC_OFFSET]);
+            write_u32(payload, COOP_CRC_OFFSET, crc);
+        });
+        let exhausted = parse_v2(&raw, TEST_REGISTRY).unwrap();
+        let result = if side == "left" {
+            trade_party_pokemon_v2(&exhausted, 0, &right, 0)
+        } else {
+            trade_party_pokemon_v2(&left, 0, &exhausted, 0)
+        };
+        assert!(matches!(result,Err(TradeError::GenerationOverflow{side:failed}) if failed==side));
+        assert_eq!(exhausted.raw_bytes(), raw);
+    }
+}
+
+#[test]
+fn v2_gameplay_views_use_current_slot_and_canonical_trainer_bits() {
+    let save = v2_trade_fixture(21, 7, 3);
+    let mut raw = save.raw_bytes().to_vec();
+    let slot = save.selected_slot();
+    write_logical_range(
+        &mut raw,
+        slot,
+        0,
+        SAVE_BLOCK2_ENCRYPTION_KEY_OFFSET,
+        &0x12345678_u32.to_le_bytes(),
+    );
+    write_logical_range(
+        &mut raw,
+        slot,
+        1,
+        SAVE_BLOCK1_MONEY_OFFSET,
+        &(3000_u32 ^ 0x12345678).to_le_bytes(),
+    );
+    write_briney_evidence(&mut raw, slot, 0, 11, 0, true, false, false, true);
+    write_wally_evidence(&mut raw, slot, true, 1, false);
+    write_csp1_trainer_bit(&mut raw, slot, WALLY_VICTORY_ROAD_TRAINER_ORDINAL, true);
+    let save = parse_v2(&raw, TEST_REGISTRY).unwrap();
+    assert_eq!(save.money(), Some(3000));
+    assert!(
+        save.briney_voyage_evidence()
+            .is_first_voyage_post_scene_at(0, 11)
+    );
+    assert!(save.wally_victory_road_evidence().is_post_battle());
+    let ordinal =
+        resolve_ordinal(IdentityKind::Trainer, WALLY_VICTORY_ROAD_TRAINER_ORDINAL).unwrap();
+    let identity = TrainerInstanceId::parse(ordinal.qualified_id).unwrap();
+    assert_eq!(save.coop().defeated_trainer(&identity), Ok(true));
+    assert!(
+        save.coop()
+            .defeated_trainer(&TrainerInstanceId::parse("HOENN:TRAINER_NOT_REGISTERED").unwrap())
+            .is_err()
+    );
+    assert!(save.coop().progress_for(RegionId::Unspecified).is_none());
+    let PokemonSlot::Occupied(mon) = save.party_pokemon(0).unwrap() else {
+        panic!("occupied")
+    };
+    assert_eq!(mon.identity.experience(), 12345);
+    assert_eq!(
+        save.locate_pokemon(mon.identity.personality, mon.identity.ot_id)
+            .unwrap(),
+        vec![
+            PokemonLocation::Party(0),
+            PokemonLocation::Pc {
+                box_index: 1,
+                position: 19
+            }
+        ]
+    );
+    assert_eq!(save.event_var(VARS_START - 1), None);
+    assert_eq!(save.event_var(VARS_START + SAVE_BLOCK1_VAR_COUNT), None);
+    assert_eq!(save.event_flag(SAVE_BLOCK1_FLAG_BYTES * 8), None);
+    assert_eq!(save.save_block1_range(usize::MAX, 1), None);
+    assert_eq!(save.pc_storage_range(PC_STORAGE_CAPACITY, 1), None);
+    let mut raw = save.raw_bytes().to_vec();
+    write_bill_evidence(
+        &mut raw,
+        slot,
+        (64, 0),
+        (2, 3, 1),
+        (true, true, false, true),
+    );
+    let bill = parse_v2(&raw, TEST_REGISTRY).unwrap();
+    assert!(bill.bill_voyage_evidence().is_cinnabar_to_one_post_scene());
+}
+
+#[test]
+fn v2_trade_output_preserves_rom_slot_selection_and_rejects_tamper() {
+    let left = v2_trade_fixture(21, 7, 3);
+    let right = v2_trade_fixture(31, 9, 6);
+    let (output, _) = trade_party_pokemon_v2(&left, 0, &right, 0).unwrap();
+    let mut raw = output.raw_bytes().to_vec();
+    let offset = output.logical_sector_offsets[1];
+    raw[offset + 200] ^= 1;
+    // A corrupt container follows the ROM's valid-other-slot fallback.
+    let fallback = parse_v2(&raw, TEST_REGISTRY).unwrap();
+    assert_eq!(fallback.counter(), left.counter());
+    raw[left.logical_sector_offsets[1] + 200] ^= 1;
+    assert!(parse_v2(&raw, TEST_REGISTRY).is_err());
+    let mut raw = output.raw_bytes().to_vec();
+    rewrite_payload(&mut raw, output.selected_slot(), |payload| {
+        payload[COOP_CRC_OFFSET] ^= 1
+    });
+    assert!(parse_v2(&raw, TEST_REGISTRY).is_err());
+}
+
+#[test]
+fn same_trainer_binding_ignores_only_campaign_region() {
+    let save = v2_trade_fixture(21, 7, 3);
+    let identity = save.character_lineage();
+    let mut other = identity;
+    other.player_region ^= 1;
+    assert!(identity.same_trainer(other));
+    other.player_trainer_id[0] ^= 1;
+    assert!(!identity.same_trainer(other));
+    other = identity;
+    other.player_name[0] ^= 1;
+    assert!(!identity.same_trainer(other));
+    other = identity;
+    other.player_gender ^= 1;
+    assert!(!identity.same_trainer(other));
 }

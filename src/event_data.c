@@ -4,6 +4,8 @@
 #include "johto/events.h"
 #include "pokedex.h"
 #include "world/events.h"
+#include "coop/net_bridge.h"
+#include "constants/johto_content.h"
 
 #define SPECIAL_FLAGS_SIZE  (NUM_SPECIAL_FLAGS / 8)  // 8 flags per byte
 #define TEMP_FLAGS_SIZE     (NUM_TEMP_FLAGS / 8)
@@ -277,6 +279,10 @@ u8 *GetFlagPointer(u16 id)
 
 u8 FlagSet(u16 id)
 {
+    enum CoopRegion region;
+    u16 badgeBit;
+    bool8 wasSet;
+
     if (WorldEvent_IsFlagId(id))
     {
         (void)WorldEvent_SetFlag(id, TRUE);
@@ -286,7 +292,20 @@ u8 FlagSet(u16 id)
         return 0;
     if (JohtoEvent_IsFlagId(id))
     {
+        wasSet = JohtoEvent_GetFlag(id);
         (void)JohtoEvent_SetFlag(id, TRUE);
+        if (!wasSet && CoopRegion_TryGetActive(&region))
+        {
+            if (id >= JOHTO_FLAG_BADGE01_GET && id <= JOHTO_FLAG_BADGE08_GET
+             && region == COOP_REGION_JOHTO)
+                (void)CoopNetBridge_ObserveProgress(1, region, id - JOHTO_FLAG_BADGE01_GET);
+            else if (id >= JOHTO_FLAG_BADGE09_GET && id <= JOHTO_FLAG_BADGE16_GET
+                  && region == COOP_REGION_KANTO)
+                (void)CoopNetBridge_ObserveProgress(1, region, id - JOHTO_FLAG_BADGE09_GET);
+            else if (id == JOHTO_FLAG_IS_CHAMPION
+                  && (region == COOP_REGION_JOHTO || region == COOP_REGION_KANTO))
+                (void)CoopNetBridge_ObserveProgress(3, COOP_REGION_JOHTO, 1);
+        }
         return 0;
     }
     if (JohtoEvent_IsReservedId(id))
@@ -294,7 +313,22 @@ u8 FlagSet(u16 id)
 
     u8 *ptr = GetFlagPointer(id);
     if (ptr)
+    {
+        wasSet = ((*ptr >> (id & 7)) & 1) != 0;
         *ptr |= 1 << (id & 7);
+        if (!wasSet && CoopRegion_TryGetActive(&region))
+        {
+            if (id >= FLAG_BADGE01_GET && id <= FLAG_BADGE08_GET
+             && (region == COOP_REGION_HOENN || region == COOP_REGION_KANTO))
+            {
+                badgeBit = id - FLAG_BADGE01_GET;
+                (void)CoopNetBridge_ObserveProgress(1, region, badgeBit);
+            }
+            else if ((id == FLAG_SYS_GAME_CLEAR && region == COOP_REGION_HOENN)
+                  || (id == FLAG_KANTO_MASTERY_CHAMPION && region == COOP_REGION_KANTO))
+                (void)CoopNetBridge_ObserveProgress(3, region, 1);
+        }
+    }
     return 0;
 }
 

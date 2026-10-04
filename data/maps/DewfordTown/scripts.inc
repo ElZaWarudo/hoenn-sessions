@@ -111,6 +111,11 @@ DewfordTown_EventScript_FishingNotSoGood::
 	end
 
 DewfordTown_EventScript_SailToPetalburg::
+	setvar VAR_0x8004, 97
+	setvar VAR_0x8005, 2
+	special Special_CoopGroupTravelBegin
+	goto_if_eq VAR_RESULT, 1, DewfordTown_EventScript_GroupTravelWaiting
+	goto_if_eq VAR_RESULT, 2, DewfordTown_EventScript_GroupTravelFailed
 	call EventScript_BackupMrBrineyLocation
 	setobjectsubpriority LOCALID_DEWFORD_BRINEY, MAP_DEWFORD_TOWN, 0
 	setobjectsubpriority LOCALID_PLAYER, MAP_DEWFORD_TOWN, 0
@@ -143,6 +148,11 @@ DewfordTown_EventScript_SailToPetalburg::
 	end
 
 DewfordTown_EventScript_SailToSlateport::
+	setvar VAR_0x8004, 98
+	setvar VAR_0x8005, 2
+	special Special_CoopGroupTravelBegin
+	goto_if_eq VAR_RESULT, 1, DewfordTown_EventScript_GroupTravelWaiting
+	goto_if_eq VAR_RESULT, 2, DewfordTown_EventScript_GroupTravelFailed
 	call EventScript_BackupMrBrineyLocation
 	setobjectsubpriority LOCALID_DEWFORD_BRINEY, MAP_DEWFORD_TOWN, 0
 	setobjectsubpriority LOCALID_PLAYER, MAP_DEWFORD_TOWN, 1
@@ -187,6 +197,13 @@ DewfordTown_EventScript_LandedSlateportDeliverGoods::
 DewfordTown_EventScript_LandedSlateport::
 	msgbox DewfordTown_Text_BrineyLandedInSlateport, MSGBOX_DEFAULT
 	return
+
+DewfordTown_EventScript_GroupTravelWaiting::
+	end
+
+DewfordTown_EventScript_GroupTravelFailed::
+	release
+	end
 
 DewfordTown_Movement_SailToPetalburg:
 	walk_up

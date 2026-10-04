@@ -1796,6 +1796,26 @@ async fn phase2_binary_http_flow(address: SocketAddr) -> TestResult<()> {
     // Runtime admission binds this lease to the release-catalog build before
     // the save endpoints will accept a checkpoint.
     let _ticket = mint_http_ticket(address, &access, realtime_runtime(&lease)).await?;
+    // The outcome ledger has no open entry for a fresh character.
+    let response = request(
+        address,
+        "GET",
+        &format!("/v1/characters/{}/ledger/open", lease.character_id),
+        &fence_headers(&access, &lease),
+        &[],
+    )
+    .await?;
+    expect_status(&response, 404);
+    expect_no_store(&response);
+    let response = request(
+        address,
+        "GET",
+        &format!("/v1/characters/{}/ledger/open", lease.character_id),
+        &auth_headers(&access),
+        &[],
+    )
+    .await?;
+    assert_ne!(response.status, 200);
 
     let sav = valid_character_sav();
     let pending = b"[]".to_vec();

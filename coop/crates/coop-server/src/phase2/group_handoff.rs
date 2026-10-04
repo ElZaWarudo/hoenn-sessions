@@ -76,6 +76,11 @@ fn preflight_state(
         || state
             .live_group_travel_by_group
             .contains_key(&intent.group_id)
+        // A battle reservation must not survive into another world: the group
+        // now outlives the crossing, so refuse until the battle settles.
+        || actors
+            .iter()
+            .any(|actor| state.active_battle_by_member.contains_key(&actor.character_id))
     {
         return Err(Phase2Error::Conflict);
     }
@@ -1249,6 +1254,7 @@ fn commit_verified_pair_locked(
             (group_id, stage.intent.idempotency_key),
             store.now(),
         )?;
+        let reacquire_by = super::sessions::handoff_reacquire_deadline(store.now())?;
         let latest = preflight_state(state, store, actors, &stage.intent, store.now())?;
         if latest.source != sources
             || records
@@ -1329,6 +1335,9 @@ fn commit_verified_pair_locked(
             let lease = state.leases.get_mut(&id).ok_or(Phase2Error::Internal)?;
             lease.released = true;
             lease.runtime_binding = None;
+            // Travelling, not leaving: the group survives until the member
+            // acquires the destination lease or the bounded window lapses.
+            super::sessions::record_handoff_release(state, id, reacquire_by);
             state
                 .realtime_tickets
                 .retain(|_, ticket| ticket.character_id != id);

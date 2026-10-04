@@ -8,14 +8,17 @@ use std::{
     collections::VecDeque,
     future::Future,
     pin::Pin,
-    time::{SystemTime, UNIX_EPOCH},
+    time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
 use coop_cloud::{
     MintRealtimeTicketRequest, MintRealtimeTicketResponse, REALTIME_TICKET_REQUEST_BODY_MAX_BYTES,
     UnixTimestampMillis,
 };
-use coop_protocol::{LocalCompanionV1, LocalPresenceStateV1, LocalSignalV1, PresenceInteractionV1};
+use coop_protocol::{
+    LocalCompanionV1, LocalPresenceStateV1, LocalSignalV1, PresenceInteractionV1,
+    ProgressObservationV1,
+};
 use coop_sidecar::{
     RealtimeEndpoint, RealtimeGrant, RealtimeInputError, RealtimeOutcome, RealtimeOwner,
     RealtimeOwnerEvent, realtime_channel, run_realtime,
@@ -38,6 +41,9 @@ use tokio::{
 
 /// Maximum assembled realtime ticket response body, in bytes.
 pub const REALTIME_TICKET_RESPONSE_BODY_MAX_BYTES: usize = 8 * 1024;
+/// The launcher keeps one bounded edge-event slot for every valid badge or
+/// national-dex observation while a realtime attempt is minting or rearming.
+pub(crate) const MAX_PENDING_PROGRESS_OBSERVATIONS: usize = 1_088;
 
 /// Stable errors returned by the launcher realtime HTTP seam.
 ///
@@ -123,6 +129,7 @@ pub(crate) struct RealtimeCoordinator {
     ready_interaction_watermark: Option<u64>,
     pending_interactions: VecDeque<(u64, PresenceInteractionV1)>,
     pending_signals: VecDeque<(u64, LocalSignalV1)>,
+    pending_progress: VecDeque<(u64, ProgressObservationV1)>,
     terminal_outcome: Option<RealtimeOutcome>,
     planned_recovery: bool,
     #[cfg(test)]
@@ -164,6 +171,7 @@ impl RealtimeCoordinator {
             ready_interaction_watermark: None,
             pending_interactions: VecDeque::new(),
             pending_signals: VecDeque::new(),
+            pending_progress: VecDeque::new(),
             terminal_outcome: None,
             planned_recovery: false,
             #[cfg(test)]
@@ -217,6 +225,16 @@ impl RealtimeCoordinator {
         self.owner.stop();
     }
 
+    /// Returns progress observations that never reached the sidecar owner
+    /// queue. The session lifecycle reattaches them to its cross-attempt
+    /// queue before stopping this transport.
+    pub(crate) fn take_pending_progress(&mut self) -> VecDeque<ProgressObservationV1> {
+        self.pending_progress
+            .drain(..)
+            .map(|(_, observation)| observation)
+            .collect()
+    }
+
     /// During a checkpoint, retain a recoverable terminal outcome without
     /// spinning on it or abandoning the noncancellable save transaction.
     pub(crate) async fn next_checkpoint_event(
@@ -259,7 +277,26 @@ impl RealtimeCoordinator {
             }
             self.classify_input(self.owner.signal(signal))?;
         }
+        self.flush_pending_progress()?;
         self.interaction_ready = true;
+        Ok(())
+    }
+
+    fn flush_pending_progress(&mut self) -> Result<(), RealtimeCoordinatorError> {
+        while let Some((sequence, observation)) = self.pending_progress.pop_front() {
+            match self.owner.progress_observation(observation) {
+                Ok(()) => {}
+                Err(
+                    RealtimeInputError::QueueFull
+                    | RealtimeInputError::NotReady
+                    | RealtimeInputError::Closed,
+                ) => {
+                    self.pending_progress.push_front((sequence, observation));
+                    break;
+                }
+                Err(_) => return Err(RealtimeCoordinatorError::Input),
+            }
+        }
         Ok(())
     }
 
@@ -307,6 +344,60 @@ impl RealtimeCoordinator {
             return Ok(());
         }
         self.classify_input(self.owner.signal(signal))
+    }
+
+    pub(crate) fn progress_observation(
+        &mut self,
+        observation: ProgressObservationV1,
+    ) -> Result<(), RealtimeCoordinatorError> {
+        if !observation.is_valid() {
+            return Err(RealtimeCoordinatorError::Input);
+        }
+        self.interaction_sequence = self
+            .interaction_sequence
+            .checked_add(1)
+            .ok_or(RealtimeCoordinatorError::Terminated)?;
+        if !self.server_ready {
+            if self.pending_progress.len() == MAX_PENDING_PROGRESS_OBSERVATIONS {
+                self.pending_progress.pop_front();
+            }
+            self.pending_progress
+                .push_back((self.interaction_sequence, observation));
+            return Ok(());
+        }
+        if !self.interaction_ready {
+            if self.pending_progress.len() == MAX_PENDING_PROGRESS_OBSERVATIONS {
+                self.pending_progress.pop_front();
+            }
+            self.pending_progress
+                .push_back((self.interaction_sequence, observation));
+            return Ok(());
+        }
+        if !self.pending_progress.is_empty() {
+            if self.pending_progress.len() == MAX_PENDING_PROGRESS_OBSERVATIONS {
+                self.pending_progress.pop_front();
+            }
+            self.pending_progress
+                .push_back((self.interaction_sequence, observation));
+            self.flush_pending_progress()?;
+            return Ok(());
+        }
+        match self.owner.progress_observation(observation) {
+            Ok(()) => Ok(()),
+            Err(
+                RealtimeInputError::QueueFull
+                | RealtimeInputError::NotReady
+                | RealtimeInputError::Closed,
+            ) => {
+                if self.pending_progress.len() == MAX_PENDING_PROGRESS_OBSERVATIONS {
+                    self.pending_progress.pop_front();
+                }
+                self.pending_progress
+                    .push_back((self.interaction_sequence, observation));
+                Ok(())
+            }
+            Err(_) => Err(RealtimeCoordinatorError::Input),
+        }
     }
 
     /// Drops pre-readiness interactions and preserves FIFO after readiness.
@@ -358,51 +449,59 @@ impl RealtimeCoordinator {
     pub(crate) async fn next_event(
         &mut self,
     ) -> Result<RealtimeCoordinatorEvent, RealtimeCoordinatorError> {
-        let Some(task) = self.task.as_ref() else {
-            return Ok(RealtimeCoordinatorEvent::Terminal);
-        };
-        // A completed driver is terminal even when its bounded owner queue
-        // still contains lifecycle events. Never forward stale peer input
-        // after the driver has already failed closed (for example, because
-        // that same queue overflowed).
-        if task.is_finished() {
-            return self.join_driver_task().await;
-        }
-        let task = self.task.as_mut().expect("unfinished task remains owned");
-        tokio::select! {
-            biased;
-            outcome = task => {
-                self.task = None;
-                match outcome {
-                    Ok(outcome) => {
-                        self.terminal_outcome = Some(outcome);
-                        Ok(RealtimeCoordinatorEvent::Terminal)
-                    },
-                    Err(_) => Err(RealtimeCoordinatorError::Task),
-                }
+        loop {
+            let Some(task) = self.task.as_ref() else {
+                return Ok(RealtimeCoordinatorEvent::Terminal);
+            };
+            // A completed driver is terminal even when its bounded owner queue
+            // still contains lifecycle events. Never forward stale peer input
+            // after the driver has already failed closed (for example, because
+            // that same queue overflowed).
+            if task.is_finished() {
+                return self.join_driver_task().await;
             }
-            event = self.owner.recv_event() => {
-                let Some(event) = event else {
-                    return self.join_driver_task().await;
-                };
-                #[cfg(test)]
-                if let Some(barrier) = &self.event_return_barrier {
-                    barrier.event_received.notify_one();
-                    barrier.release.notified().await;
-                }
-                if self.task.as_ref().is_some_and(JoinHandle::is_finished) {
-                    return self.join_driver_task().await;
-                }
-                let mapped = map_owner_event(event, &mut self.server_ready);
-                if matches!(mapped, Ok(RealtimeCoordinatorEvent::Ready)) {
-                    self.ready_interaction_watermark = Some(self.interaction_sequence);
-                    #[cfg(test)]
-                    if let Some(probe) = &self.ordering_probe {
-                        probe.ready_observed.notify_one();
+            if self.interaction_ready && !self.pending_progress.is_empty() {
+                self.flush_pending_progress()?;
+            }
+            let task = self.task.as_mut().expect("unfinished task remains owned");
+            return tokio::select! {
+                biased;
+                outcome = task => {
+                    self.task = None;
+                    match outcome {
+                        Ok(outcome) => {
+                            self.terminal_outcome = Some(outcome);
+                            Ok(RealtimeCoordinatorEvent::Terminal)
+                        },
+                        Err(_) => Err(RealtimeCoordinatorError::Task),
                     }
                 }
-                mapped
-            },
+                event = self.owner.recv_event() => {
+                    let Some(event) = event else {
+                        return self.join_driver_task().await;
+                    };
+                    #[cfg(test)]
+                    if let Some(barrier) = &self.event_return_barrier {
+                        barrier.event_received.notify_one();
+                        barrier.release.notified().await;
+                    }
+                    if self.task.as_ref().is_some_and(JoinHandle::is_finished) {
+                        return self.join_driver_task().await;
+                    }
+                    let mapped = map_owner_event(event, &mut self.server_ready);
+                    if matches!(mapped, Ok(RealtimeCoordinatorEvent::Ready)) {
+                        self.ready_interaction_watermark = Some(self.interaction_sequence);
+                        #[cfg(test)]
+                        if let Some(probe) = &self.ordering_probe {
+                            probe.ready_observed.notify_one();
+                        }
+                    }
+                    mapped
+                },
+                _ = tokio::time::sleep(Duration::from_millis(100)), if self.interaction_ready && !self.pending_progress.is_empty() => {
+                    continue;
+                },
+            };
         }
     }
 
@@ -427,6 +526,7 @@ impl RealtimeCoordinator {
         self.interaction_ready = false;
         self.pending_interactions.clear();
         self.pending_signals.clear();
+        self.pending_progress.clear();
         self.owner.stop();
     }
 
@@ -483,13 +583,53 @@ fn map_owner_event(
         RealtimeOwnerEvent::Despawn(despawn) if *ready => Ok(RealtimeCoordinatorEvent::Lifecycle(
             ControlCommand::RemotePlayerDespawn(despawn),
         )),
+        RealtimeOwnerEvent::Interaction(interaction) if *ready => Ok(
+            RealtimeCoordinatorEvent::Lifecycle(ControlCommand::RemoteInteraction(interaction)),
+        ),
         RealtimeOwnerEvent::Companion(companion) if *ready => Ok(
             RealtimeCoordinatorEvent::Lifecycle(ControlCommand::RemoteCompanion(companion)),
         ),
         RealtimeOwnerEvent::Signal(signal) if *ready => Ok(RealtimeCoordinatorEvent::Lifecycle(
             ControlCommand::RemoteSocialSignal(signal),
         )),
+        RealtimeOwnerEvent::Progress(event) if *ready => Ok(RealtimeCoordinatorEvent::Lifecycle(
+            ControlCommand::ProgressEvent(event),
+        )),
+        RealtimeOwnerEvent::GroupStarted(event) if *ready => Ok(
+            RealtimeCoordinatorEvent::Lifecycle(ControlCommand::GroupStateChanged {
+                session_epoch: event.session_epoch.value(),
+                grouped: true,
+                remote_join_possible: false,
+            }),
+        ),
+        RealtimeOwnerEvent::GroupEnded(event) if *ready => Ok(RealtimeCoordinatorEvent::Lifecycle(
+            ControlCommand::GroupEnded(event),
+        )),
         _ => Err(RealtimeCoordinatorError::Terminated),
+    }
+}
+
+#[cfg(test)]
+mod group_started_tests {
+    use super::*;
+
+    #[test]
+    fn authenticated_group_start_maps_to_membership_command_with_epoch() {
+        let mut ready = true;
+        let event = coop_cloud::GroupStartedV1 {
+            group_id: coop_cloud::GroupId::new(uuid::Uuid::from_u128(0x901)).unwrap(),
+            session_epoch: coop_cloud::SessionEpoch::new(7).unwrap(),
+        };
+        assert!(matches!(
+            map_owner_event(RealtimeOwnerEvent::GroupStarted(event), &mut ready),
+            Ok(RealtimeCoordinatorEvent::Lifecycle(
+                ControlCommand::GroupStateChanged {
+                    session_epoch: 7,
+                    grouped: true,
+                    remote_join_possible: false,
+                }
+            ))
+        ));
     }
 }
 
@@ -800,16 +940,17 @@ fn map_grant_error(error: coop_sidecar::RealtimeError) -> RealtimeHttpError {
 mod tests {
     use super::*;
     use coop_cloud::{
-        BridgeAbiVersion, CharacterId, ClientInstanceId, GameBuildId, MgbaVersion,
-        MintRealtimeTicketRequest, MintRealtimeTicketResponse, ProtocolVersion,
+        BridgeAbiVersion, CharacterId, ClientInstanceId, ClientRealtimeFrameV1, GameBuildId,
+        MgbaVersion, MintRealtimeTicketRequest, MintRealtimeTicketResponse, ProtocolVersion,
         REALTIME_TICKET_TTL_MS, RealtimeTicket, RuntimeBuildIdentity, RuntimeLeaseFence,
         ServerRealtimeFrameV1, SessionEpoch, SessionId, Sha256Digest, StableRuntimeSession,
-        encode_server_realtime_frame,
+        decode_client_realtime_frame, encode_server_realtime_frame,
     };
     use coop_protocol::{
         AnimationId, AvatarId, CanonicalUsername, DespawnReason, Direction, LocalPresenceStateV1,
-        MovementMode, PlayerState, PresenceHandle, PresenceInteractionV1, PresencePoseV1, RegionId,
-        RemotePlayerDespawnV1, RemotePlayerSpawnV1, RemotePlayerUpdateV1, WorldLocation,
+        MovementMode, PlayerState, PresenceHandle, PresenceInteractionV1, PresencePoseV1,
+        ProgressKindV1, ProgressObservationV1, RegionId, RemotePlayerDespawnV1,
+        RemotePlayerSpawnV1, RemotePlayerUpdateV1, WorldLocation,
     };
     use uuid::Uuid;
 
@@ -1199,6 +1340,168 @@ mod tests {
         barrier.release.notify_one();
         let (coordinator, result) = call.await.unwrap();
         assert!(matches!(result, Ok(RealtimeCoordinatorEvent::Terminal)));
+        coordinator.stop_and_join().await.unwrap();
+        server.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn coordinator_retains_progress_observation_until_ready() {
+        let now = unix_now().value();
+        let grant = consume_at(now, now + REALTIME_TICKET_TTL_MS).unwrap();
+        let mut coordinator = RealtimeCoordinator::start(grant, 12, state(1)).unwrap();
+        let observation = ProgressObservationV1 {
+            kind: ProgressKindV1::FirstCaught,
+            region_id: RegionId::Hoenn,
+            subject_id: 25,
+            session_epoch: 103,
+            source_sequence: 11,
+        };
+
+        assert!(coordinator.progress_observation(observation).is_ok());
+        assert_eq!(coordinator.pending_progress.len(), 1);
+        tokio::time::timeout(
+            std::time::Duration::from_secs(1),
+            coordinator.stop_and_join(),
+        )
+        .await
+        .expect("coordinator task must terminate")
+        .unwrap();
+    }
+
+    #[tokio::test]
+    async fn coordinator_flushes_pre_ready_progress_after_activation() {
+        let listener = TcpListener::bind(("127.0.0.1", 0)).await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let (seen_tx, seen_rx) = tokio::sync::oneshot::channel();
+        let server = tokio::spawn(async move {
+            let mut socket = accept_websocket_for_test(listener).await;
+            let _cached = read_websocket_text_for_test(&mut socket).await;
+            let ready = ServerRealtimeFrameV1::presence_ready(PresenceHandle::new(1).unwrap());
+            send_websocket_text_for_test(
+                &mut socket,
+                &encode_server_realtime_frame(&ready).unwrap(),
+            )
+            .await;
+            let frame = read_websocket_text_for_test(&mut socket).await;
+            let decoded = decode_client_realtime_frame(&frame).unwrap();
+            seen_tx.send(decoded).unwrap();
+            let mut remainder = Vec::new();
+            let _ = socket.read_to_end(&mut remainder).await;
+        });
+
+        let now = unix_now();
+        let grant = RealtimeGrant::with_now(
+            RealtimeTicket::from_bytes([48; 32]).unwrap(),
+            RealtimeEndpoint::new(format!("ws://127.0.0.1:{port}/v1/realtime")).unwrap(),
+            UnixTimestampMillis::new(now.value() + REALTIME_TICKET_TTL_MS),
+            now,
+        )
+        .unwrap();
+        let mut coordinator = RealtimeCoordinator::start(grant, 13, state(1)).unwrap();
+        let observation = ProgressObservationV1 {
+            kind: ProgressKindV1::FirstCaught,
+            region_id: RegionId::Hoenn,
+            subject_id: 25,
+            session_epoch: 103,
+            source_sequence: 12,
+        };
+
+        coordinator.progress_observation(observation).unwrap();
+        assert!(matches!(
+            coordinator.next_event().await.unwrap(),
+            RealtimeCoordinatorEvent::Ready
+        ));
+        coordinator.activate_interactions().unwrap();
+        assert_eq!(
+            tokio::time::timeout(std::time::Duration::from_secs(2), seen_rx)
+                .await
+                .unwrap()
+                .unwrap(),
+            ClientRealtimeFrameV1::ProgressObservation(observation)
+        );
+        assert!(coordinator.pending_progress.is_empty());
+        coordinator.stop_and_join().await.unwrap();
+        server.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn coordinator_retries_progress_after_owner_queue_regains_capacity() {
+        let listener = TcpListener::bind(("127.0.0.1", 0)).await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let (seen_tx, seen_rx) = tokio::sync::oneshot::channel();
+        let target = ProgressObservationV1 {
+            kind: ProgressKindV1::FirstCaught,
+            region_id: RegionId::Hoenn,
+            subject_id: 280,
+            session_epoch: 103,
+            source_sequence: 99,
+        };
+        let server = tokio::spawn(async move {
+            let mut socket = accept_websocket_for_test(listener).await;
+            let _cached = read_websocket_text_for_test(&mut socket).await;
+            let ready = ServerRealtimeFrameV1::presence_ready(PresenceHandle::new(1).unwrap());
+            send_websocket_text_for_test(
+                &mut socket,
+                &encode_server_realtime_frame(&ready).unwrap(),
+            )
+            .await;
+            loop {
+                let frame = read_websocket_text_for_test(&mut socket).await;
+                if decode_client_realtime_frame(&frame).unwrap()
+                    == ClientRealtimeFrameV1::ProgressObservation(target)
+                {
+                    seen_tx.send(()).unwrap();
+                    break;
+                }
+            }
+            let mut remainder = Vec::new();
+            let _ = socket.read_to_end(&mut remainder).await;
+        });
+
+        let now = unix_now();
+        let grant = RealtimeGrant::with_now(
+            RealtimeTicket::from_bytes([49; 32]).unwrap(),
+            RealtimeEndpoint::new(format!("ws://127.0.0.1:{port}/v1/realtime")).unwrap(),
+            UnixTimestampMillis::new(now.value() + REALTIME_TICKET_TTL_MS),
+            now,
+        )
+        .unwrap();
+        let mut coordinator = RealtimeCoordinator::start(grant, 14, state(1)).unwrap();
+        assert!(matches!(
+            coordinator.next_event().await.unwrap(),
+            RealtimeCoordinatorEvent::Ready
+        ));
+        coordinator.activate_interactions().unwrap();
+
+        // A current-thread Tokio test keeps the driver from draining this
+        // queue until the next await. The target must remain pending here.
+        for source_sequence in 1..=coop_sidecar::MAX_SIGNAL_QUEUE {
+            coordinator
+                .owner
+                .progress_observation(ProgressObservationV1 {
+                    source_sequence: source_sequence as u32,
+                    ..target
+                })
+                .unwrap();
+        }
+        assert!(matches!(
+            coordinator.owner.progress_observation(target),
+            Err(RealtimeInputError::QueueFull)
+        ));
+        coordinator.progress_observation(target).unwrap();
+        assert_eq!(coordinator.pending_progress.len(), 1);
+
+        // No new observation or reconnect arrives. The coordinator's pending
+        // retry must run while next_event is otherwise waiting for input.
+        tokio::time::timeout(std::time::Duration::from_secs(2), async {
+            tokio::select! {
+                _ = coordinator.next_event() => panic!("unexpected realtime event"),
+                result = seen_rx => result.unwrap(),
+            }
+        })
+        .await
+        .expect("pending progress should be delivered after owner capacity returns");
+        assert!(coordinator.pending_progress.is_empty());
         coordinator.stop_and_join().await.unwrap();
         server.await.unwrap();
     }

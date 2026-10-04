@@ -36,6 +36,7 @@
 #include "safari_zone.h"
 #include "save.h"
 #include "coop/net_bridge.h"
+#include "coop/group_travel.h"
 #include "coop/online.h"
 #include "johto/bug_contest.h"
 #include "scanline_effect.h"
@@ -1113,7 +1114,9 @@ static u8 RunSaveCallback(void)
 
 void SaveGame(void)
 {
-    sSaveCheckpointRequired = FALSE;
+    /* The first group voyage saves inside its locked landing script.  It
+     * needs the same cloud checkpoint gate as a Start-menu save. */
+    sSaveCheckpointRequired = CoopGroupTravel_IsFirstBrineyReceiptPending();
     InitSave();
     CreateTask(SaveGameTask, 0x50);
 }
@@ -1349,6 +1352,11 @@ static u8 SaveDoSaveCallback(void)
         sSaveDialogCallback = SaveCheckpointAbortCallback;
         return SAVE_IN_PROGRESS;
     case COOP_CHECKPOINT_REQUEST_OFFLINE:
+        if (CoopGroupTravel_IsFirstBrineyReceiptPending())
+        {
+            sSaveDialogCallback = SaveCheckpointAbortCallback;
+            return SAVE_IN_PROGRESS;
+        }
         break;
     }
 

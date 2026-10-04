@@ -11,7 +11,7 @@ final class NativeBridge {
     static void validate(byte[] memory) {
         if(memory==null || memory.length!=24)throw new IllegalStateException("Bridge no disponible");
         ByteBuffer b=ByteBuffer.wrap(memory).order(ByteOrder.LITTLE_ENDIAN);
-        if(b.getInt()!=1347109711 || b.getShort()!=1 || b.getShort()!=1 || b.getInt()!=65536)throw new SecurityException("ABI de ROM incompatible");
+        if(b.getInt()!=1347109711 || b.getShort()!=BridgeFrame.BRIDGE_ABI || b.getShort()!=BridgeFrame.PROTOCOL_VERSION || b.getInt()!=65536)throw new SecurityException("ABI de ROM incompatible");
     }
     static byte[] peekOutbound() {
         synchronized(NativeCore.class) {

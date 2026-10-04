@@ -222,6 +222,7 @@ mod durable {
                         invitee: second,
                         expires_at: 1_700_000_030_000,
                         consumed: false,
+                        allow_remote_maps: false,
                     },
                 );
                 for response in [
@@ -426,4 +427,32 @@ mod durable {
             assert_eq!(row.get::<_, Vec<u8>>(1), bytes);
         }
     }
+}
+
+// The serialized pilot checkpoint predates the outcome ledger; a checkpoint
+// without its fields must still decode, with an empty ledger.
+#[test]
+fn checkpoint_without_ledger_fields_decodes_with_an_empty_ledger() {
+    let mut state = storage::State::default();
+    let commit_id = coop_cloud::CommitId::new(Uuid::from_u128(0x1ed6)).expect("commit id");
+    let character_id = CharacterId::new(Uuid::from_u128(0x1ed7)).expect("character id");
+    state.ledger_open_by_character.insert(character_id, commit_id);
+    let mut value = ciborium::Value::serialized(&state).expect("state value");
+    let ciborium::Value::Map(fields) = &mut value else {
+        panic!("state is a map");
+    };
+    let before = fields.len();
+    fields.retain(|(key, _)| {
+        !matches!(
+            key,
+            ciborium::Value::Text(name)
+                if name == "ledger_entries" || name == "ledger_open_by_character"
+        )
+    });
+    assert_eq!(fields.len(), before - 2);
+    let mut bytes = Vec::new();
+    ciborium::into_writer(&value, &mut bytes).expect("legacy checkpoint");
+    let decoded: storage::State = ciborium::from_reader(bytes.as_slice()).expect("decodes");
+    assert!(decoded.ledger_entries.is_empty());
+    assert!(decoded.ledger_open_by_character.is_empty());
 }

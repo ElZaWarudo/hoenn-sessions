@@ -500,19 +500,26 @@ class BridgeManifestTests(unittest.TestCase):
 
         # The checked-in manifest is a real build artifact: it must not be
         # rewritten with invented linked addresses when no ELF/ROM is present.
-        # The outer address-projection schema remains stable while the active
-        # save contract moves to V2. The historical V1 manifest is retained
-        # as a fixture, but newly generated manifests reject V1 descriptors.
+        # The outer address-projection schema remains stable while the save
+        # contract is the generator's active one (V2 since the Cormoria
+        # integration). The historical V1 manifest is retained only as the
+        # Lua example fixture; newly generated manifests reject V1 descriptors,
+        # so the checked-in artifact must carry the current save schema and
+        # the newest locked identity registry.
         self.assertEqual(
             checked_in["schema_version"],
             generator.MANIFEST_SCHEMA_VERSION,
         )
-        self.assertEqual(checked_in["save"]["schema_version"], 1)
-        self.assertEqual(checked_in["save"]["registry_version"], 1)
+        self.assertEqual(checked_in["save"]["schema_version"], generator.SAVE_SCHEMA_VERSION)
+        self.assertEqual(checked_in["save"]["registry_version"], generator.REGISTRY_VERSION)
         lock = json.loads(
             (REPO_ROOT / "data" / "coop" / "regional_identities.lock.json").read_text(
                 encoding="utf-8"
             )
+        )
+        self.assertEqual(
+            checked_in["save"]["registry_version"],
+            max(snapshot["registry_version"] for snapshot in lock["snapshots"]),
         )
         snapshots = [
             snapshot for snapshot in lock["snapshots"]
@@ -521,7 +528,6 @@ class BridgeManifestTests(unittest.TestCase):
         self.assertEqual(len(snapshots), 1)
         self.assertEqual(checked_in["save"]["registry_digest"], registry_digest(snapshots[0]).hex())
         self.assertEqual(checked_in_text, json.dumps(checked_in, indent=2, sort_keys=True) + "\n")
-        self.assertNotEqual(checked_in["save"]["schema_version"], generator.SAVE_SCHEMA_VERSION)
 
     def test_historical_example_lua_documents_schema_four_v1_save_contract(self) -> None:
         example = (REPO_ROOT / "bridge" / "generated_addresses.lua.example").read_text(

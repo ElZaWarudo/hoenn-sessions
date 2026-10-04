@@ -3,6 +3,11 @@
 #include "constants/map_groups.h"
 #include "test/test.h"
 
+/* Presence locations are validated against the running ROM's map headers.
+ * Tests whose fixtures use Hoenn or Johto maps are gated to the Main ROM
+ * (ROM_WORLD == 1); the Cormoria ROM does not link those headers. */
+
+#if ROM_WORLD == 1
 TEST("Cloud Coop presence admits New Bark Town only with its Johto identity")
 {
     struct CoopPresenceReducer reducer;
@@ -21,6 +26,7 @@ TEST("Cloud Coop presence admits New Bark Town only with its Johto identity")
     location.region = COOP_REGION_KANTO;
     EXPECT(!CoopPresenceReducer_Synchronize(&reducer, 9, &location, 1));
 }
+#endif // ROM_WORLD == 1
 
 _Static_assert(COOP_PRESENCE_WORLD_LOCATION_REGION_OFFSET == 0, "location region offset");
 _Static_assert(COOP_PRESENCE_WORLD_LOCATION_MAP_GROUP_OFFSET == 1, "location map group offset");
@@ -165,6 +171,7 @@ static bool8 BytesEqual(const u8 *left, const u8 *right, u32 length)
     return TRUE;
 }
 
+#if ROM_WORLD == 1
 static void CopyTestBytes(u8 *destination, const u8 *source, u32 length)
 {
     u32 i;
@@ -172,6 +179,7 @@ static void CopyTestBytes(u8 *destination, const u8 *source, u32 length)
     for (i = 0; i < length; i++)
         destination[i] = source[i];
 }
+#endif // ROM_WORLD == 1
 
 static void FillTestBytes(u8 *bytes, u8 value, u32 length)
 {
@@ -198,6 +206,7 @@ static void ExpectCanary(const u8 *bytes, u8 value, u32 length)
     EXPECT(BytesAre(bytes, value, length));
 }
 
+#if ROM_WORLD == 1
 static void ExpectStructBytes(const void *value, const u8 *snapshot, u32 length)
 {
     EXPECT(BytesEqual((const u8 *)value, snapshot, length));
@@ -408,6 +417,7 @@ static void EstablishReducer(struct CoopPresenceReducer *reducer)
     CoopPresenceReducer_Init(reducer);
     EXPECT(CoopPresenceReducer_Synchronize(reducer, 9, &location, 1));
 }
+#endif // ROM_WORLD == 1
 
 static bool8 EncodeInteractionFixture(const struct CoopPresenceInteraction *value,
                                       u8 *bytes, u32 length)
@@ -437,6 +447,7 @@ static bool8 EncodeInteractionFixture(const struct CoopPresenceInteraction *valu
     return CoopPresence_EncodeInteraction(&reducer, &local, bytes, length);
 }
 
+#if ROM_WORLD == 1
 static void ExpectReducerClearedAt(const struct CoopPresenceReducer *reducer,
                                    u32 sessionEpoch,
                                    const struct WorldLocation *location,
@@ -924,6 +935,7 @@ TEST("Cloud Coop presence decoders accept every assigned pose ordinal")
         ExpectPoseEqual(&decoded, &pose);
     }
 }
+#endif // ROM_WORLD == 1
 
 TEST("Cloud Coop presence sequence ordering follows RFC 1982")
 {
@@ -943,6 +955,7 @@ TEST("Cloud Coop presence sequence ordering follows RFC 1982")
     EXPECT_EQ(CoopPresence_NextSequence(0xfffffffe), 0xffffffff);
 }
 
+#if ROM_WORLD == 1
 TEST("Cloud Coop presence reducer rejects equal and ambiguous wrapped sequences")
 {
     struct CoopPresenceReducer reducer;
@@ -1848,7 +1861,10 @@ TEST("Cloud Coop presence keeps regional map identity authoritative")
     EXPECT(!CoopPresence_DecodeLocalState(bytes, sizeof(bytes), &output));
     ExpectStructBytes(&output, snapshot, sizeof(output));
 }
+#endif // ROM_WORLD == 1
 
+// The Rivetshore harbor header is linked only by the Cormoria ROM.
+#if ROM_WORLD == 2
 TEST("Cloud Coop presence accepts Cormoria harbor with its own region")
 {
     struct CoopPresenceLocalState state = State(8, 14,
@@ -1862,6 +1878,44 @@ TEST("Cloud Coop presence accepts Cormoria harbor with its own region")
     EXPECT(CoopPresence_EncodeLocalState(&state, bytes, sizeof(bytes)));
     state.pose.location.region = COOP_REGION_HOENN;
     EXPECT(!CoopPresence_EncodeLocalState(&state, bytes, sizeof(bytes)));
+}
+#endif // ROM_WORLD == 2
+
+#if ROM_WORLD == 1
+TEST("Cloud Coop connected-map reducer accepts only same-region lifecycle")
+{
+    struct CoopPresenceReducer reducer;
+    struct CoopPresenceSpawn spawn = Spawn(17, 10, 8, 8,
+                                         COOP_PRESENCE_DIRECTION_EAST,
+                                         COOP_PRESENCE_PLAYER_OVERWORLD);
+    struct CoopPresenceUpdate update = {
+        .handle = 17,
+        .server_sequence = 11,
+        .state = State(9, 8, COOP_PRESENCE_DIRECTION_EAST,
+                       COOP_PRESENCE_PLAYER_OVERWORLD),
+    };
+
+    EstablishReducer(&reducer);
+    spawn.state.pose.location.map_group = 0;
+    spawn.state.pose.location.map_number = 19;
+    spawn.state.pose.warp_sequence = 2;
+    EXPECT_EQ(CoopPresenceReducer_ApplySpawn(&reducer, &spawn),
+              COOP_PRESENCE_APPLY_PARTITION_MISMATCH);
+    EXPECT_EQ(CoopPresenceReducer_ApplySpawnConnected(&reducer, &spawn),
+              COOP_PRESENCE_APPLY_APPLIED);
+    update.state.pose.location.map_group = 0;
+    update.state.pose.location.map_number = 20;
+    update.state.pose.warp_sequence = 3;
+    EXPECT_EQ(CoopPresenceReducer_ApplyUpdate(&reducer, &update),
+              COOP_PRESENCE_APPLY_PARTITION_MISMATCH);
+    EXPECT_EQ(CoopPresenceReducer_ApplyUpdateConnected(&reducer, &update),
+              COOP_PRESENCE_APPLY_APPLIED);
+    update.server_sequence = 12;
+    update.state.pose.location.region = COOP_REGION_KANTO;
+    update.state.pose.location.map_group = 37;
+    update.state.pose.location.map_number = 0;
+    EXPECT_EQ(CoopPresenceReducer_ApplyUpdateConnected(&reducer, &update),
+              COOP_PRESENCE_APPLY_PARTITION_MISMATCH);
 }
 
 TEST("Cloud Coop presence reducer preserves snapshots across rejection classes")
@@ -2269,6 +2323,7 @@ TEST("Cloud Coop presence interaction rejects signed-coordinate overflow at ever
     local.direction = COOP_PRESENCE_DIRECTION_NORTH;
     ExpectInteractionRejected(&reducer, &local, bytes, 0x44);
 }
+#endif // ROM_WORLD == 1
 
 TEST("Cloud Coop presence encoder validation is atomic for every payload")
 {
@@ -2335,6 +2390,7 @@ TEST("Cloud Coop presence encoder validation is atomic for every payload")
     ExpectCanary(bytes, 0xa5, sizeof(bytes));
 }
 
+#if ROM_WORLD == 1
 TEST("Cloud Coop presence decoders reject zero handles sequences and reasons")
 {
     struct CoopPresenceSpawn spawn = Spawn(1, 1, -4, 9,
@@ -2573,6 +2629,7 @@ TEST("Cloud Coop presence rejects each zero identity field independently")
                            COOP_PRESENCE_INTERACTION_WARP_SEQUENCE_OFFSET,
                            sizeof(u32), &interactionOutput, interactionSnapshot);
 }
+#endif // ROM_WORLD == 1
 
 TEST("Cloud Coop social codecs encode companion and signal golden bytes")
 {

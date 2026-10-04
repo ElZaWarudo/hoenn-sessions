@@ -450,7 +450,11 @@ fn open_record_read(path: &Path) -> io::Result<File> {
     #[cfg(windows)]
     options.custom_flags(0x0020_0000);
     #[cfg(target_os = "linux")]
-    options.custom_flags(0x0002_0000);
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        // Linux O_NOFOLLOW rejects a final symlink at the kernel boundary.
+        options.custom_flags(0x0002_0000);
+    }
     options.open(path)
 }
 

@@ -6,6 +6,7 @@ use coop_launcher::arrival_verifier::{
     ArrivalProofInput, AuthenticatedArrivalEvidence, verify_arrival_proof,
 };
 use coop_launcher::keychain::{KeychainError, RefreshTokenStore};
+use coop_launcher::live_requests::{LiveRequest, LiveRequestError, live_request_channel};
 use coop_launcher::process::ControlChannel;
 use coop_launcher::process::{SessionSupervisor, embedded::EmbeddedSupervisor};
 use coop_launcher::rom_travel::{LeaseFenceIdentity, RomTravelJournal, TravelPhase};
@@ -51,6 +52,9 @@ const KEY: &str = "f239614d143272c416c185e4d52d95a883f7ad89cadf55e1cf1dbc9dda8fe
 const ERROR_LEASE_CONFLICT: &str = "lease_conflict";
 const ERROR_CLOUD_UNREACHABLE: &str = "cloud_unreachable";
 const ERROR_INTERNAL: &str = "internal_error";
+// The installed runtime predates world-bound leases (no signed region
+// catalog). Java treats any unmapped code as a generic failure.
+const ERROR_UPDATE_REQUIRED: &str = "update_required";
 
 // Classified session failure: a stable machine-readable `code` plus the
 // human-readable detail kept for display.
@@ -292,6 +296,8 @@ struct Handle {
     revision: std::sync::atomic::AtomicU64,
     finished: std::sync::atomic::AtomicBool,
     verifier_ack: Mutex<Option<(u64, oneshot::Sender<bool>)>>,
+    /// Requests into the running realtime session (pairing-code joins).
+    live: Mutex<Option<mpsc::Sender<LiveRequest>>>,
 }
 struct HostState {
     closed: bool,
@@ -631,13 +637,16 @@ async fn run(
         return Ok(());
     }
     let runtime = runtime_directory(&root)?;
-    let legacy = catalog_sha256.is_empty();
-    if legacy && runtime.join("release_catalog.json").exists() {
-        return Err(RunError::internal(
-            "Falta la identidad firmada del catálogo",
+    if catalog_sha256.is_empty() {
+        // Without a signed region catalog the lease cannot be bound to a ROM
+        // world, and the server rejects resume for an unbound lease. Fail
+        // closed instead of acquiring through the legacy route.
+        return Err(RunError::new(
+            ERROR_UPDATE_REQUIRED,
+            "Actualización requerida: falta el catálogo de regiones firmado".to_owned(),
         ));
     }
-    let client_instance_id = client_instance_for_run(&root, auth.character_id, legacy)?;
+    let client_instance_id = client_instance_for_run(&root, auth.character_id, false)?;
     let epoch_store = match EpochStore::for_character(&root, auth.character_id) {
         Ok(store) => store,
         Err(error) => {
@@ -646,33 +655,10 @@ async fn run(
             )));
         }
     };
-    let mut world_intent = None;
-    let mut portal_catalog = None;
+    let mut world_intent;
+    let portal_catalog;
     let (mut selected_world_id, mut selected_rom_sha, mut selected_build_id);
-    let (acquired, mut rom_path) = if legacy {
-        let rom_path = runtime.join("pokeemerald.gba");
-        let manifest =
-            BuildCompatibility::load_android(&runtime.join("bridge_manifest.json"), &rom_path)
-                .map_err(|_| RunError::internal("ROM/manifiesto incompatible"))?;
-        selected_world_id = 1;
-        selected_rom_sha = manifest.target.rom_sha256.as_hex();
-        selected_build_id = manifest.target.game_build_id.value().to_owned();
-        let config = SessionConfig {
-            client_instance_id,
-            rom_world_id: coop_launcher::session::RomWorldId::new(1)
-                .map_err(|_| RunError::internal("ID de región ROM no válido"))?,
-            manifest,
-            trusted_manifest_key: key(),
-            epoch_store,
-            workspace_parent: root.join(format!("sessions-{}", auth.character_id)),
-            bridge_lua_dir: bridge.clone(),
-        };
-        (
-            SessionLifecycle::acquire_replacing_same_client(&api, auth, config, vault.clone())
-                .await,
-            rom_path,
-        )
-    } else {
+    let (acquired, mut rom_path) = {
         let catalog =
             TrustedRomCatalog::load(&runtime.join("release_catalog.json"), &catalog_sha256)
                 .map_err(|_| RunError::internal("Catálogo de regiones incompatible"))?;
@@ -865,6 +851,9 @@ async fn run(
             return Err(error);
         }
     };
+    let (live, live_requests) = live_request_channel();
+    session.serve_live_requests(live_requests);
+    *recover_lock(&handle.live) = Some(live);
     let revisions = session.observe_revisions();
     handle.revision.store(
         session.revision.value(),
@@ -925,13 +914,11 @@ async fn run(
             // Only the verified canonical SAV is portable across desktop/Android.
             "signature_verified":session.revision.value()>0});
         let run = if events.send(load).await.is_ok() {
-            // Embedded mGBA currently reboots the ROM bridge as soon as the
-            // first moving presence update enters the realtime lifecycle.
-            // Keep Android gameplay and cloud checkpoints alive through the
-            // proven fenced lifecycle until embedded realtime can survive
-            // ordinary overworld movement.
+            // Realtime carries presence, Online, pairing, invitations and group
+            // travel. The Java bridge pump accepts every realtime message type
+            // (guarded by coop-sidecar's android_bridge_parity test).
             session
-                .run_until_shutdown_with_portal(&api, &mut supervisor, async {
+                .run_until_shutdown_with_realtime_portal(&api, &mut supervisor, async {
                     while *stop.borrow_and_update() == 0 {
                         if stop.changed().await.is_err() {
                             break;
@@ -1110,6 +1097,11 @@ async fn run(
             // SessionLifecycle releases a failed preacquired lease where
             // safe; preserve the durable request if that is uncertain.
             .map_err(|error| RunError::session("No se pudo cargar destino", error))?;
+            // The source live-request receiver belongs to the consumed session.
+            // Route pairing requests to the newly acquired destination owner.
+            let (live, live_requests) = live_request_channel();
+            session.serve_live_requests(live_requests);
+            *recover_lock(&handle.live) = Some(live);
             world_intent = Some((intent.clone(), request));
             selected_world_id = destination_world.get();
             selected_rom_sha = compatibility.target.rom_sha256.as_hex();
@@ -1197,6 +1189,7 @@ async fn run(
         let _ = session.preserve_recovery_after_child_failure();
         session.close_credentials(&api).await
     };
+    *recover_lock(&handle.live) = None;
     revision_task.abort();
     let _ = revision_task.await;
     host_task.abort();
@@ -1283,6 +1276,7 @@ pub extern "system" fn Java_io_hoenn_sessions_NativeSession_start(
             revision: std::sync::atomic::AtomicU64::new(0),
             finished: std::sync::atomic::AtomicBool::new(false),
             verifier_ack: Mutex::new(None),
+            live: Mutex::new(None),
         });
         *slot = Some(handle.clone());
         std::thread::spawn(move || {
@@ -1475,6 +1469,70 @@ fn reconnect_inner() -> jboolean {
     0
 }
 
+/// Event the app shows after a join-by-code attempt.
+fn pairing_event(result: Result<(), LiveRequestError>) -> Value {
+    let outcome = match result {
+        Ok(()) => "joined",
+        Err(LiveRequestError::Refused) => "refused",
+        Err(LiveRequestError::Unavailable) => "unavailable",
+        Err(LiveRequestError::NotRunning) => "not_running",
+    };
+    json!({"type":"pairing_redeemed","result":outcome})
+}
+
+/// Redeems a pairing code (or `hoenn-sessions://join/` link) through the
+/// running session. Returns false when the text is not a code or no session
+/// is running; otherwise the outcome arrives later as a `pairing_redeemed`
+/// event from `poll`.
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_io_hoenn_sessions_NativeSession_redeemPairingCode(
+    mut env: JNIEnv,
+    _: JClass,
+    text: JString,
+) -> jboolean {
+    match std::panic::catch_unwind(AssertUnwindSafe(move || {
+        let Ok(text) = env
+            .get_string(&text)
+            .map(|v| v.to_string_lossy().into_owned())
+        else {
+            return 0;
+        };
+        u8::from(redeem_inner(&text))
+    })) {
+        Ok(value) => value,
+        Err(_) => {
+            queue_internal_error("panic en redeemPairingCode");
+            0
+        }
+    }
+}
+
+fn redeem_inner(text: &str) -> bool {
+    let Some(code) = coop_cloud::pairing_code_from_join_text(text) else {
+        return false;
+    };
+    let Some(handle) = recover_lock(active()).clone() else {
+        return false;
+    };
+    let Some(live) = recover_lock(&handle.live).clone() else {
+        return false;
+    };
+    let (reply, answer) = oneshot::channel();
+    if live
+        .try_send(LiveRequest::RedeemPairingCode { code, reply })
+        .is_err()
+    {
+        return false;
+    }
+    std::thread::spawn(move || {
+        let result = answer
+            .blocking_recv()
+            .unwrap_or(Err(LiveRequestError::NotRunning));
+        let _ = handle.sink.blocking_send(pairing_event(result));
+    });
+    true
+}
+
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_io_hoenn_sessions_NativeSession_signOut(_: JNIEnv, _: JClass) {
     if std::panic::catch_unwind(AssertUnwindSafe(sign_out_inner)).is_err() {
@@ -1583,6 +1641,22 @@ mod tests {
         ] {
             assert_eq!(code_for_session_error(&error), "internal_error");
         }
+    }
+
+    #[test]
+    fn pairing_event_names_each_outcome() {
+        assert_eq!(pairing_event(Ok(()))["result"], "joined");
+        assert_eq!(
+            pairing_event(Err(LiveRequestError::Refused))["result"],
+            "refused"
+        );
+        assert_eq!(
+            pairing_event(Err(LiveRequestError::Unavailable))["type"],
+            "pairing_redeemed"
+        );
+        assert!(!redeem_inner("not a code"));
+        // A valid code with no running session is refused locally.
+        assert!(!redeem_inner("hoenn-sessions://join/ABC-234"));
     }
 
     #[test]
