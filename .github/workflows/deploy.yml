@@ -754,9 +754,11 @@ jobs:
           python3 - release-assembly/assembly.json >> "$GITHUB_OUTPUT" <<'PY'
           import json, re, sys
           summary = json.load(open(sys.argv[1]))
-          for key in ("release_catalog_sha256", "server_build_catalog_sha256"):
+          for key in ("release_catalog_sha256", "server_build_catalog_sha256", "object_catalog_sha256"):
               assert re.fullmatch(r"[0-9a-f]{64}", summary[key]), key
-          assert summary["provisional_object_catalog"] is False
+          assert summary["object_catalog_source"] == "shared-object-contract-fingerprint"
+          assert summary["object_catalog_version"] == 1
+          assert "provisional_object_catalog" not in summary
           print("region_catalog_sha256=" + summary["release_catalog_sha256"])
           print("server_catalog_sha256=" + summary["server_build_catalog_sha256"])
           PY

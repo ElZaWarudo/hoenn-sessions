@@ -4,7 +4,8 @@
 #
 # Steps: compare the built ROM hashes with data/release_arrivals.json (exit 3
 # with a recertification message when they differ) -> assemble both catalogs
-# with the TEST-ONLY provisional object catalog digest -> sign Windows and game
+# exactly as production does (object catalog fingerprint derived from the built
+# manifests) -> sign Windows and game
 # envelopes with an ephemeral in-memory seed and verify them -> promote the
 # server catalog, game (--no-flip) and runtime release (--no-flip) into a
 # temporary root -> activate -> deploy-release.sh --validate-only (when Docker
@@ -66,12 +67,14 @@ if mismatch:
     raise SystemExit(3)
 PY
 
-echo "== assemble catalogs (TEST-ONLY provisional object catalog digest)"
-assemble_args=(assemble --dist "$DIST" --out "$WORK/assembly" --test-only-provisional-object-catalog)
+echo "== assemble catalogs (production mode, derived object catalog fingerprint)"
+assemble_args=(assemble --dist "$DIST" --out "$WORK/assembly")
 [ -z "$ARRIVAL_VERIFIER" ] || assemble_args+=(--arrival-verifier "$ARRIVAL_VERIFIER")
 "$PYTHON_BIN" tools/coop/assemble_release_catalog.py "${assemble_args[@]}" > "$WORK/assembly.stdout"
 SERVER_CATALOG="$("$PYTHON_BIN" -c 'import json,sys; print(json.load(open(sys.argv[1]))["server_build_catalog_sha256"])' "$WORK/assembly/assembly.json")"
 REGION_CATALOG="$("$PYTHON_BIN" -c 'import json,sys; print(json.load(open(sys.argv[1]))["release_catalog_sha256"])' "$WORK/assembly/assembly.json")"
+OBJECT_CATALOG="$("$PYTHON_BIN" -c 'import json,sys; print(json.load(open(sys.argv[1]))["object_catalog_sha256"])' "$WORK/assembly/assembly.json")"
+echo "object catalog $OBJECT_CATALOG (shared object contract fingerprint v1)"
 echo "region catalog $REGION_CATALOG"
 echo "server catalog $SERVER_CATALOG"
 

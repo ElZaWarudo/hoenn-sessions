@@ -80,7 +80,7 @@ jobs:
   # PR dry-run of the production multi-world release pipeline. Builds every
   # world, fails with "recertify arrival saves" when CI does not reproduce the
   # ROM hashes attested in data/release_arrivals.json (printing both), then
-  # assembles catalogs (TEST-ONLY provisional object catalog digest), signs
+  # assembles catalogs in production mode (derived object catalog fingerprint), signs
   # with an ephemeral seed, promotes into a temporary root, validates
   # deploy-release.sh, and requires coop-server /health/ready 200 with the
   # generated server catalog. No secrets, no VPS, and no artifact uploads.

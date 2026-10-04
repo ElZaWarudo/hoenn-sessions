@@ -191,16 +191,49 @@ built ROM differs from the attested hash the assembler stops with
    save over `data/release_arrivals/<world>.sav`, merge the printed
    attestation into `data/release_arrivals.json`, and get it reviewed.
 
-### Object catalog digest (release blocker)
+### Object catalog digest (shared object contract fingerprint v1)
 
-Each region-catalog world carries `object_catalog_sha256`. No tracked tool
-derives that fingerprint (items, species, moves, abilities, menus, bag/PC
-capacity, co-op serialization); `object_scalar_manifest.json` is a partial gate
-and explicitly not this claim. `data/rom_world_release.json` therefore holds
-`object_catalog.sha256: null` and the production assembler refuses to run.
-`--test-only-provisional-object-catalog` exists only for local fixtures and
-the PR dry-run; the production workflow never passes it. Shipping requires a
-reviewed digest source.
+Each region-catalog world carries `object_catalog_sha256`. It is no longer a
+configured constant: `data/rom_world_release.json` declares only
+`"object_catalog": {"source": "shared-object-contract-fingerprint", "version": 1}`,
+and `tools/coop/assemble_release_catalog.py` derives the digest from each
+world's freshly built manifests. The assembler refuses any other
+`object_catalog` entry, including a configured `sha256`. The old
+`--test-only-provisional-object-catalog` flag and its placeholder digest are
+gone; the PR dry-run (`release-dryrun.sh`) assembles exactly as production
+does.
+
+**Definition.** SHA-256 over the canonical JSON (sorted keys, `,`/`:`
+separators, ASCII, one trailing LF) of
+`{"schema": "hoenn-sessions/shared-object-contract-fingerprint", "version": 1, "contracts": {...}}`.
+`contracts` holds only the world-independent content of the three cross-ROM
+contracts that `multiworld_build_ci.py verify` already requires to agree:
+
+| Contract | Source (schema) | Included | Excluded (per world) |
+| --- | --- | --- | --- |
+| `experience_table` | `experience_table_manifest.json` (1) | symbol, size, SHA-256 of `gExperienceTables` (re-hashed from the built ROM) | `rom_sha256`, `address` |
+| `object_scalar` | `object_scalar_manifest.json` (4) | scope; descriptor size and digest; count-probe size; per table (items, species, moves, abilities, TM/HM move IDs): size, record count and stride, pointer and text offsets, pointer-free scalar digest, pointer-presence digest, bounded display-text digest; move AdditionalEffect stride, count field and digest | `rom_sha256`, every `address`, `raw_sha256` (embeds ROM pointers) |
+| `player_transfer` | `player_transfer_manifest.json` (3) | symbol, schema version, size, descriptor size and digest, field count, fields, saved spans, re-key and Day Care custody field IDs | `rom_sha256`, `address` |
+
+Every manifest must name the built ROM. Each world's document is computed
+separately and must be byte-identical across all worlds; otherwise assembly
+stops before anything is written, naming the differing contract, because a
+world whose shared objects cannot be represented identically is not
+travel-compatible. `rom_release_catalog.validate_catalog` re-verifies the
+object scalar manifest against the ROM and requires one digest across worlds.
+The canonical document is written to `object-catalog-fingerprint.json` next to
+`assembly.json` for review.
+
+**Not covered.** Graphics, palettes, icons and cries; callbacks and other
+function pointers; field and battle scripts; menus and UI; bag/PC capacity
+beyond the saved spans; and full object semantics. Equal fingerprints mean the
+covered bytes agree, not that every shared object behaves identically.
+
+**Changing it.** Every manifest field is classified as included or excluded.
+A new or missing field, or another generator schema version, makes assembly
+refuse. Adding or removing coverage, or reclassifying a field, changes what
+the digest means and requires bumping `FINGERPRINT_VERSION` in the assembler
+together with `object_catalog.version` in `data/rom_world_release.json`.
 
 ### One-time fresh start (manual)
 

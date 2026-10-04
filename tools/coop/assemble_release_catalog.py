@@ -14,6 +14,45 @@ in the canonical order coop-release-tool expects.
 Arrival saves are never regenerated here. If a built ROM differs from the ROM
 an arrival save was attested against, assembly stops with a recertification
 error; tools/coop/recert_arrival.py is the manual helper for that step.
+
+object_catalog_sha256: shared object contract fingerprint, version 1
+--------------------------------------------------------------------
+Every world entry's `object_catalog_sha256` is derived here from the built
+manifests; no digest is configured. It is SHA-256 over the canonical JSON
+(sorted keys, `,`/`:` separators, ASCII, one trailing LF) of
+
+    {"schema": "hoenn-sessions/shared-object-contract-fingerprint",
+     "version": 1,
+     "contracts": {"experience_table": ..., "object_scalar": ...,
+                   "player_transfer": ...}}
+
+holding only the world-independent content of the three cross-ROM contracts
+that `multiworld_build_ci.py verify` already requires to agree:
+
+* experience_table (experience_table_manifest.py, schema 1): symbol, size and
+  the SHA-256 of the gExperienceTables bytes (re-hashed here from the ROM).
+* object_scalar (object_contract_manifest.py, schema 4): scope; descriptor
+  size and digest; count-probe size; for each shared-ID table (items, species,
+  moves, abilities, TM/HM move IDs) the size, record count and stride, pointer
+  and text offsets, pointer-free scalar digest, pointer-presence digest and
+  bounded display-text digest, plus the move AdditionalEffect layout and
+  digest. rom_release_catalog re-verifies this manifest against the ROM.
+* player_transfer (player_transfer_manifest.py, schema 3): symbol, schema
+  version, descriptor size and digest, field count, fields, saved spans,
+  re-key and Day Care custody field IDs.
+
+Per-world fields are excluded: ROM digests, link addresses, raw table digests
+(they embed ROM pointers), build IDs and world names. Each manifest must name
+the built ROM. Every manifest field is classified as included or excluded; an
+unknown field or another generator schema version is refused.
+
+NOT covered: graphics, palettes, icons, cries, callbacks and other function
+pointers, field and battle scripts, menus and UI, bag/PC capacity beyond the
+saved spans, and full object semantics. Equal fingerprints mean the covered
+bytes agree, not that every shared object behaves identically. Adding or
+removing coverage, or reclassifying a field, changes what the digest means and
+requires bumping FINGERPRINT_VERSION together with the version declared in
+data/rom_world_release.json.
 """
 
 from __future__ import annotations
@@ -34,11 +73,30 @@ from tools.coop import generate_server_build_catalog
 DIGEST_LENGTH = 64
 MAX_SERVER_CATALOG_BYTES = 64 * 1024
 MAX_REGION_CATALOG_BYTES = 256 * 1024
-# Test fixtures only. Never accepted by the production workflow, which does
-# not pass --test-only-provisional-object-catalog.
-PROVISIONAL_OBJECT_CATALOG_MARKER = (
-    b"TEST-ONLY PROVISIONAL object catalog digest; no semantic attestation\n")
-PROVISIONAL_OBJECT_CATALOG_SHA256 = hashlib.sha256(PROVISIONAL_OBJECT_CATALOG_MARKER).hexdigest()
+ROM_BASE = 0x08000000
+FINGERPRINT_SCHEMA = "hoenn-sessions/shared-object-contract-fingerprint"
+FINGERPRINT_SOURCE = "shared-object-contract-fingerprint"
+FINGERPRINT_VERSION = 1
+# Version 1 field classification: (contract, build output, generator
+# schema_version, included keys, excluded per-world keys). Generator schema
+# versions are pinned on purpose; a generator bump is a fingerprint bump.
+_EXPERIENCE = ("experience_table", "experience_table_manifest.json", 1,
+               ("schema_version", "symbol", "size", "sha256"), ("rom_sha256", "address"))
+_OBJECT = ("object_scalar", "object_scalar_manifest.json", 4,
+           ("schema_version", "scope", "descriptor", "count_probe", "tables"), ("rom_sha256",))
+_TRANSFER = ("player_transfer", "player_transfer_manifest.json", 3,
+             ("schema_version", "symbol", "size", "sha256", "descriptor_size", "field_count",
+              "fields", "spans", "rekey_field_ids", "daycare_custody_field_ids"),
+             ("rom_sha256", "address"))
+FINGERPRINT_CONTRACTS = (_EXPERIENCE, _OBJECT, _TRANSFER)
+_OBJECT_TABLES = ("gItemsInfo", "gSpeciesInfo", "gMovesInfo", "gAbilitiesInfo", "gTMHMItemMoveIds")
+_OBJECT_TABLE_KEYS = (("size", "record_count", "record_stride", "pointer_offsets", "text_offsets",
+                       "scalar_sha256", "pointer_presence_sha256", "display_text_sha256"),
+                      ("address", "raw_sha256"))
+_OBJECT_MOVE_KEYS = ("additional_effect_stride", "additional_effect_count_offset",
+                     "additional_effect_count_mask", "additional_effect_sha256")
+_OBJECT_DESCRIPTOR_KEYS = (("size", "sha256"), ("address",))
+_OBJECT_PROBE_KEYS = (("size",), ("address",))
 # Per-world build outputs (multiworld_build_ci names) -> release names.
 WORLD_FILES = (
     ("game.gba", "game.gba"),
@@ -91,22 +149,110 @@ def _load_json(path: Path, label: str) -> dict:
     return data
 
 
-def object_catalog_digest(config: dict, provisional: bool) -> str:
-    entry = config.get("object_catalog")
-    if not isinstance(entry, dict):
-        raise AssemblyError("release config needs an object_catalog entry")
-    configured = entry.get("sha256")
-    if configured is not None:
-        if provisional:
-            raise AssemblyError("a reviewed object catalog digest is configured; "
-                                "refusing the test-only provisional digest")
-        return _digest(configured, "object_catalog.sha256")
-    if provisional:
-        return PROVISIONAL_OBJECT_CATALOG_SHA256
-    raise AssemblyError(
-        "object catalog digest is undefined: data/rom_world_release.json object_catalog.sha256 "
-        "is null and no tracked tool derives the shared-object fingerprint. A production "
-        "release cannot be assembled until a reviewed digest source exists.")
+def object_catalog_config(config: dict) -> None:
+    """The tracked config names the derivation; it never carries a digest."""
+    if config.get("object_catalog") != {"source": FINGERPRINT_SOURCE,
+                                        "version": FINGERPRINT_VERSION}:
+        raise AssemblyError(
+            f"release config object_catalog must be exactly {{\"source\": \"{FINGERPRINT_SOURCE}\", "
+            f"\"version\": {FINGERPRINT_VERSION}}}; configured digests are not accepted")
+
+
+def _project(value: object, included: tuple[str, ...], excluded: tuple[str, ...],
+             label: str) -> dict:
+    if not isinstance(value, dict):
+        raise AssemblyError(f"{label} must be an object")
+    unknown = set(value) - set(included) - set(excluded)
+    missing = set(included) - set(value)
+    if unknown or missing:
+        raise AssemblyError(
+            f"{label} fields do not match fingerprint v{FINGERPRINT_VERSION} "
+            f"(unknown {sorted(unknown)}, missing {sorted(missing)}); "
+            "classifying a field requires a fingerprint version bump")
+    return {key: value[key] for key in included}
+
+
+def contract_projection(manifests: dict[str, dict]) -> dict:
+    """World-independent content of one world's cross-ROM contract manifests."""
+    if set(manifests) != {contract[0] for contract in FINGERPRINT_CONTRACTS}:
+        raise AssemblyError("fingerprint needs exactly the experience, object and transfer manifests")
+    contracts = {}
+    for contract, _, schema, included, excluded in FINGERPRINT_CONTRACTS:
+        manifest = manifests[contract]
+        if (not isinstance(manifest, dict) or type(manifest.get("schema_version")) is not int
+                or manifest["schema_version"] != schema):
+            raise AssemblyError(f"{contract} manifest schema is not the one fingerprint "
+                                f"v{FINGERPRINT_VERSION} covers (expected {schema})")
+        contracts[contract] = _project(manifest, included, excluded, contract)
+    obj = contracts["object_scalar"]
+    obj["descriptor"] = _project(obj["descriptor"], *_OBJECT_DESCRIPTOR_KEYS, "object_scalar descriptor")
+    obj["count_probe"] = _project(obj["count_probe"], *_OBJECT_PROBE_KEYS, "object_scalar count_probe")
+    tables = obj["tables"]
+    if not isinstance(tables, dict) or set(tables) != set(_OBJECT_TABLES):
+        raise AssemblyError(f"object_scalar tables do not match fingerprint v{FINGERPRINT_VERSION}")
+    obj["tables"] = {
+        name: _project(tables[name],
+                       _OBJECT_TABLE_KEYS[0] + (_OBJECT_MOVE_KEYS if name == "gMovesInfo" else ()),
+                       _OBJECT_TABLE_KEYS[1], f"object_scalar {name}")
+        for name in _OBJECT_TABLES}
+    _digest(contracts["experience_table"]["sha256"], "experience_table sha256")
+    _digest(contracts["player_transfer"]["sha256"], "player_transfer sha256")
+    _digest(obj["descriptor"]["sha256"], "object_scalar descriptor sha256")
+    for name, table in obj["tables"].items():
+        for key, value in table.items():
+            if key.endswith("_sha256"):
+                _digest(value, f"object_scalar {name} {key}")
+    return contracts
+
+
+def fingerprint_document(contracts: dict) -> bytes:
+    return canonical_json({"schema": FINGERPRINT_SCHEMA, "version": FINGERPRINT_VERSION,
+                           "contracts": contracts})
+
+
+def world_contract_manifests(source: Path, rom_digest: str) -> dict[str, dict]:
+    """Load one world's contract manifests and bind each to its built ROM."""
+    manifests = {}
+    for contract, filename, *_ in FINGERPRINT_CONTRACTS:
+        path = source / filename
+        try:
+            manifest = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeError, ValueError) as exc:
+            raise AssemblyError(f"cannot read {contract} manifest {path}: {exc}") from exc
+        if not isinstance(manifest, dict) or manifest.get("rom_sha256") != rom_digest:
+            raise AssemblyError(f"{path} does not describe the built ROM")
+        manifests[contract] = manifest
+    experience = manifests["experience_table"]
+    address, size = experience.get("address"), experience.get("size")
+    if type(address) is not int or type(size) is not int or size <= 0 or address < ROM_BASE:
+        raise AssemblyError(f"{source / _EXPERIENCE[1]} has an invalid location")
+    with (source / "game.gba").open("rb") as rom:
+        rom.seek(address - ROM_BASE)
+        payload = rom.read(size)
+    if len(payload) != size or hashlib.sha256(payload).hexdigest() != experience.get("sha256"):
+        raise AssemblyError(f"{source / _EXPERIENCE[1]} does not match the built ROM bytes")
+    return manifests
+
+
+def object_catalog_fingerprint(dist: Path, rom_digests: dict[str, str]) -> tuple[str, bytes]:
+    """Derive each world's fingerprint document and require them byte-identical."""
+    reference = None
+    for name, rom_digest in rom_digests.items():
+        document = fingerprint_document(
+            contract_projection(world_contract_manifests(dist / name, rom_digest)))
+        if reference is None:
+            reference = (name, document)
+        elif document != reference[1]:
+            mine = json.loads(document)["contracts"]
+            theirs = json.loads(reference[1])["contracts"]
+            differing = sorted(key for key in mine if mine[key] != theirs.get(key))
+            raise AssemblyError(
+                f"world '{name}' shared object contract differs from '{reference[0]}' "
+                f"({', '.join(differing)}); a world whose shared objects cannot be "
+                "represented identically is not travel-compatible")
+    if reference is None:
+        raise AssemblyError("no worlds to fingerprint")
+    return hashlib.sha256(reference[1]).hexdigest(), reference[1]
 
 
 def _smoke_arrivals(path: Path) -> dict[str, set[tuple[int, int, int]]]:
@@ -167,22 +313,20 @@ def _copy(source: Path, destination: Path) -> None:
 
 def assemble(dist: Path, out: Path, *, registry: Path, release_config: Path,
              release_arrivals: Path, smoke_arrivals: Path, repo_root: Path,
-             provisional_object_catalog: bool = False,
              arrival_verifier: Path | None = None) -> dict:
     config = _load_json(release_config, "release config")
     attested = _load_json(release_arrivals, "release arrivals")
-    object_digest = object_catalog_digest(config, provisional_object_catalog)
+    object_catalog_config(config)
     plan = plan_worlds(registry, config, attested, smoke_arrivals)
     if out.exists():
         raise AssemblyError(f"refusing to reuse existing output directory {out}")
-    stage = out / "catalog"
-    entries = []
-    world_rom_digests = {}
+    rom_digests = {}
     for world in plan:
-        name, world_id = world["name"], world["world_id"]
-        source = dist / name
-        rom_digest = sha256_file(source / "game.gba")
-        world_rom_digests[world_id] = rom_digest
+        rom = dist / world["name"] / "game.gba"
+        if not rom.is_file():
+            raise AssemblyError(f"{world['name']} build output is missing game.gba")
+        name = world["name"]
+        rom_digest = rom_digests[name] = sha256_file(rom)
         for portal_id, proof in sorted(world["proofs"].items()):
             if proof["rom_sha256"] != rom_digest:
                 raise RecertifyError(
@@ -194,6 +338,13 @@ def assemble(dist: Path, out: Path, *, registry: Path, release_config: Path,
             sav = repo_root / proof["sav_path"]
             if not sav.is_file() or sha256_file(sav) != proof["sav_sha256"]:
                 raise AssemblyError(f"{name} {portal_id} attested save is missing or altered: {sav}")
+    object_digest, object_document = object_catalog_fingerprint(dist, rom_digests)
+    stage = out / "catalog"
+    entries = []
+    for world in plan:
+        name, world_id = world["name"], world["world_id"]
+        source = dist / name
+        rom_digest = rom_digests[name]
         prefix = f"worlds/{world_id}"
         for source_name, release_name in WORLD_FILES:
             if not (source / source_name).is_file():
@@ -266,12 +417,14 @@ def assemble(dist: Path, out: Path, *, registry: Path, release_config: Path,
         "release_catalog_sha256": region_digest,
         "server_build_catalog_sha256": server_digest,
         "object_catalog_sha256": object_digest,
-        "provisional_object_catalog": provisional_object_catalog,
+        "object_catalog_source": FINGERPRINT_SOURCE,
+        "object_catalog_version": FINGERPRINT_VERSION,
         "validated_worlds": sorted(validated),
         "worlds": [{"world_id": e["world_id"], "name": e["name"], "rom_sha256": e["rom_sha256"],
                     "arrivals": {k: v["template_sav_sha256"] for k, v in e["arrivals"].items()}}
                    for e in entries],
     }
+    (out / "object-catalog-fingerprint.json").write_bytes(object_document)
     (out / "assembly.json").write_bytes(canonical_json(summary))
     return summary
 
@@ -324,8 +477,6 @@ def main(argv: list[str] | None = None) -> int:
     build.add_argument("--repo-root", type=Path, default=Path("."))
     build.add_argument("--arrival-verifier", type=Path,
                        help="prebuilt coop-save verify_arrival_save binary (default: cargo build)")
-    build.add_argument("--test-only-provisional-object-catalog", action="store_true",
-                       help="TEST FIXTURES ONLY: use the provisional marker digest")
     sign = commands.add_parser("signing-artifacts", help="stage signed world files into a bundle")
     sign.add_argument("--catalog-dir", type=Path, required=True)
     sign.add_argument("--bundle", type=Path, required=True)
@@ -336,12 +487,7 @@ def main(argv: list[str] | None = None) -> int:
             summary = assemble(
                 args.dist, args.out, registry=args.registry, release_config=args.release_config,
                 release_arrivals=args.release_arrivals, smoke_arrivals=args.smoke_arrivals,
-                repo_root=args.repo_root,
-                provisional_object_catalog=args.test_only_provisional_object_catalog,
-                arrival_verifier=args.arrival_verifier)
-            if summary["provisional_object_catalog"]:
-                print("WARNING: TEST-ONLY provisional object catalog digest; never release this output",
-                      file=sys.stderr)
+                repo_root=args.repo_root, arrival_verifier=args.arrival_verifier)
             print(json.dumps(summary, indent=2, sort_keys=True))
         else:
             print("\n".join(signing_artifacts(args.catalog_dir, args.bundle, args.kind)))

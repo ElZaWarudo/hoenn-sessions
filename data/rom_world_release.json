@@ -2,11 +2,7 @@
   "schema_version": 1,
   "location_codec": 3,
   "regional_save_schema": 1,
-  "object_catalog": {
-    "sha256": null,
-    "status": "undefined",
-    "note": "No tracked extractor derives the full shared-object fingerprint (items, species, moves, abilities, menus, bag/PC capacity, co-op serialization). object_scalar_manifest.json is a partial gate and is explicitly not this claim. Production assembly refuses to run until a reviewed digest source exists."
-  },
+  "object_catalog": {"source": "shared-object-contract-fingerprint", "version": 1},
   "worlds": {
     "main": {
       "save_namespace": "save_main",
