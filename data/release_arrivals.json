@@ -4,15 +4,15 @@
     "main": {
       "arrivals": {
         "from_cormoria": {
-          "rom_sha256": "64db8d09fceaf58d8895587ae9e87ecbc51e13abf33ed2afceeaba4efcf99b85",
+          "rom_sha256": "160b546ed52ff0c7e9a8f111f554fa99371f310aadfd69146b703ab909df3247",
           "sav_path": "data/release_arrivals/main.sav",
-          "sav_sha256": "9444f4d5c711554038d015127ec7a2c059d342f074b6d68054d426397ffafc63",
+          "sav_sha256": "4919eea6b0063f617d5ccc7917bd8b1935f2f5d385e725170c9824ae89f49339",
           "receipt": {
-            "family": "local-test-only-cormoria-20261004-recert",
+            "family": "local-test-only-cormoria-20261004-v8d",
             "method": "tools/coop/recert_arrival.py --downs 4 --verify-cold-reload (cold Continue, START menu SAVE, overwrite; cold reload unchanged) from tracked template tools/tests/fixtures/arrival-v3-main-lilycove.sav",
             "input_save_sha256": "ab0a27b06ee2e0df69deb04939b2ff70876d1516f999c25bb252639cb30c5988",
             "mgba_executable_sha256": "743157a16a1cb478a2b45e6e20e9a482ea397c3820d7e8e27b1e048e85bd5546",
-            "evidence": "recert-20261004/receipt.json: CI-reproducible ROM (clean clone of a96268363e, locale-independent link order); screenshots inspected: SAVE selected (shot-2250), 'Lilycove City' saved the game (shot-3300), cold reload START menu (cold shot-2250); plaintext save state equals the v8b save used by live roundtrip receipt-04 apart from the re-randomised encryption key and RTC-derived fields"
+            "evidence": "release-merge-20261004-v8c/diagnosis-receipt.json: CI-style clean build (multiworld_build_ci, C.UTF-8) of the harbor portal-retry fix 615eea7683; screenshots inspected: SAVE selected (shot-2250), 'Lilycove City' saved the game (shot-3300), cold reload START menu (cold shot-2250); same tracked template and pinned mGBA as the 64db8d09/f3aeb950 recert"
           }
         }
       }
@@ -20,15 +20,15 @@
     "cormoria": {
       "arrivals": {
         "from_main": {
-          "rom_sha256": "f3aeb9507e743af285b7a105470749be57f3df622dc3f7a0138b436aa71185fb",
+          "rom_sha256": "2916a1d96884d021b332ae1d5e08399674e75f523723bc1d04cee9a8776d1533",
           "sav_path": "data/release_arrivals/cormoria.sav",
-          "sav_sha256": "35998331795ab225cc2fe5396aafe8f721f22615f20ff07c9069fd1c426c028a",
+          "sav_sha256": "fe3ae424beebdb2b56466dc27e8bd888b37a8c54aede338b6a477fe1ba41124d",
           "receipt": {
-            "family": "local-test-only-cormoria-20261004-recert",
+            "family": "local-test-only-cormoria-20261004-v8d",
             "method": "tools/coop/recert_arrival.py --downs 5 --verify-cold-reload (cold Continue, START menu SAVE, overwrite; cold reload unchanged) from tracked template tools/tests/fixtures/arrival-v3-cormoria-rivetshore.sav",
             "input_save_sha256": "1f4bb7b6d85ff0a63ff6650aa722692edc757a03149b0765d55fa5fa7b93b011",
             "mgba_executable_sha256": "743157a16a1cb478a2b45e6e20e9a482ea397c3820d7e8e27b1e048e85bd5546",
-            "evidence": "recert-20261004/receipt.json: CI-reproducible ROM (clean clone of a96268363e, locale-independent link order); screenshots inspected: SAVE selected (shot-2250), 'Rivetshore City' saved the game (shot-3300), cold reload START menu (cold shot-2250); plaintext save state equals the v8b save used by live roundtrip receipt-04 apart from the re-randomised encryption key and RTC-derived fields"
+            "evidence": "release-merge-20261004-v8c/diagnosis-receipt.json: CI-style clean build (multiworld_build_ci, C.UTF-8) of the harbor portal-retry fix 615eea7683; screenshots inspected: SAVE selected (shot-2250), 'Rivetshore City' saved the game (shot-3300), cold reload START menu (cold shot-2250); same tracked template and pinned mGBA as the 64db8d09/f3aeb950 recert"
           }
         }
       }
