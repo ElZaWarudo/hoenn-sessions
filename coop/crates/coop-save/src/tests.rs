@@ -692,6 +692,48 @@ fn distinguishes_empty_slots_and_rejects_corrupt_nonempty_pokemon() {
 }
 
 #[test]
+fn pre_fix_zero_mon_data_party_tail_is_outside_every_party_walk() {
+    // Before the ROM's ZeroMonData fix, an emptied party slot kept the previous
+    // occupant's maxHP in box.hpLost (offset 30); the fixed ROM leaves only
+    // MAIL_NONE. Party consumers stop at the saved count, so saves from either
+    // ROM validate the same way. Only a direct read of the stale slot sees it,
+    // as a nonempty record without species, never as a Pokemon.
+    let mut bytes = valid_image(20, 21);
+    let mut occupied = [0_u8; 100];
+    occupied[..80].copy_from_slice(&golden_box_pokemon());
+    write_logical_range(&mut bytes, SaveSlot::Second, 1, 0x238, &occupied);
+    write_logical_range(&mut bytes, SaveSlot::Second, 1, 0x234, &[1]);
+    write_logical_range(
+        &mut bytes,
+        SaveSlot::Second,
+        6,
+        4,
+        &vec![0; crate::pokemon::BOX_COUNT * crate::pokemon::BOX_SIZE * 80],
+    );
+    let mut stale = [0_u8; 100];
+    stale[30] = 23;
+    stale[0x55] = 0xff;
+    write_logical_range(&mut bytes, SaveSlot::Second, 1, 0x238 + 100, &stale);
+    let save = parse(&bytes, TEST_REGISTRY).unwrap();
+    assert_eq!(save.party_count(), Ok(1));
+    let PokemonSlot::Occupied(party) = save.party_pokemon(0).unwrap() else {
+        panic!("party record must be occupied")
+    };
+    assert_eq!(
+        save.locate_pokemon(party.identity.personality, party.identity.ot_id)
+            .unwrap(),
+        vec![crate::PokemonLocation::Party(0)]
+    );
+    assert_eq!(save.party_pokemon(1), Err(PokemonError::MissingSpecies));
+
+    let mut clean = [0_u8; 100];
+    clean[0x55] = 0xff;
+    write_logical_range(&mut bytes, SaveSlot::Second, 1, 0x238 + 100, &clean);
+    let save = parse(&bytes, TEST_REGISTRY).unwrap();
+    assert!(matches!(save.party_pokemon(1), Ok(PokemonSlot::Empty { raw }) if raw == clean));
+}
+
+#[test]
 fn pokemon_and_logical_range_bounds_are_checked() {
     let save = parse(&valid_image(20, 21), TEST_REGISTRY).unwrap();
     assert_eq!(
