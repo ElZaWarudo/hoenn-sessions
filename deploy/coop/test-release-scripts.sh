@@ -336,6 +336,421 @@ out="$(bash "$PROMOTE_GAME" "$FULL_D" 2>&1)"; status=$?
   [ -d "$ROOT/game/$FULL_C" ] && [ ! -d "$ROOT/game-staging/$FULL_D" ]
 report $? "new game release promotes over a different current release" "$out"
 
+# ---------------------------------------------------------------------------
+# Multi-world releases: descriptor-derived inventories, region catalog
+# cross-checks, --no-flip promotion and the separate activation step.
+# ---------------------------------------------------------------------------
+PROMOTE_CATALOG=./promote-server-catalog.sh
+ACTIVATE=./activate-release.sh
+DEPLOY=./deploy-release.sh
+FULL_E=eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee
+FULL_F=ffffffffffffffffffffffffffffffffffffffff
+FULL_G=abababababababababababababababababababab
+DIGEST_E=5555555555555555555555555555555555555555555555555555555555555555
+DIGEST_F=6666666666666666666666666666666666666666666666666666666666666666
+DIGEST_G=7777777777777777777777777777777777777777777777777777777777777777
+IMAGE_E="$IMAGE_BASE@sha256:$DIGEST_E"
+IMAGE_F="$IMAGE_BASE@sha256:$DIGEST_F"
+IMAGE_G="$IMAGE_BASE@sha256:$DIGEST_G"
+
+# Writes worlds/<N>/{game.gba,bridge_manifest.json,player_transfer.json} and a
+# release_catalog.json binding them. World 1 reuses the base ROM/manifest.
+# mismatch=<N> writes a wrong rom_sha256 for world N into the catalog.
+write_world_files() {
+  local dir="$1" base_rom="$2" base_manifest="$3" variant="$4" mismatch="${5:-0}"
+  "$PYTHON_BIN" - "$dir" "$base_rom" "$base_manifest" "$variant" "$mismatch" <<'PY'
+import hashlib, json, pathlib, sys
+root = pathlib.Path(sys.argv[1]); base_rom = pathlib.Path(sys.argv[2]); base_manifest = pathlib.Path(sys.argv[3])
+variant, mismatch = sys.argv[4], int(sys.argv[5])
+def sha(p): return hashlib.sha256(p.read_bytes()).hexdigest()
+worlds = []
+for world in (1, 2):
+    d = root / "worlds" / str(world)
+    d.mkdir(parents=True, exist_ok=True)
+    if world == 1:
+        (d / "game.gba").write_bytes(base_rom.read_bytes())
+        (d / "bridge_manifest.json").write_bytes(base_manifest.read_bytes())
+    else:
+        (d / "game.gba").write_bytes(f"world-{world}-rom-{variant}\n".encode())
+        (d / "bridge_manifest.json").write_bytes(f'{{"world":{world},"v":"{variant}"}}\n'.encode())
+    (d / "player_transfer.json").write_bytes(f'{{"transfer":{world},"v":"{variant}"}}\n'.encode())
+    p = f"worlds/{world}"
+    worlds.append({"world_id": world, "rom_path": f"{p}/game.gba",
+                   "rom_sha256": "0" * 64 if world == mismatch else sha(d / "game.gba"),
+                   "bridge_path": f"{p}/bridge_manifest.json", "bridge_sha256": sha(d / "bridge_manifest.json"),
+                   "player_transfer_path": f"{p}/player_transfer.json",
+                   "player_transfer_sha256": sha(d / "player_transfer.json")})
+(root / "release_catalog.json").write_text(json.dumps({"schema_version": 1, "worlds": worlds}, sort_keys=True) + "\n")
+PY
+}
+
+world_artifact_args() {
+  local dir="$1" world kind file
+  printf '%s\n' "region-catalog=$dir/release_catalog.json"
+  for world in 1 2; do
+    for kind in rom:game.gba compatibility:bridge_manifest.json player-transfer:player_transfer.json; do
+      file="${kind#*:}"
+      printf '%s\n' "world-$world-${kind%%:*}=$dir/worlds/$world/$file"
+    done
+  done
+}
+
+make_world_staging() {
+  local root="$1" id="$2" sequence="$3" expiry="$4" variant="${5:-}" mismatch="${6:-0}" dir destination index args=()
+  dir="$root/staging/$id"
+  mkdir -p "$dir/app" "$dir/runtime" "$dir/bridge" "$dir/trust"
+  index=0
+  for destination in \
+    app/coop-launcher.exe runtime/mgba.exe runtime/game.gba runtime/coop-sidecar.exe \
+    bridge/main.lua bridge/memory.lua bridge/protocol.lua bridge/generated_addresses.lua \
+    bridge_manifest.json trust/release-trust.json THIRD_PARTY_NOTICES.txt; do
+    printf 'fixture-%s-%s-%s\n' "$id" "$index" "$variant" > "$dir/$destination"
+    index=$((index + 1))
+  done
+  write_world_files "$dir" "$dir/runtime/game.gba" "$dir/bridge_manifest.json" "$variant" "$mismatch"
+  for destination in desktop-app=app/coop-launcher.exe managed-mgba=runtime/mgba.exe \
+    rom=runtime/game.gba sidecar=runtime/coop-sidecar.exe bridge-main=bridge/main.lua \
+    bridge-memory=bridge/memory.lua bridge-protocol=bridge/protocol.lua \
+    bridge-addresses=bridge/generated_addresses.lua compatibility-manifest=bridge_manifest.json \
+    trust-bundle=trust/release-trust.json notices=THIRD_PARTY_NOTICES.txt; do
+    args+=(--artifact "${destination%%=*}=$dir/${destination#*=}")
+  done
+  while IFS= read -r destination; do args+=(--artifact "$destination"); done < <(world_artifact_args "$dir")
+  "$COOP_RELEASE_TOOL" sign --release-id "$id" --sequence "$sequence" \
+    --issued-at "$((expiry - 3600))" --expires-at "$expiry" --key-id pilot-v1 \
+    --public-key-hex "$COOP_RELEASE_PUBLIC_KEY_HEX" \
+    --output "$dir/release-envelope.json" "${args[@]}" >/dev/null
+}
+
+make_world_game_staging() {
+  local root="$1" id="$2" sequence="$3" issued="$4" variant="${5:-original}" mismatch="${6:-0}" dir args=() line
+  dir="$root/game-staging/$id"
+  rm -rf -- "$dir"
+  mkdir -p "$dir"
+  printf 'private-rom-%s-%s\n' "$id" "$variant" > "$dir/game.gba"
+  printf '{"fixture":"%s"}\n' "$variant" > "$dir/bridge_manifest.json"
+  write_world_files "$dir" "$dir/game.gba" "$dir/bridge_manifest.json" "$variant" "$mismatch"
+  while IFS= read -r line; do args+=(--artifact "$line"); done < <(world_artifact_args "$dir")
+  "$COOP_RELEASE_TOOL" sign-game --release-id "$id" --sequence "$sequence" \
+    --issued-at "$issued" --expires-at "$((issued + 3600))" \
+    --key-id "$COOP_RELEASE_KEY_ID" --public-key-hex "$COOP_RELEASE_PUBLIC_KEY_HEX" \
+    --output "$dir/release-envelope.json" \
+    --artifact "rom=$dir/game.gba" --artifact "compatibility-manifest=$dir/bridge_manifest.json" \
+    "${args[@]}" >/dev/null
+}
+
+# Prints the digest of a staged server catalog with two pinned arrival saves.
+# mode: ok | oversize | missing | extra
+make_server_catalog_staging() {
+  local root="$1" mode="${2:-ok}"
+  "$PYTHON_BIN" - "$root" "$mode" <<'PY'
+import hashlib, json, pathlib, sys
+root, mode = pathlib.Path(sys.argv[1]), sys.argv[2]
+tmp = root / "server-catalog-build"
+saves = {}
+worlds = []
+for world in (1, 2):
+    data = bytes([world]) * 131072
+    saves[f"worlds/{world}/arrival.sav"] = data
+    worlds.append({"world_id": world, "arrivals": [{"id": f"from_{3 - world}",
+                   "template_sav_path": f"worlds/{world}/arrival.sav",
+                   "template_sav_sha256": hashlib.sha256(data).hexdigest()}]})
+raw = json.dumps({"schema_version": 3, "worlds": worlds, **({} if mode == "ok" else {"fixture": mode})}, sort_keys=True).encode()
+if mode == "oversize":
+    raw += b" " * (65 * 1024)
+raw += b"\n"
+digest = hashlib.sha256(raw).hexdigest()
+stage = root / "server-catalog-staging" / digest
+stage.mkdir(parents=True, exist_ok=True)
+(stage / "server-build-catalog.json").write_bytes(raw)
+for relative, data in saves.items():
+    if mode == "missing" and relative.startswith("worlds/2/"):
+        continue
+    (stage / relative).parent.mkdir(parents=True, exist_ok=True)
+    (stage / relative).write_bytes(data)
+if mode == "extra":
+    (stage / "worlds/2/notes.txt").write_text("unexpected\n")
+print(digest)
+PY
+}
+
+# Server catalog promotion.
+CATALOG_OK="$(make_server_catalog_staging "$ROOT")"
+out="$(bash "$PROMOTE_CATALOG" "$CATALOG_OK" 2>&1)"; status=$?
+[ "$status" -eq 0 ] && [ -f "$ROOT/server-catalog/$CATALOG_OK/server-build-catalog.json" ] && \
+  [ -f "$ROOT/server-catalog/$CATALOG_OK/worlds/2/arrival.sav" ] && \
+  [ ! -w "$ROOT/server-catalog/$CATALOG_OK/server-build-catalog.json" ] && \
+  [ -r "$ROOT/server-catalog/$CATALOG_OK/worlds/1/arrival.sav" ] && \
+  [ ! -d "$ROOT/server-catalog-staging/$CATALOG_OK" ]
+report $? "server catalog promotes read-only into server-catalog/<sha>" "$out"
+make_server_catalog_staging "$ROOT" >/dev/null
+out="$(bash "$PROMOTE_CATALOG" "$CATALOG_OK" 2>&1)"; status=$?
+[ "$status" -eq 0 ] && printf '%s' "$out" | grep -q 'already promoted' && [ ! -d "$ROOT/server-catalog-staging/$CATALOG_OK" ]
+report $? "server catalog rerun reuses the promoted copy and drops identical staging" "$out"
+out="$(bash "$PROMOTE_CATALOG" "$DIGEST_A" 2>&1)"; status=$?
+[ "$status" -ne 0 ] && [ ! -d "$ROOT/server-catalog/$DIGEST_A" ]
+report $? "server catalog without staging is rejected" "$out"
+bad="$(make_server_catalog_staging "$ROOT" missing)"
+mv "$ROOT/server-catalog-staging/$bad" "$ROOT/server-catalog-staging/$DIGEST_B"
+out="$(bash "$PROMOTE_CATALOG" "$DIGEST_B" 2>&1)"; status=$?
+[ "$status" -ne 0 ] && printf '%s' "$out" | grep -q 'do not match' && [ ! -d "$ROOT/server-catalog/$DIGEST_B" ]
+report $? "server catalog with a bad hash is rejected" "$out"
+rm -rf "$ROOT/server-catalog-staging/$DIGEST_B"
+bad="$(make_server_catalog_staging "$ROOT" oversize)"
+out="$(bash "$PROMOTE_CATALOG" "$bad" 2>&1)"; status=$?
+[ "$status" -ne 0 ] && printf '%s' "$out" | grep -q '64 KiB' && [ ! -d "$ROOT/server-catalog/$bad" ]
+report $? "oversized server catalog is rejected" "$out"
+rm -rf "$ROOT/server-catalog-staging/$bad"
+bad="$(make_server_catalog_staging "$ROOT" missing)"
+out="$(bash "$PROMOTE_CATALOG" "$bad" 2>&1)"; status=$?
+[ "$status" -ne 0 ] && printf '%s' "$out" | grep -q 'missing' && [ ! -d "$ROOT/server-catalog/$bad" ]
+report $? "server catalog with a missing arrival save is rejected" "$out"
+rm -rf "$ROOT/server-catalog-staging/$bad"
+bad="$(make_server_catalog_staging "$ROOT" extra)"
+out="$(bash "$PROMOTE_CATALOG" "$bad" 2>&1)"; status=$?
+[ "$status" -ne 0 ] && printf '%s' "$out" | grep -q 'unexpected' && [ ! -d "$ROOT/server-catalog/$bad" ]
+report $? "server catalog with an extra file is rejected" "$out"
+rm -rf "$ROOT/server-catalog-staging/$bad"
+
+# Multi-world Windows releases.
+current_before="$(cat "$ROOT/current")"
+make_world_staging "$ROOT" "$FULL_E" 7 "$((NOW + 3600))"
+out="$($PROMOTE "$FULL_E" --image-ref "$IMAGE_E" --image-digest "sha256:$DIGEST_E" --server-catalog-sha256 "$CATALOG_OK" --no-flip 2>&1)"; status=$?
+[ "$status" -eq 0 ] && [ -f "$ROOT/releases/$FULL_E/worlds/2/player_transfer.json" ] && \
+  [ -f "$ROOT/releases/$FULL_E/release_catalog.json" ] && [ "$(cat "$ROOT/current")" = "$current_before" ] && \
+  printf '%s' "$out" | grep -q 'without activation'
+report $? "multi-world release promotes with --no-flip and leaves current alone" "$out"
+grep -q '"schema":2' "$ROOT/release-metadata/$FULL_E.json" && grep -q "\"server_catalog_sha256\":\"$CATALOG_OK\"" "$ROOT/release-metadata/$FULL_E.json"
+report $? "release metadata schema 2 records the server catalog digest"
+out="$(probe_status "$FULL_E" "$IMAGE_BASE" 2>&1)"; status=$?
+[ "$status" -eq 0 ] && [ "$(printf '%s\n' "$out" | wc -l)" -eq 4 ] && \
+  printf '%s\n' "$out" | grep -q '^state=RELEASED$' && \
+  printf '%s\n' "$out" | grep -q "^server_catalog_sha256=$CATALOG_OK$"
+report $? "probe returns four lines including the server catalog digest" "$out"
+out="$(probe_status "$FULL_A" "$IMAGE_BASE" 2>&1)"; status=$?
+[ "$status" -eq 0 ] && [ "$(printf '%s\n' "$out" | wc -l)" -eq 4 ] && printf '%s\n' "$out" | grep -q '^server_catalog_sha256=$'
+report $? "probe reports an empty catalog digest for a schema-1 association" "$out"
+out="$(probe_status "$FULL_G" "$IMAGE_BASE" 2>&1)"; status=$?
+[ "$status" -eq 0 ] && [ "$(printf '%s\n' "$out" | wc -l)" -eq 4 ] && printf '%s\n' "$out" | grep -q '^state=ABSENT$'
+report $? "probe ABSENT record has four lines" "$out"
+make_world_staging "$ROOT" "$FULL_E" 7 "$((NOW + 3600))"
+out="$($PROMOTE "$FULL_E" --image-ref "$IMAGE_E" --image-digest "sha256:$DIGEST_E" --server-catalog-sha256 "$CATALOG_OK" --no-flip 2>&1)"; status=$?
+[ "$status" -eq 0 ] && [ ! -d "$ROOT/staging/$FULL_E" ] && [ "$(cat "$ROOT/current")" = "$current_before" ]
+report $? "multi-world rerun reuses the promoted release without flipping" "$out"
+out="$($PROMOTE "$FULL_E" --server-catalog-sha256 "$DIGEST_A" --no-flip 2>&1)"; status=$?
+[ "$status" -ne 0 ] && printf '%s' "$out" | grep -q 'server catalog association conflict'
+report $? "conflicting server catalog association is rejected" "$out"
+
+make_world_staging "$ROOT" "$FULL_F" 8 "$((NOW + 3600))"
+rm -f "$ROOT/staging/$FULL_F/worlds/2/player_transfer.json"
+out="$($PROMOTE "$FULL_F" --image-ref "$IMAGE_F" --image-digest "sha256:$DIGEST_F" --no-flip 2>&1)"; status=$?
+[ "$status" -ne 0 ] && [ ! -d "$ROOT/releases/$FULL_F" ] && [ ! -e "$ROOT/release-metadata/$FULL_F.json" ]
+report $? "missing signed world file is rejected" "$out"
+rm -rf "$ROOT/staging/$FULL_F"
+make_world_staging "$ROOT" "$FULL_F" 8 "$((NOW + 3600))"
+printf 'stray\n' > "$ROOT/staging/$FULL_F/worlds/2/extra.txt"
+out="$($PROMOTE "$FULL_F" --image-ref "$IMAGE_F" --image-digest "sha256:$DIGEST_F" --no-flip 2>&1)"; status=$?
+[ "$status" -ne 0 ] && printf '%s' "$out" | grep -q 'not exactly the signed artifacts' && [ ! -d "$ROOT/releases/$FULL_F" ]
+report $? "extra file in a world directory is rejected" "$out"
+rm -rf "$ROOT/staging/$FULL_F"
+make_world_staging "$ROOT" "$FULL_F" 8 "$((NOW + 3600))"
+mkdir -p "$ROOT/staging/$FULL_F/worlds/3"
+out="$($PROMOTE "$FULL_F" --image-ref "$IMAGE_F" --image-digest "sha256:$DIGEST_F" --no-flip 2>&1)"; status=$?
+[ "$status" -ne 0 ] && printf '%s' "$out" | grep -q 'unexpected directory' && [ ! -d "$ROOT/releases/$FULL_F" ]
+report $? "unsigned extra world directory is rejected" "$out"
+rm -rf "$ROOT/staging/$FULL_F"
+make_world_staging "$ROOT" "$FULL_F" 8 "$((NOW + 3600))" "" 2
+out="$($PROMOTE "$FULL_F" --image-ref "$IMAGE_F" --image-digest "sha256:$DIGEST_F" --no-flip 2>&1)"; status=$?
+[ "$status" -ne 0 ] && printf '%s' "$out" | grep -q 'region catalog does not bind world 2' && [ ! -d "$ROOT/releases/$FULL_F" ]
+report $? "signed region catalog that disagrees with world artifacts is rejected" "$out"
+rm -rf "$ROOT/staging/$FULL_F"
+
+# Multi-world game releases.
+game_before="$(cat "$ROOT/game/current")"
+make_world_game_staging "$ROOT" "$FULL_E" 9 "$NOW"
+out="$(bash "$PROMOTE_GAME" "$FULL_E" --no-flip 2>&1)"; status=$?
+[ "$status" -eq 0 ] && [ -f "$ROOT/game/$FULL_E/worlds/2/game.gba" ] && [ "$(cat "$ROOT/game/current")" = "$game_before" ] && \
+  [ ! -d "$ROOT/game-staging/$FULL_E" ]
+report $? "multi-world game release promotes with --no-flip" "$out"
+make_world_game_staging "$ROOT" "$FULL_E" 9 "$((NOW + 10))"
+out="$(bash "$PROMOTE_GAME" "$FULL_E" --no-flip 2>&1)"; status=$?
+[ "$status" -eq 0 ] && [ "$(cat "$ROOT/game/current")" = "$game_before" ] && [ ! -d "$ROOT/game-staging/$FULL_E" ]
+report $? "re-signed multi-world game rerun is idempotent" "$out"
+make_world_game_staging "$ROOT" "$FULL_F" 10 "$NOW"
+printf 'stray\n' > "$ROOT/game-staging/$FULL_F/worlds/1/extra.bin"
+out="$(bash "$PROMOTE_GAME" "$FULL_F" --no-flip 2>&1)"; status=$?
+[ "$status" -ne 0 ] && [ ! -d "$ROOT/game/$FULL_F" ]
+report $? "multi-world game release with an extra file is rejected" "$out"
+make_world_game_staging "$ROOT" "$FULL_F" 10 "$NOW"
+rm -f "$ROOT/game-staging/$FULL_F/worlds/2/bridge_manifest.json"
+out="$(bash "$PROMOTE_GAME" "$FULL_F" --no-flip 2>&1)"; status=$?
+[ "$status" -ne 0 ] && [ ! -d "$ROOT/game/$FULL_F" ]
+report $? "multi-world game release with a missing world file is rejected" "$out"
+make_world_game_staging "$ROOT" "$FULL_F" 10 "$NOW" original 2
+out="$(bash "$PROMOTE_GAME" "$FULL_F" --no-flip 2>&1)"; status=$?
+[ "$status" -ne 0 ] && printf '%s' "$out" | grep -q 'region catalog does not bind' && [ ! -d "$ROOT/game/$FULL_F" ]
+report $? "game region catalog mismatch is rejected" "$out"
+rm -rf "$ROOT/game-staging/$FULL_F"
+
+# Activation flips all markers only after promotion, and is idempotent.
+out="$(bash "$ACTIVATE" "$FULL_F" 2>&1)"; status=$?
+[ "$status" -ne 0 ] && [ "$(cat "$ROOT/current")" = "$current_before" ] && [ "$(cat "$ROOT/game/current")" = "$game_before" ]
+report $? "activation refuses a release that is not promoted" "$out"
+mkdir -p "$ROOT/android/$FULL_E"
+printf 'apk-bytes\n' > "$ROOT/android/$FULL_E/app-release.apk"
+"$PYTHON_BIN" - "$ROOT/android/$FULL_E" "$FULL_E" <<'PY'
+import hashlib, json, pathlib, sys
+d = pathlib.Path(sys.argv[1]); apk = (d / "app-release.apk").read_bytes()
+(d / "metadata.json").write_text(json.dumps({"release_id": sys.argv[2], "version_code": 7,
+    "size": len(apk), "sha256": hashlib.sha256(apk).hexdigest()}))
+PY
+out="$(COOP_ACTIVATE_SKIP_ACL=1 bash "$ACTIVATE" "$FULL_E" 2>&1)"; status=$?
+[ "$status" -eq 0 ] && [ "$(cat "$ROOT/current")" = "$FULL_E" ] && [ "$(cat "$ROOT/game/current")" = "$FULL_E" ] && \
+  [ "$(cat "$ROOT/.previous-release")" = "$current_before" ] && [ "$(cat "$ROOT/android/current")" = "$FULL_E" ]
+report $? "activation flips game, runtime and Android markers" "$out"
+out="$(COOP_ACTIVATE_SKIP_ACL=1 bash "$ACTIVATE" "$FULL_E" 2>&1)"; status=$?
+[ "$status" -eq 0 ] && [ "$(cat "$ROOT/.previous-release")" = "$current_before" ] && ! printf '%s' "$out" | grep -q 'activated'
+report $? "activation rerun is an idempotent no-op" "$out"
+
+# deploy-release.sh against a fake docker on PATH.
+FAKEBIN="$ROOT/fakebin"
+mkdir -p "$FAKEBIN"
+cat > "$FAKEBIN/docker" <<'SH'
+#!/usr/bin/env bash
+envf=""
+prev=""
+for arg in "$@"; do
+  [ "$prev" = --env-file ] && envf="$arg"
+  prev="$arg"
+done
+image=""
+[ -z "$envf" ] || image="$(sed -n 's/^COOP_IMAGE=//p' "$envf")"
+printf '%s | image=%s\n' "$*" "$image" >> "$FAKE_DOCKER_LOG"
+case "$1" in
+  pull) [ "${FAKE_PULL_FAIL:-0}" = 1 ] && exit 1; exit 0 ;;
+  login) cat >/dev/null; exit 0 ;;
+  compose)
+    case " $* " in
+      *" exec "*) [ -n "$image" ] && [ "$image" = "${FAKE_HEALTHY_IMAGE:-}" ] && exit 0; exit 1 ;;
+      *) exit 0 ;;
+    esac ;;
+esac
+exit 0
+SH
+chmod +x "$FAKEBIN/docker"
+DEPLOY_DIR_T="$ROOT/deploy"
+mkdir -p "$DEPLOY_DIR_T"
+cp compose.yaml "$DEPLOY_DIR_T/compose.yaml"
+OLD_IMAGE="$IMAGE_A"
+NEW_IMAGE="$IMAGE_G"
+CATALOG_PATH_T="$ROOT/server-catalog/$CATALOG_OK/server-build-catalog.json"
+reset_deploy_dir() {
+  printf '# production settings\nCOOP_DOMAIN=coop.example.com\nCOOP_IMAGE=%s\nCOOP_PHASE2_RELEASE_CATALOG_PATH=/srv/hoenn/old/server-build-catalog.json\nCOOP_PHASE2_RELEASE_CATALOG_SHA256=%s\nCOOP_FIREBASE_BUCKET=bucket\n' "$OLD_IMAGE" "$DIGEST_D" > "$DEPLOY_DIR_T/.env"
+  chmod 0640 "$DEPLOY_DIR_T/.env"
+  rm -f "$DEPLOY_DIR_T"/.env.bak.* "$DEPLOY_DIR_T"/compose.yaml.bak.* "$DEPLOY_DIR_T/.env.next"
+  cp compose.yaml "$DEPLOY_DIR_T/compose.yaml"
+  cp "$DEPLOY_DIR_T/.env" "$ROOT/env.before"
+  cp "$DEPLOY_DIR_T/compose.yaml" "$ROOT/compose.before"
+  : > "$ROOT/docker.log"
+}
+run_deploy() {
+  PATH="$FAKEBIN:$PATH" FAKE_DOCKER_LOG="$ROOT/docker.log" HOENN_ROOT="$ROOT" HEALTH_TIMEOUT=0 HEALTH_INTERVAL=0 \
+    bash "$DEPLOY" --deploy-dir "$DEPLOY_DIR_T" "$@"
+}
+cp compose.yaml "$ROOT/candidate-compose.yaml"
+printf '# candidate change\n' >> "$ROOT/candidate-compose.yaml"
+
+reset_deploy_dir
+out="$(FAKE_HEALTHY_IMAGE="$NEW_IMAGE" run_deploy --image "$NEW_IMAGE" --catalog-path "$CATALOG_PATH_T" --catalog-sha256 "$CATALOG_OK" --compose-file "$ROOT/candidate-compose.yaml" 2>&1)"; status=$?
+[ "$status" -eq 0 ] && grep -qx "COOP_IMAGE=$NEW_IMAGE" "$DEPLOY_DIR_T/.env" && \
+  grep -qx "COOP_PHASE2_RELEASE_CATALOG_SHA256=$CATALOG_OK" "$DEPLOY_DIR_T/.env" && \
+  grep -qx "COOP_PHASE2_RELEASE_CATALOG_PATH=$CATALOG_PATH_T" "$DEPLOY_DIR_T/.env" && \
+  grep -qx 'COOP_FIREBASE_BUCKET=bucket' "$DEPLOY_DIR_T/.env" && grep -qx '# production settings' "$DEPLOY_DIR_T/.env" && \
+  [ "$(grep -c '^COOP_IMAGE=' "$DEPLOY_DIR_T/.env")" -eq 1 ] && \
+  cmp -s "$DEPLOY_DIR_T/compose.yaml" "$ROOT/candidate-compose.yaml" && \
+  ls "$DEPLOY_DIR_T"/.env.bak.* >/dev/null 2>&1 && ls "$DEPLOY_DIR_T"/compose.yaml.bak.* >/dev/null 2>&1 && \
+  [ "$(sed -n '1p' "$ROOT/docker.log" | cut -d' ' -f1)" = pull ]
+report $? "deploy-release pulls first, rewrites only release keys and keeps backups" "$out"
+if [ "$(stat -c %a "$DEPLOY_DIR_T/.env" 2>/dev/null)" = 640 ] || [ "$(uname -o 2>/dev/null)" = Msys ]; then
+  report 0 "deploy-release preserves the .env file mode"
+else
+  report 1 "deploy-release preserves the .env file mode" "$(stat -c %a "$DEPLOY_DIR_T/.env")"
+fi
+
+reset_deploy_dir
+out="$(FAKE_HEALTHY_IMAGE="$OLD_IMAGE" run_deploy --image "$NEW_IMAGE" --catalog-path "$CATALOG_PATH_T" --catalog-sha256 "$CATALOG_OK" --compose-file "$ROOT/candidate-compose.yaml" 2>&1)"; status=$?
+[ "$status" -eq 3 ] && cmp -s "$DEPLOY_DIR_T/.env" "$ROOT/env.before" && cmp -s "$DEPLOY_DIR_T/compose.yaml" "$ROOT/compose.before" && \
+  grep -q "up -d --no-build server | image=$NEW_IMAGE" "$ROOT/docker.log" && \
+  [ "$(grep ' up -d --no-build server ' "$ROOT/docker.log" | tail -n 1 | sed 's/.*image=//')" = "$OLD_IMAGE" ] && \
+  [ ! -e "$DEPLOY_DIR_T/.env.next" ]
+report $? "health failure restores .env and compose byte-for-byte and brings the old image up" "$out"
+
+reset_deploy_dir
+out="$(FAKE_HEALTHY_IMAGE=none run_deploy --image "$NEW_IMAGE" --catalog-path "$CATALOG_PATH_T" --catalog-sha256 "$CATALOG_OK" 2>&1)"; status=$?
+[ "$status" -eq 4 ] && cmp -s "$DEPLOY_DIR_T/.env" "$ROOT/env.before" && printf '%s' "$out" | grep -q 'ROLLBACK FAILED'
+report $? "failed rollback exits 4 with restored files" "$out"
+
+reset_deploy_dir
+out="$(FAKE_PULL_FAIL=1 FAKE_HEALTHY_IMAGE="$NEW_IMAGE" run_deploy --image "$NEW_IMAGE" --catalog-path "$CATALOG_PATH_T" --catalog-sha256 "$CATALOG_OK" 2>&1)"; status=$?
+[ "$status" -eq 1 ] && cmp -s "$DEPLOY_DIR_T/.env" "$ROOT/env.before" && ! ls "$DEPLOY_DIR_T"/.env.bak.* >/dev/null 2>&1 && \
+  ! grep -q ' up ' "$ROOT/docker.log" && [ ! -e "$DEPLOY_DIR_T/.env.next" ]
+report $? "pull failure leaves .env untouched and never restarts" "$out"
+
+reset_deploy_dir
+out="$(FAKE_HEALTHY_IMAGE="$NEW_IMAGE" run_deploy --image "$NEW_IMAGE" --catalog-path "$CATALOG_PATH_T" --catalog-sha256 "$DIGEST_A" 2>&1)"; status=$?
+[ "$status" -ne 0 ] && cmp -s "$DEPLOY_DIR_T/.env" "$ROOT/env.before" && [ ! -s "$ROOT/docker.log" ]
+report $? "deploy-release rejects a catalog path/digest mismatch before any docker call" "$out"
+printf 'tampered' >> "$ROOT/catalog-copy.json"
+out="$(FAKE_HEALTHY_IMAGE="$NEW_IMAGE" run_deploy --image "$NEW_IMAGE" --catalog-path "$ROOT/catalog-copy.json" --catalog-sha256 "$CATALOG_OK" 2>&1)"; status=$?
+[ "$status" -eq 2 ] && [ ! -s "$ROOT/docker.log" ]
+report $? "deploy-release requires the promoted content-addressed catalog path" "$out"
+out="$(FAKE_HEALTHY_IMAGE="$NEW_IMAGE" run_deploy --image "${NEW_IMAGE%@*}:latest" --catalog-path "$CATALOG_PATH_T" --catalog-sha256 "$CATALOG_OK" 2>&1)"; status=$?
+[ "$status" -eq 2 ] && [ ! -s "$ROOT/docker.log" ]
+report $? "deploy-release still refuses mutable tags" "$out"
+
+reset_deploy_dir
+out="$(run_deploy --validate-only --image "$NEW_IMAGE" --catalog-path "$CATALOG_PATH_T" --catalog-sha256 "$CATALOG_OK" --compose-file "$ROOT/candidate-compose.yaml" 2>&1)"; status=$?
+[ "$status" -eq 0 ] && cmp -s "$DEPLOY_DIR_T/.env" "$ROOT/env.before" && ! grep -q -e '^pull' -e ' up ' "$ROOT/docker.log" && \
+  grep -q 'config --quiet' "$ROOT/docker.log" && ! ls "$DEPLOY_DIR_T"/.env.validate.* >/dev/null 2>&1
+report $? "deploy-release --validate-only checks the candidate without changes" "$out"
+
+# Workflow ordering and private-artifact boundary for the multi-world rollout.
+line_of() { grep -n -- "$1" "$WORKFLOW" | head -n 1 | cut -d: -f1; }
+l_catalog="$(line_of 'bash /tmp/promote-server-catalog.sh ')"
+l_game="$(line_of 'bash /tmp/promote-game.sh .* --no-flip')"
+l_release="$(line_of 'bash /tmp/promote-release.sh .*--no-flip')"
+l_deploy="$(line_of 'bash /tmp/deploy-release.sh --image')"
+l_activate="$(line_of 'bash /tmp/activate-release.sh')"
+if [ -n "$l_catalog" ] && [ -n "$l_game" ] && [ -n "$l_release" ] && [ -n "$l_deploy" ] && [ -n "$l_activate" ] && \
+   [ "$l_catalog" -lt "$l_game" ] && [ "$l_game" -lt "$l_release" ] && [ "$l_release" -lt "$l_deploy" ] && \
+   [ "$l_deploy" -lt "$l_activate" ]; then
+  report 0 "workflow promotes catalog, game, release, then deploys, then activates"
+else
+  report 1 "workflow promotes catalog, game, release, then deploys, then activates" \
+    "catalog=$l_catalog game=$l_game release=$l_release deploy=$l_deploy activate=$l_activate"
+fi
+MULTIWORLD_WORKFLOW=../../.github/workflows/multiworld-build.yml
+if grep -q 'multiworld_build_ci.py build' "$WORKFLOW" && grep -q 'assemble_release_catalog.py assemble' "$WORKFLOW" && \
+   ! grep -q 'test-only-provisional-object-catalog' "$WORKFLOW" && \
+   ! grep -A12 'upload-artifact@' "$WORKFLOW" | grep -q -e '\.gba' -e 'dist/multiworld' -e 'release-bundle' -e 'game-bundle' -e 'release-assembly' && \
+   ! awk '/^  release-dryrun:/{f=1} f' "$MULTIWORLD_WORKFLOW" | grep -q 'upload-artifact' && \
+   grep -q 'cmp -s dist/multiworld/main/game.gba pokeemerald.gba' "$WORKFLOW" && \
+   grep -q 'coop-release-tool verify-game' "$WORKFLOW" && \
+   grep -q 'server_catalog_sha256=' "$WORKFLOW" && grep -q 'wc -l)" -eq 4' "$WORKFLOW"; then
+  report 0 "workflow builds every world, never uploads ROMs and never ships the provisional digest"
+else
+  report 1 "workflow builds every world, never uploads ROMs and never ships the provisional digest"
+fi
+if grep -q 'fresh-start' "$WORKFLOW" && ! grep -q 'coop-server fresh-start' "$WORKFLOW"; then
+  report 0 "workflow documents the manual fresh-start hook without running it"
+else
+  report 1 "workflow documents the manual fresh-start hook without running it"
+fi
+for script in "$PROMOTE_CATALOG" "$ACTIVATE" "$DEPLOY" "$PROMOTE" "$PROBE"; do
+  bash -n "$script" && grep -q "bash -n deploy/coop/${script#./}" "$WORKFLOW"
+  report $? "workflow syntax checks ${script#./}"
+done
+
 bash -n "$PROMOTE_GAME"; status=$?
 [ "$status" -eq 0 ] && grep -q 'bash -n deploy/coop/promote-game.sh' "$WORKFLOW"
 report $? "workflow syntax checks game promotion script"
