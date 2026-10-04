@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # Classify one immutable release without inspecting the running container.
-# Output is a small key/value protocol intended for the workflow status gate.
+# Output is a four-line key/value protocol intended for the workflow status
+# gate: state, image_ref, image_digest and server_catalog_sha256 (the server
+# catalog digest recorded by a schema-2 association; empty otherwise).
 set -eu
 
 if [ "$#" -ne 2 ]; then
@@ -66,6 +68,7 @@ fi
 
 image_ref=""
 image_digest=""
+server_catalog_sha256=""
 if [ "$has_metadata" -eq 1 ]; then
   metadata_values="$($PYTHON_BIN - "$IMAGE_METADATA_FILE" "$RELEASE_ID" "$IMAGE_BASE" <<'PY'
 import json
@@ -84,9 +87,14 @@ try:
     data = json.loads(path.read_text(encoding="utf-8"))
 except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
     raise SystemExit(f"invalid image association metadata: {exc}")
-if set(data) != {"schema", "release_id", "image_ref", "image_digest"}:
+keys = {"schema", "release_id", "image_ref", "image_digest"}
+if data.get("schema") == 2:
+    keys.add("server_catalog_sha256")
+elif data.get("schema") != 1:
     raise SystemExit("image association metadata schema mismatch")
-if data.get("schema") != 1 or data.get("release_id") != release_id:
+if set(data) != keys:
+    raise SystemExit("image association metadata schema mismatch")
+if data.get("release_id") != release_id:
     raise SystemExit("image association metadata identity mismatch")
 image_ref = data.get("image_ref")
 digest = data.get("image_digest")
@@ -98,12 +106,17 @@ if len(image_ref) > 512 or not re.fullmatch(r"[A-Za-z0-9_./:@-]+", image_ref):
     raise SystemExit("invalid image association reference")
 if image_ref != f"{image_base}@{digest}":
     raise SystemExit("image association does not match the expected repository")
+catalog = data.get("server_catalog_sha256", "")
+if data["schema"] == 2 and not (isinstance(catalog, str) and re.fullmatch(r"[0-9a-f]{64}", catalog)):
+    raise SystemExit("invalid server catalog digest in association")
 print(image_ref)
 print(digest)
+print(catalog)
 PY
 )"
   image_ref="$(printf '%s\n' "$metadata_values" | sed -n '1p')"
   image_digest="$(printf '%s\n' "$metadata_values" | sed -n '2p')"
+  server_catalog_sha256="$(printf '%s\n' "$metadata_values" | sed -n '3p')"
 fi
 
 # A durable association is meaningful only while its corresponding staged or
@@ -114,7 +127,7 @@ if [ "$has_metadata" -eq 0 ]; then
     echo "error: release or staging exists without an image association" >&2
     exit 1
   fi
-  printf 'state=ABSENT\nimage_ref=\nimage_digest=\n'
+  printf 'state=ABSENT\nimage_ref=\nimage_digest=\nserver_catalog_sha256=\n'
   exit 0
 fi
 
@@ -135,4 +148,5 @@ else
   state=PENDING
 fi
 
-printf 'state=%s\nimage_ref=%s\nimage_digest=%s\n' "$state" "$image_ref" "$image_digest"
+printf 'state=%s\nimage_ref=%s\nimage_digest=%s\nserver_catalog_sha256=%s\n' \
+  "$state" "$image_ref" "$image_digest" "$server_catalog_sha256"
