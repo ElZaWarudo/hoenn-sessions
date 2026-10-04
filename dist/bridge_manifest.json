@@ -10,9 +10,9 @@
     "version": "0.11.0"
   },
   "game_build": {
-    "id": "pokecrossroads-beta-1.4-e05c8286-coop-v2-160b546ed52ff0c7e9a8f111f554fa99371f310aadfd69146b703ab909df3247",
+    "id": "pokecrossroads-beta-1.4-e05c8286-coop-v2-4be48101b829aeb55d185fa37275e6e8e6eab303095099e37f4b560cb274630e",
     "numeric_id": 65536,
-    "rom_sha256": "160b546ed52ff0c7e9a8f111f554fa99371f310aadfd69146b703ab909df3247"
+    "rom_sha256": "4be48101b829aeb55d185fa37275e6e8e6eab303095099e37f4b560cb274630e"
   },
   "net_bridge": {
     "abi_version": 1,
