@@ -36,6 +36,16 @@ MANIFESTS = {
     "scalar": ("tools/coop/object_contract_manifest.py", "object_scalar_manifest.json"),
 }
 
+# Committed copies of the default world's bridge manifest: launcher/server
+# test fixtures and the Android bundled asset. CI never consumes them for a
+# release (deploy installs the fresh build output), so a ROM change that does
+# not regenerate them leaves stale addresses in the tree without any failure.
+TRACKED_BRIDGE_MANIFESTS = (
+    Path("dist/bridge_manifest.json"),
+    Path("android/app/src/main/assets/bridge_manifest.json"),
+)
+
+
 def load_arrivals(path: Path, world_names: set[str]) -> dict[str, list[tuple[int, int, int]]]:
     data = json.loads(path.read_text(encoding="utf-8"))
     if not isinstance(data, dict) or type(data.get("schema_version")) is not int or data["schema_version"] != 1:
@@ -132,6 +142,28 @@ def verify_worlds(plan: list[tuple[str, str, str, str]], dist: Path, arrivals_pa
     print(f"{len(plan)} world ROMs share transfer, experience, and object scalar/pointer/text contracts")
 
 
+def verify_tracked_manifests(dist: Path, default_world: str,
+                             tracked: tuple[Path, ...] = TRACKED_BRIDGE_MANIFESTS) -> None:
+    """Fail when a committed bridge manifest does not describe the built default ROM."""
+    built_path = dist / default_world / "bridge_manifest.json"
+    built = json.loads(built_path.read_text(encoding="utf-8"))
+    built_sha = built["game_build"]["rom_sha256"]
+    for path in tracked:
+        try:
+            committed = json.loads(path.read_text(encoding="utf-8"))
+        except FileNotFoundError:
+            raise ValueError(f"tracked bridge manifest {path} is missing") from None
+        if committed == built:
+            continue
+        game_build = committed.get("game_build") if isinstance(committed, dict) else None
+        committed_sha = game_build.get("rom_sha256") if isinstance(game_build, dict) else None
+        detail = (f"describes ROM {committed_sha}, built {default_world} ROM is {built_sha}"
+                  if committed_sha != built_sha else "differs from the generated manifest")
+        raise ValueError(f"tracked bridge manifest {path} is stale: {detail}; "
+                         f"copy {built_path} over every tracked copy and commit")
+    print(f"tracked bridge manifests match the {default_world} build ({built_sha})")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("action", choices=("build", "verify"))
@@ -139,6 +171,8 @@ def main() -> int:
     parser.add_argument("--dist", type=Path, default=Path("dist/multiworld"))
     parser.add_argument("--arrivals", type=Path, default=Path("data/rom_world_arrivals.json"))
     parser.add_argument("--base-version", default=os.environ.get("GAME_VERSION", "EMERALD"))
+    parser.add_argument("--require-tracked-manifests", action="store_true",
+                        help="verify: also fail when committed bridge manifests are stale")
     args = parser.parse_args()
     try:
         plan = world_plan(args.registry, args.base_version)
@@ -146,6 +180,9 @@ def main() -> int:
             build_worlds(plan, args.dist)
         else:
             verify_worlds(plan, args.dist, args.arrivals)
+            if args.require_tracked_manifests:
+                default_world, _ = load_registry(args.registry)
+                verify_tracked_manifests(args.dist, default_world)
     except (OSError, ValueError, KeyError, subprocess.CalledProcessError) as exc:
         parser.exit(1, f"multiworld CI: {exc}\n")
     return 0

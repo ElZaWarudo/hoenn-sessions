@@ -60,8 +60,11 @@ jobs:
       - name: Build registered worlds and manifests
         run: python3 tools/coop/multiworld_build_ci.py build
 
+      # Also fails when the committed dist/ and Android bridge manifests do not
+      # describe the ROM this build produced (builds are reproducible since the
+      # bytewise link order), so a ROM change cannot leave them stale silently.
       - name: Verify registered world builds
-        run: python3 tools/coop/multiworld_build_ci.py verify
+        run: python3 tools/coop/multiworld_build_ci.py verify --require-tracked-manifests
 
       - name: Retain ROM-free manifests for review
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0

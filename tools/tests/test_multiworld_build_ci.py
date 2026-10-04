@@ -111,6 +111,55 @@ class MultiworldBuildCiTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "third scalar/ROM mismatch"):
                 ci.verify_worlds(plan, dist, self.arrivals)
 
+    def write_built_and_tracked(self, built, tracked):
+        root = self.root / "dist" / "main"
+        root.mkdir(parents=True)
+        (root / "bridge_manifest.json").write_text(json.dumps(built), encoding="utf-8")
+        paths = []
+        for index, manifest in enumerate(tracked):
+            path = self.root / f"tracked-{index}.json"
+            # Committed copies use the worktree's CRLF convention.
+            path.write_bytes(json.dumps(manifest, indent=2).replace("\n", "\r\n").encode())
+            paths.append(path)
+        return tuple(paths)
+
+    def test_tracked_manifests_must_match_the_built_default_world(self):
+        built = {"game_build": {"rom_sha256": "64db"}, "net_bridge": {"address": 33797296}}
+        paths = self.write_built_and_tracked(built, [built, built])
+        ci.verify_tracked_manifests(self.root / "dist", "main", paths)
+
+    def test_stale_tracked_manifest_names_both_roms(self):
+        built = {"game_build": {"rom_sha256": "64db"}, "net_bridge": {"address": 33797296}}
+        stale = {"game_build": {"rom_sha256": "2bea"}, "net_bridge": {"address": 33797300}}
+        paths = self.write_built_and_tracked(built, [built, stale])
+        with self.assertRaisesRegex(ValueError, r"tracked-1\.json is stale: describes ROM 2bea, "
+                                                r"built main ROM is 64db"):
+            ci.verify_tracked_manifests(self.root / "dist", "main", paths)
+
+    def test_tracked_manifest_with_moved_address_but_same_rom_is_stale(self):
+        built = {"game_build": {"rom_sha256": "64db"}, "net_bridge": {"address": 33797296}}
+        moved = {"game_build": {"rom_sha256": "64db"}, "net_bridge": {"address": 33797300}}
+        paths = self.write_built_and_tracked(built, [moved])
+        with self.assertRaisesRegex(ValueError, "differs from the generated manifest"):
+            ci.verify_tracked_manifests(self.root / "dist", "main", paths)
+
+    def test_missing_tracked_manifest_fails(self):
+        built = {"game_build": {"rom_sha256": "64db"}}
+        self.write_built_and_tracked(built, [])
+        with self.assertRaisesRegex(ValueError, "is missing"):
+            ci.verify_tracked_manifests(self.root / "dist", "main", (self.root / "absent.json",))
+
+    def test_repository_tracked_manifests_are_identical(self):
+        repo = Path(__file__).resolve().parents[2]
+        copies = [json.loads((repo / path).read_text(encoding="utf-8"))
+                  for path in ci.TRACKED_BRIDGE_MANIFESTS]
+        self.assertTrue(all(copy == copies[0] for copy in copies))
+
+    def test_pull_request_workflow_requires_tracked_manifests(self):
+        repo = Path(__file__).resolve().parents[2]
+        workflow = (repo / ".github/workflows/multiworld-build.yml").read_text(encoding="utf-8")
+        self.assertIn("multiworld_build_ci.py verify --require-tracked-manifests", workflow)
+
 
 if __name__ == "__main__":
     unittest.main()
