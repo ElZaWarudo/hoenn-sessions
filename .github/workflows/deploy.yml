@@ -1,11 +1,20 @@
-# Production release pipeline: ONE COMMIT = ONE ROM = ONE manifest = ONE
-# sidecar = ONE server image = ONE VPS release directory.
+# Production release pipeline: ONE COMMIT = ONE multi-world ROM family (every
+# world in data/rom_worlds.json) = ONE region catalog = ONE server build
+# catalog = ONE server image = ONE VPS release directory.
 #
 # Triggers on pushes to main (and manually). Never on pull requests.
 # All expensive compilation happens here on GitHub-hosted runners; the VPS
-# only receives files, pulls the pushed image, atomically flips a release marker and restarts
-# the server container. The ROM is transferred directly runner -> VPS and is
-# never published as a public GitHub Release or workflow artifact.
+# only receives files, pulls the pushed image, restarts the server container
+# with automatic rollback, and only then atomically flips the release markers.
+# ROMs are transferred directly runner -> VPS and are never published as a
+# public GitHub Release or workflow artifact.
+#
+# Order: validate/key gate -> build every world, assemble and validate the
+# catalogs (refusing when a ROM no longer matches its attested arrival save),
+# sign and verify -> upload staging -> promote server catalog, game
+# (--no-flip) and runtime release (--no-flip, image association last) ->
+# deploy-release.sh (health check, auto-rollback) -> activate-release.sh
+# (game/current, current, android/current) -> installers.
 #
 # Immutability notes:
 # - The server image is deployed by digest (name@sha256:<digest> captured
@@ -78,11 +87,17 @@ jobs:
 
       - name: Manifest tooling syntax
         run: |
-          python3 -m py_compile tools/generate_bridge_manifest.py
+          python3 -m py_compile tools/generate_bridge_manifest.py \
+            tools/coop/assemble_release_catalog.py tools/coop/recert_arrival.py
           bash -n deploy/coop/promote-release.sh
           bash -n deploy/coop/promote-game.sh
+          bash -n deploy/coop/promote-server-catalog.sh
+          bash -n deploy/coop/activate-release.sh
           bash -n deploy/coop/probe-release-status.sh
           bash -n deploy/coop/deploy-release.sh
+
+      - name: Release catalog assembler tests
+        run: python3 -m unittest tools.tests.test_assemble_release_catalog
 
   # Verify the protected release seed corresponds to the release trust key before
   # either installer publication or runtime image/bundle work can begin.
@@ -579,20 +594,22 @@ jobs:
             echo "error: remote release status probe failed" >&2
             exit 1
           fi
-          [ "$(printf '%s\n' "$probe" | wc -l)" -eq 3 ] || {
+          [ "$(printf '%s\n' "$probe" | wc -l)" -eq 4 ] || {
             echo "error: remote release status probe returned an invalid record" >&2
             exit 1
           }
           state="$(printf '%s\n' "$probe" | sed -n 's/^state=//p')"
           image="$(printf '%s\n' "$probe" | sed -n 's/^image_ref=//p')"
           digest="$(printf '%s\n' "$probe" | sed -n 's/^image_digest=//p')"
+          catalog="$(printf '%s\n' "$probe" | sed -n 's/^server_catalog_sha256=//p')"
           case "$state" in
             ABSENT)
-              [ -z "$image" ] && [ -z "$digest" ] || { echo "error: ABSENT probe record contains image data" >&2; exit 1; }
+              [ -z "$image" ] && [ -z "$digest" ] && [ -z "$catalog" ] || { echo "error: ABSENT probe record contains image data" >&2; exit 1; }
               echo "state=ABSENT" >> "$GITHUB_OUTPUT"
               echo "released=false" >> "$GITHUB_OUTPUT"
               echo "released_digest=" >> "$GITHUB_OUTPUT"
               echo "released_image=" >> "$GITHUB_OUTPUT"
+              echo "released_server_catalog=" >> "$GITHUB_OUTPUT"
               echo "no association or generation exists; building"
               ;;
             PENDING|RELEASED)
@@ -602,10 +619,14 @@ jobs:
               esac
               expected_image="$IMAGE_BASE@$digest"
               [ "$image" = "$expected_image" ] || { echo "error: release status image does not match expected repository" >&2; exit 1; }
+              # A schema-1 association predates the multi-world server catalog;
+              # it cannot be redeployed by this pipeline.
+              [[ "$catalog" =~ ^[0-9a-f]{64}$ ]] || { echo "error: recorded release has no server catalog digest; rebuild from a newer commit" >&2; exit 1; }
               echo "state=$state" >> "$GITHUB_OUTPUT"
               echo "released=true" >> "$GITHUB_OUTPUT"
               echo "released_digest=$digest" >> "$GITHUB_OUTPUT"
               echo "released_image=$image" >> "$GITHUB_OUTPUT"
+              echo "released_server_catalog=$catalog" >> "$GITHUB_OUTPUT"
               echo "$state generation found; reusing its recorded image"
               ;;
             *)
@@ -697,27 +718,47 @@ jobs:
             tools/wav2agb/wav2agb
           key: tools-v2-ubuntu24-${{ runner.arch }}-${{ hashFiles('make_tools.mk', 'tools/*/Makefile', 'tools/**/*.c', 'tools/**/*.cpp', 'tools/**/*.h', 'tools/**/*.hpp', 'include/**/*.h') }}
 
-      # Single ROM build for this release; reused by manifest + distribution.
-      - name: Build Emerald ROM and ELF
+      # Every registered world is built here; the generated manifests are
+      # authoritative for this release and committed copies are never used.
+      - name: Build every registered world and its manifests
         if: steps.status.outputs.state == 'ABSENT'
         env:
           GAME_VERSION: EMERALD
-        run: make -j"$(nproc)" -O all
+        run: |
+          python3 tools/coop/multiworld_build_ci.py build
+          python3 tools/coop/multiworld_build_ci.py verify
 
-      # The generated manifest below is authoritative for this release; the
-      # copy committed to the repository is never substituted in.
-      - name: Generate bridge manifest from this ROM
+      # The server image (Dockerfile) and the Android APK read these fixed
+      # paths, so they must be exactly the main world's build outputs.
+      - name: Install main world outputs at the server/Android paths
         if: steps.status.outputs.state == 'ABSENT'
         run: |
-          python3 tools/generate_bridge_manifest.py \
-            --elf pokeemerald.elf \
-            --rom pokeemerald.gba
-          python3 - <<'PY'
-          import hashlib, json
-          rom = hashlib.sha256(open("pokeemerald.gba", "rb").read()).hexdigest()
-          manifest = json.load(open("dist/bridge_manifest.json"))
-          assert manifest["game_build"]["rom_sha256"] == rom, "manifest/ROM mismatch"
-          print("manifest rom_sha256:", rom)
+          cp dist/multiworld/main/game.gba pokeemerald.gba
+          cp dist/multiworld/main/bridge_manifest.json dist/bridge_manifest.json
+          cp dist/multiworld/main/generated_addresses.lua bridge/generated_addresses.lua
+          cmp -s dist/multiworld/main/game.gba pokeemerald.gba
+          cmp -s dist/multiworld/main/bridge_manifest.json dist/bridge_manifest.json
+          cmp -s dist/multiworld/main/generated_addresses.lua bridge/generated_addresses.lua
+          sha256sum dist/multiworld/*/game.gba
+
+      # Fails with "recertify arrival saves" (exit 3) when a built ROM differs
+      # from the ROM hash attested in data/release_arrivals.json. Recertify
+      # manually with tools/coop/recert_arrival.py; CI never regenerates saves.
+      - name: Assemble and validate release catalogs
+        if: steps.status.outputs.state == 'ABSENT'
+        id: assembly
+        run: |
+          rm -rf release-assembly
+          python3 tools/coop/assemble_release_catalog.py assemble \
+            --dist dist/multiworld --out release-assembly
+          python3 - release-assembly/assembly.json >> "$GITHUB_OUTPUT" <<'PY'
+          import json, re, sys
+          summary = json.load(open(sys.argv[1]))
+          for key in ("release_catalog_sha256", "server_build_catalog_sha256"):
+              assert re.fullmatch(r"[0-9a-f]{64}", summary[key]), key
+          assert summary["provisional_object_catalog"] is False
+          print("region_catalog_sha256=" + summary["release_catalog_sha256"])
+          print("server_catalog_sha256=" + summary["server_build_catalog_sha256"])
           PY
 
       - name: Set up Android Java
@@ -847,7 +888,10 @@ jobs:
           }, sort_keys=True, separators=(",", ":")) + "\n")
           PY
 
-      - name: Sign exact eleven-artifact runtime envelope
+      # Eleven fixed artifacts, then region-catalog and world-N-{rom,
+      # compatibility,player-transfer} in ascending world id, derived from the
+      # validated region catalog (coop-release-tool canonical order).
+      - name: Sign and verify multi-world runtime envelope
         if: steps.status.outputs.state == 'ABSENT'
         env:
           HOENN_RELEASE_PRIVATE_SEED_HEX: ${{ secrets.HOENN_RELEASE_PRIVATE_SEED_HEX }}
@@ -858,6 +902,11 @@ jobs:
           issued_at="$(date +%s)"
           expires_at=$((issued_at + 90 * 24 * 60 * 60 - 1))
           d="release-bundle/${{ github.sha }}"
+          world_artifacts=()
+          while IFS= read -r artifact; do world_artifacts+=(--artifact "$artifact"); done < <(
+            python3 tools/coop/assemble_release_catalog.py signing-artifacts \
+              --catalog-dir release-assembly/catalog --bundle "$d" --kind windows)
+          [ "${#world_artifacts[@]}" -ge 8 ] || { echo "error: no world artifacts derived" >&2; exit 1; }
           target/release/coop-release-tool sign \
             --release-id "${{ github.sha }}" --sequence "${{ github.run_number }}" \
             --issued-at "$issued_at" --expires-at "$expires_at" \
@@ -873,9 +922,13 @@ jobs:
             --artifact "bridge-addresses=$d/bridge/generated_addresses.lua" \
             --artifact "compatibility-manifest=$d/bridge_manifest.json" \
             --artifact "trust-bundle=$d/trust/release-trust.json" \
-            --artifact "notices=$d/THIRD_PARTY_NOTICES.txt"
+            --artifact "notices=$d/THIRD_PARTY_NOTICES.txt" \
+            "${world_artifacts[@]}"
+          target/release/coop-release-tool verify \
+            --envelope "$d/release-envelope.json" \
+            --key-id "$RELEASE_KEY_ID" --public-key-hex "$RELEASE_PUBLIC_KEY_HEX"
 
-      - name: Sign independent game release
+      - name: Sign and verify independent multi-world game release
         if: steps.status.outputs.state == 'ABSENT'
         env:
           HOENN_RELEASE_PRIVATE_SEED_HEX: ${{ secrets.HOENN_RELEASE_PRIVATE_SEED_HEX }}
@@ -886,6 +939,11 @@ jobs:
           mkdir -p "$d"
           cp pokeemerald.gba "$d/game.gba"
           cp dist/bridge_manifest.json "$d/bridge_manifest.json"
+          world_artifacts=()
+          while IFS= read -r artifact; do world_artifacts+=(--artifact "$artifact"); done < <(
+            python3 tools/coop/assemble_release_catalog.py signing-artifacts \
+              --catalog-dir release-assembly/catalog --bundle "$d" --kind game)
+          [ "${#world_artifacts[@]}" -ge 8 ] || { echo "error: no world artifacts derived" >&2; exit 1; }
           issued_at="$(date +%s)"
           expires_at=$((issued_at + 90 * 24 * 60 * 60 - 1))
           target/release/coop-release-tool sign-game \
@@ -894,15 +952,20 @@ jobs:
             --key-id "$RELEASE_KEY_ID" --public-key-hex "$RELEASE_PUBLIC_KEY_HEX" \
             --output "$d/release-envelope.json" \
             --artifact "rom=$d/game.gba" \
-            --artifact "compatibility-manifest=$d/bridge_manifest.json"
+            --artifact "compatibility-manifest=$d/bridge_manifest.json" \
+            "${world_artifacts[@]}"
+          target/release/coop-release-tool verify-game \
+            --envelope "$d/release-envelope.json" \
+            --key-id "$RELEASE_KEY_ID" --public-key-hex "$RELEASE_PUBLIC_KEY_HEX"
 
       # Deploy scripts travel with every run (the rollout below needs them
       # even when the rebuild is skipped for an already-released commit).
       - name: Upload deploy scripts
         run: |
-          scp deploy/coop/promote-release.sh deploy/coop/promote-game.sh deploy/coop/deploy-release.sh target/release/coop-release-tool hoenn-vps:/tmp/
+          scp deploy/coop/promote-release.sh deploy/coop/promote-game.sh deploy/coop/promote-server-catalog.sh \
+            deploy/coop/activate-release.sh deploy/coop/deploy-release.sh target/release/coop-release-tool hoenn-vps:/tmp/
           scp deploy/coop/compose.yaml hoenn-vps:/tmp/hoenn-compose.yaml
-          ssh hoenn-vps 'chmod 755 /tmp/promote-release.sh /tmp/promote-game.sh /tmp/deploy-release.sh /tmp/coop-release-tool'
+          ssh hoenn-vps 'chmod 755 /tmp/promote-release.sh /tmp/promote-game.sh /tmp/promote-server-catalog.sh /tmp/activate-release.sh /tmp/deploy-release.sh /tmp/coop-release-tool'
 
       - name: Ensure VPS ACL support for private APK
         if: steps.status.outputs.state == 'ABSENT' && steps.android-change.outputs.build == 'true'
@@ -961,14 +1024,38 @@ jobs:
           ssh hoenn-vps 'mkdir -p /srv/hoenn/game-staging'
           scp -r "game-bundle/${{ github.sha }}" "hoenn-vps:/srv/hoenn/game-staging/"
 
-      - name: Promote independent game release
+      # Only server-build-catalog.json and the worlds/<N>/arrival.sav files it
+      # pins travel; the directory name is the catalog digest.
+      - name: Upload server catalog to VPS staging
+        if: steps.status.outputs.state == 'ABSENT'
+        env:
+          SERVER_CATALOG_SHA256: ${{ steps.assembly.outputs.server_catalog_sha256 }}
+        run: |
+          [[ "$SERVER_CATALOG_SHA256" =~ ^[0-9a-f]{64}$ ]]
+          ssh hoenn-vps 'mkdir -p /srv/hoenn/server-catalog-staging'
+          scp -r "release-assembly/server-catalog/$SERVER_CATALOG_SHA256" "hoenn-vps:/srv/hoenn/server-catalog-staging/"
+
+      - name: Promote server catalog
+        if: steps.status.outputs.state == 'ABSENT'
+        env:
+          SERVER_CATALOG_SHA256: ${{ steps.assembly.outputs.server_catalog_sha256 }}
+        run: |
+          [[ "$SERVER_CATALOG_SHA256" =~ ^[0-9a-f]{64}$ ]]
+          ssh hoenn-vps "HOENN_ROOT=/srv/hoenn bash /tmp/promote-server-catalog.sh '$SERVER_CATALOG_SHA256'"
+
+      - name: Promote independent game release without activation
         if: steps.status.outputs.state == 'ABSENT'
         env:
           RELEASE_KEY_ID: ${{ vars.RELEASE_TRUST_KEY_ID }}
           RELEASE_PUBLIC_KEY_HEX: ${{ vars.RELEASE_TRUST_PUBLIC_KEY_HEX }}
         run: |
-          ssh hoenn-vps "HOENN_ROOT=/srv/hoenn COOP_RELEASE_KEY_ID='$RELEASE_KEY_ID' COOP_RELEASE_PUBLIC_KEY_HEX='$RELEASE_PUBLIC_KEY_HEX' COOP_RELEASE_TOOL=/tmp/coop-release-tool bash /tmp/promote-game.sh '${{ github.sha }}'"
+          ssh hoenn-vps "HOENN_ROOT=/srv/hoenn COOP_RELEASE_KEY_ID='$RELEASE_KEY_ID' COOP_RELEASE_PUBLIC_KEY_HEX='$RELEASE_PUBLIC_KEY_HEX' COOP_RELEASE_TOOL=/tmp/coop-release-tool bash /tmp/promote-game.sh '${{ github.sha }}' --no-flip"
 
+      # FRESH-START HOOK (manual, one time, never automated): before the first
+      # multi-world rollout reaches players, an operator runs the server's
+      # `fresh-start` admin subcommand on the VPS by hand, after explicit
+      # confirmation, following deploy/coop/RELEASES.md ("One-time fresh
+      # start"). This workflow never invokes it.
       - name: Promote release and roll the server
         env:
           RELEASE_SHA: ${{ github.sha }}
@@ -977,6 +1064,8 @@ jobs:
           RELEASE_STATE: ${{ steps.status.outputs.state }}
           RELEASED_DIGEST: ${{ steps.status.outputs.released_digest }}
           RELEASED_IMAGE: ${{ steps.status.outputs.released_image }}
+          FRESH_SERVER_CATALOG: ${{ steps.assembly.outputs.server_catalog_sha256 }}
+          RELEASED_SERVER_CATALOG: ${{ steps.status.outputs.released_server_catalog }}
           GHCR_USER: ${{ secrets.VPS_GHCR_USER }}
           GHCR_TOKEN: ${{ secrets.VPS_GHCR_TOKEN }}
           VPS_DEPLOY_DIR: ${{ secrets.VPS_DEPLOY_DIR }}
@@ -990,10 +1079,12 @@ jobs:
               # digest from a newly rebuilt image.
               DIGEST="$RELEASED_DIGEST"
               IMAGE_REF="$RELEASED_IMAGE"
+              SERVER_CATALOG="$RELEASED_SERVER_CATALOG"
               ;;
             ABSENT)
               DIGEST="$FRESH_DIGEST"
               IMAGE_REF="$IMAGE_BASE@$DIGEST"
+              SERVER_CATALOG="$FRESH_SERVER_CATALOG"
               ;;
             *) echo "error: unexpected release state: $RELEASE_STATE" >&2; exit 1 ;;
           esac
@@ -1035,8 +1126,15 @@ jobs:
             "" | *[!0-9A-Fa-f]* ) echo "error: release public key is unsafe" >&2; exit 1 ;;
           esac
           [ "${#RELEASE_PUBLIC_KEY_HEX}" -eq 64 ] || { echo "error: release public key must be 32-byte hex" >&2; exit 1; }
-          REMOTE="HOENN_ROOT=/srv/hoenn COOP_RELEASE_KEY_ID='$RELEASE_KEY_ID' COOP_RELEASE_PUBLIC_KEY_HEX='$RELEASE_PUBLIC_KEY_HEX' COOP_RELEASE_TOOL=/tmp/coop-release-tool bash /tmp/promote-release.sh '$RELEASE_SHA' --image-ref '$IMAGE_REF' --image-digest '$DIGEST'"
-          REMOTE="$REMOTE && bash /tmp/deploy-release.sh --image '$IMAGE_REF' --deploy-dir '$VPS_DEPLOY_DIR' --compose-file /tmp/hoenn-compose.yaml"
+          [[ "$SERVER_CATALOG" =~ ^[0-9a-f]{64}$ ]] || { echo "error: server catalog digest is missing or malformed" >&2; exit 1; }
+          CATALOG_PATH="/srv/hoenn/server-catalog/$SERVER_CATALOG/server-build-catalog.json"
+          # Promotion places bytes without flipping any marker; the image and
+          # server catalog association is the last promotion written.
+          REMOTE="HOENN_ROOT=/srv/hoenn COOP_RELEASE_KEY_ID='$RELEASE_KEY_ID' COOP_RELEASE_PUBLIC_KEY_HEX='$RELEASE_PUBLIC_KEY_HEX' COOP_RELEASE_TOOL=/tmp/coop-release-tool bash /tmp/promote-release.sh '$RELEASE_SHA' --image-ref '$IMAGE_REF' --image-digest '$DIGEST' --server-catalog-sha256 '$SERVER_CATALOG' --no-flip"
+          # deploy-release.sh exits 3 after an automatic, healthy rollback and
+          # 4 when the rollback itself failed; either fails this job before
+          # activation, so players keep the previous release.
+          REMOTE="$REMOTE && HOENN_ROOT=/srv/hoenn bash /tmp/deploy-release.sh --image '$IMAGE_REF' --catalog-path '$CATALOG_PATH' --catalog-sha256 '$SERVER_CATALOG' --deploy-dir '$VPS_DEPLOY_DIR' --compose-file /tmp/hoenn-compose.yaml"
           if [ -n "$GHCR_TOKEN" ]; then
             # The token travels over the encrypted channel on stdin and is
             # read by the remote shell into GHCR_TOKEN; it never appears in
@@ -1050,36 +1148,15 @@ jobs:
             ssh hoenn-vps "$REMOTE"
           fi
 
-      - name: Publish latest Android APK after release promotion
+      # Activation happens only after deploy-release.sh reported a healthy
+      # server: game/current, current (+ .previous-release) and, when this
+      # release carries a newer APK, android/current. Idempotent on reruns.
+      - name: Activate release markers after a healthy deploy
+        env:
+          RELEASE_SHA: ${{ github.sha }}
         run: |
-          ssh hoenn-vps "RELEASE_SHA='${{ github.sha }}' python3 -" <<'PY'
-          import hashlib, json, os, pathlib
-          import subprocess
-          os.umask(0o077)
-          root = pathlib.Path('/srv/hoenn/android')
-          release_id = os.environ['RELEASE_SHA']
-          candidate = root / release_id
-          metadata = candidate / 'metadata.json'
-          apk = candidate / 'app-release.apk'
-          if metadata.is_file() and apk.is_file():
-              proposed = json.loads(metadata.read_text())
-              digest = hashlib.sha256()
-              with apk.open('rb') as stream:
-                  for block in iter(lambda: stream.read(1024 * 1024), b''):
-                      digest.update(block)
-              if proposed['release_id'] != release_id or apk.stat().st_size != proposed['size'] or digest.hexdigest() != proposed['sha256']:
-                  raise SystemExit('APK metadata does not match its release')
-              marker = root / 'current'
-              current_id = marker.read_text().strip() if marker.is_file() else ''
-              current_metadata = root / current_id / 'metadata.json'
-              current_version = json.loads(current_metadata.read_text())['version_code'] if current_metadata.is_file() else 0
-              if proposed['version_code'] > current_version:
-                  temporary = root / 'current.tmp'
-                  temporary.write_text(release_id + '\n')
-                  temporary.chmod(0o600)
-                  subprocess.run(['setfacl', '-m', 'u:10001:r--', str(temporary)], check=True)
-                  temporary.replace(marker)
-          PY
+          case "$RELEASE_SHA" in *[!0-9a-f]* | "") exit 1 ;; esac
+          ssh hoenn-vps "HOENN_ROOT=/srv/hoenn bash /tmp/activate-release.sh '$RELEASE_SHA'"
 
       # A manual run can reuse a release signed by an earlier run for this
       # commit. The installer floor must use that signed sequence, not today's

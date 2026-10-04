@@ -3,8 +3,9 @@
 ## Independent game channel
 
 Android obtains the ROM and compatibility manifest from `/v1/releases/game/latest`.
-This is a separate signed descriptor with platform `game`, exactly two fixed
-artifacts (`rom` and `compatibility-manifest`), and its own monotonic sequence.
+This is a separate signed descriptor with platform `game`, the fixed
+artifacts `rom` and `compatibility-manifest` plus the region catalog and every
+world's signed files (see "Multi-world releases"), and its own monotonic sequence.
 The server serves the immutable files from `game/<release-id>/` and selects a
 generation through `game/current`. The Windows runtime and Android APK retain
 their own release pointers. All three channels require bearer authentication.
@@ -25,8 +26,8 @@ generation and image digest instead of creating conflicting metadata.
 ## What is signed and where it goes
 
 The release tool uses the launcher’s schema-one types and fixed destinations.
-Every generation contains exactly these eleven files plus
-`release-envelope.json`:
+Every generation contains these eleven fixed files, the multi-world files
+described under "Multi-world releases", and `release-envelope.json`:
 
 ```text
 releases/<sha>/
@@ -75,7 +76,8 @@ workflow arguments, logs, files, release directories, or GitHub artifacts.
 /srv/hoenn/
 ├── staging/<sha>/       # in-flight private SSH upload; never served
 ├── releases/<sha>/      # verified immutable runtime generation
-├── release-metadata/<sha>.json # immutable release-to-image association
+├── release-metadata/<sha>.json # immutable release-to-image (+ server catalog) association
+├── server-catalog/<catalog-sha>/ # promoted server build catalog + arrival saves
 ├── current              # regular file: <sha>\n, atomically replaced
 └── .previous-release    # previous marker id for rollback
 ```
@@ -91,13 +93,123 @@ Compose sets `COOP_RELEASE_ROOT=/srv/hoenn` and mounts the release parent
 read-only into the server. Do not mount `current` itself: Docker resolves a
 symlink at container creation and would pin the server to one generation.
 The metadata file is outside the served eleven-artifact directory and has the
-schema `{schema, release_id, image_ref, image_digest}`. Promotion validates
+schema `{schema, release_id, image_ref, image_digest}` (schema 1) or, for
+multi-world releases, schema 2 with an added `server_catalog_sha256`. Promotion validates
 that `image_ref` ends in the exact `sha256:<64 lowercase hex>` digest, creates
 the file without overwriting an existing association, and writes it before
 moving staging into `releases/<sha>` or changing `current`; a failed move may
 leave that validated orphan for a later matching retry. Status and retry resolve the requested
 `releases/<sha>` plus its metadata; they never pair `current` with whichever
 container happens to be running.
+
+## Multi-world releases
+
+Every production release contains every world registered in
+`data/rom_worlds.json` (Main = world 1, Cormoria = world 2). The workflow runs
+`tools/coop/multiworld_build_ci.py build` and `verify`, copies the main world's
+`game.gba`, `bridge_manifest.json` and `generated_addresses.lua` to
+`pokeemerald.gba`, `dist/bridge_manifest.json` and
+`bridge/generated_addresses.lua` (read by the server image and the Android
+build) and checks they are byte-identical, then runs
+`tools/coop/assemble_release_catalog.py assemble`. The assembler joins
+`data/rom_worlds.json`, `data/rom_world_release.json` (portals, presence
+regions, location sections, arrival portals, save namespaces) and
+`data/release_arrivals.json`, writes the canonical client region catalog
+`release_catalog.json`, validates it with `tools/rom_release_catalog.py`
+(including the server's V2 arrival-save parser) and derives the schema-3
+`server-build-catalog.json`.
+
+Signing lists come from the validated region catalog: the eleven fixed
+artifacts, then `region-catalog`, then `world-<N>-rom`,
+`world-<N>-compatibility` and `world-<N>-player-transfer` in ascending world
+id. The game channel signs `rom`, `compatibility-manifest` and the same
+dynamic list. Both envelopes are verified locally (`verify`, `verify-game`)
+before upload. The extra signed files live at `release_catalog.json` and
+`worlds/<N>/{game.gba,bridge_manifest.json,player_transfer.json}` in both
+`releases/<sha>/` and `game/<sha>/`. `promote-release.sh` and
+`promote-game.sh` derive the exact inventory from the signed descriptor and
+cross-check every region-catalog world entry against its signed files; the old
+fixed eleven-file and two-file sets still verify for reruns of old releases.
+
+The server catalog is promoted separately, content-addressed by its digest:
+
+```text
+/srv/hoenn/
+├── server-catalog-staging/<catalog-sha>/   # private upload
+└── server-catalog/<catalog-sha>/           # read-only, uid 10001 can read
+    ├── server-build-catalog.json           # <= 64 KiB, sha256 == <catalog-sha>
+    └── worlds/<N>/arrival.sav              # exactly the saves it pins
+```
+
+Rollout order: `promote-server-catalog.sh <catalog-sha>`, `promote-game.sh
+<sha> --no-flip`, `promote-release.sh <sha> ... --server-catalog-sha256
+<catalog-sha> --no-flip` (the image association, metadata schema 2 with
+`server_catalog_sha256`, is the last promotion written), then
+`deploy-release.sh --image <ref> --catalog-path
+/srv/hoenn/server-catalog/<catalog-sha>/server-build-catalog.json
+--catalog-sha256 <catalog-sha>`, and only after a healthy server
+`activate-release.sh <sha>` flips `game/current`, `current` (recording
+`.previous-release`) and, when the release carries a newer APK,
+`android/current`. Nothing is visible to players before activation.
+`probe-release-status.sh` prints a fourth line, `server_catalog_sha256=`, so a
+rerun of a `PENDING`/`RELEASED` commit redeploys the recorded catalog; a
+schema-1 association (pre multi-world) cannot be redeployed by this workflow.
+
+`deploy-release.sh` validates the arguments and hashes the catalog on the host,
+takes a deploy lock, pulls the image (a pull failure changes nothing), writes
+`.env.next` preserving every other line, validates it with the candidate
+compose file, keeps timestamped `.env.bak.<ts>` and `compose.yaml.bak.<ts>`,
+renames both into place, runs `up -d` and waits for `/health/ready`. On failure
+or interruption it restores both files byte-for-byte, brings the previous
+server back and re-checks health: exit 3 means rolled back and healthy, exit 4
+means the rollback failed and needs an operator. There is no separate catalog
+preflight; startup validation plus the health check is the gate.
+
+### Attested arrival saves and recertification
+
+First-arrival saves are reviewed `.sav` files under `data/release_arrivals/`.
+`data/release_arrivals.json` binds each one to the exact ROM SHA-256 it was
+saved with, its own SHA-256 and a receipt. CI never regenerates them: when a
+built ROM differs from the attested hash the assembler stops with
+`recertify arrival saves` (exit 3) and nothing is signed. To recertify:
+
+1. Build the exact release ROMs (the PR job `release-dryrun` prints the CI
+   hashes and fails when they differ from the attestations).
+2. For each changed world run, on Windows with the pinned mGBA build:
+
+   ```sh
+   python tools/coop/recert_arrival.py --mgba <pinned mGBA.exe> \
+     --rom <world>.gba --rom-sha256 <new rom sha> \
+     --save data/release_arrivals/<world>.sav --save-sha256 <attested sav sha> \
+     --downs 4 --world main --portal from_cormoria \
+     --out <empty run dir> --verify-cold-reload
+   ```
+
+   (`--downs 5 --world cormoria --portal from_main` for Cormoria.)
+3. Inspect the screenshots (SAVE selected, "saved the game" in the arrival
+   town; cold reload shows the START menu in the arrival map), copy the new
+   save over `data/release_arrivals/<world>.sav`, merge the printed
+   attestation into `data/release_arrivals.json`, and get it reviewed.
+
+### Object catalog digest (release blocker)
+
+Each region-catalog world carries `object_catalog_sha256`. No tracked tool
+derives that fingerprint (items, species, moves, abilities, menus, bag/PC
+capacity, co-op serialization); `object_scalar_manifest.json` is a partial gate
+and explicitly not this claim. `data/rom_world_release.json` therefore holds
+`object_catalog.sha256: null` and the production assembler refuses to run.
+`--test-only-provisional-object-catalog` exists only for local fixtures and
+the PR dry-run; the production workflow never passes it. Shipping requires a
+reviewed digest source.
+
+### One-time fresh start (manual)
+
+The first multi-world rollout starts existing players fresh. This is a
+manual, one-time operator step using the server's `fresh-start` admin
+subcommand (owned separately from this pipeline), run on the VPS only after
+explicit confirmation and a verified database backup, before activation makes
+the new release visible. The workflow contains only a comment marking where
+it belongs and never runs it.
 
 ## Required protected configuration
 
@@ -189,8 +301,9 @@ bundle, signs the envelope, then copies the complete generation directly to
 to `/tmp`; the verifier is required on the VPS and receives only the public key
 configuration. Promotion first publishes the immutable image association, then
 moves staging into `releases/<sha>` and atomically replaces `current`; an
-interrupted move can be retried against the recorded association. The deployment step
-rolls the digest-pinned server image with the existing readiness gate.
+interrupted move can be retried against the recorded association. Production
+promotion uses `--no-flip`; `current` changes only in `activate-release.sh`
+after `deploy-release.sh` reports a healthy server (see "Multi-world releases").
 
 Run a private re-promotion manually after a failed rollout:
 

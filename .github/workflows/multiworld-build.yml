@@ -76,3 +76,72 @@ jobs:
             dist/multiworld/*/generated_addresses.lua
           if-no-files-found: error
           retention-days: 2
+
+  # PR dry-run of the production multi-world release pipeline. Builds every
+  # world, fails with "recertify arrival saves" when CI does not reproduce the
+  # ROM hashes attested in data/release_arrivals.json (printing both), then
+  # assembles catalogs (TEST-ONLY provisional object catalog digest), signs
+  # with an ephemeral seed, promotes into a temporary root, validates
+  # deploy-release.sh, and requires coop-server /health/ready 200 with the
+  # generated server catalog. No secrets, no VPS, and no artifact uploads.
+  release-dryrun:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+
+      - name: Install ARM/GBA toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends binutils-arm-none-eabi gcc-arm-none-eabi libnewlib-arm-none-eabi libpng-dev python3
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de # v1
+        with:
+          toolchain: 1.93.1
+
+      - name: Cache Rust build dependencies
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+        with:
+          shared-key: linux-release-dryrun
+          cache-all-crates: false
+          cache-workspace-crates: false
+          cache-bin: false
+
+      - name: Cache ROM build tools
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            tools/bin2c/bin2c
+            tools/gbafix/gbafix
+            tools/gbagfx/gbagfx
+            tools/jsonproc/jsonproc
+            tools/mapjson/mapjson
+            tools/mid2agb/mid2agb
+            tools/preproc/preproc
+            tools/ramscrgen/ramscrgen
+            tools/rsfont/rsfont
+            tools/scaninc/scaninc
+            tools/trainerproc/trainerproc
+            tools/compresSmol/compresSmol
+            tools/compresSmol/compresSmolTilemap
+            tools/wav2agb/wav2agb
+          key: tools-v2-ubuntu24-${{ runner.arch }}-${{ hashFiles('make_tools.mk', 'tools/*/Makefile', 'tools/**/*.c', 'tools/**/*.cpp', 'tools/**/*.h', 'tools/**/*.hpp', 'include/**/*.h') }}
+
+      - name: Build registered worlds and manifests
+        run: |
+          python3 tools/coop/multiworld_build_ci.py build
+          python3 tools/coop/multiworld_build_ci.py verify
+
+      - name: Print CI ROM hashes against attested arrival saves
+        run: |
+          sha256sum dist/multiworld/*/game.gba
+          python3 -c 'import json; d=json.load(open("data/release_arrivals.json")); [print(n, a, p["rom_sha256"]) for n, w in d["worlds"].items() for a, p in w["arrivals"].items()]'
+
+      - name: Build release tool and server
+        run: cargo build --locked -p coop-release-tool -p coop-server
+
+      - name: Release pipeline dry-run
+        run: |
+          work="$RUNNER_TEMP/release-dryrun"
+          bash deploy/coop/release-dryrun.sh --dist dist/multiworld --work "$work" --release-tool target/debug/coop-release-tool --server target/debug/coop-server --port 18089 --require-docker

@@ -222,9 +222,12 @@ internet session remain deployment smoke checks requiring the target project.
 ## Production releases
 
 Merges to `main` are released automatically by `.github/workflows/deploy.yml`.
-The workflow builds the ROM, sidecar, desktop client and the pinned official
-mGBA archive, regenerates `dist/bridge_manifest.json`, and signs a schema-one
-Windows x86_64 envelope containing exactly eleven fixed runtime artifacts.
+The workflow builds every registered world ROM (Main and Cormoria), the
+sidecar, desktop client and the pinned official mGBA archive, regenerates
+`dist/bridge_manifest.json` from the main world, assembles the region and
+server catalogs, and signs a schema-one Windows x86_64 envelope containing the
+eleven fixed runtime artifacts plus the region catalog and each world's ROM,
+compatibility manifest and player-transfer manifest.
 The signing seed is read only from a protected job environment; it is never
 logged, persisted, or uploaded. A separate Windows job builds and
 Authenticode-signs the stable bootstrapper/MSI. The only GitHub artifact is
@@ -255,14 +258,17 @@ fails while either is unset:
 
 | Variable | Meaning |
 | --- | --- |
-| `COOP_PHASE2_RELEASE_CATALOG_PATH` | Catalog file inside the read-only `/srv/hoenn` mount, for example `/srv/hoenn/game/<release-id>/release_catalog.json`. Pinned arrival saves are loaded from the same directory. |
-| `COOP_PHASE2_RELEASE_CATALOG_SHA256` | Lowercase hex SHA-256 of the exact catalog bytes, taken from release configuration rather than from the catalog itself. |
+| `COOP_PHASE2_RELEASE_CATALOG_PATH` | The schema-3 server build catalog inside the read-only `/srv/hoenn` mount: `/srv/hoenn/server-catalog/<sha256>/server-build-catalog.json`. Pinned arrival saves (`worlds/<N>/arrival.sav`) are loaded from the same directory. This is not the client region catalog `release_catalog.json`. |
+| `COOP_PHASE2_RELEASE_CATALOG_SHA256` | Lowercase hex SHA-256 of the exact catalog bytes (also the directory name), taken from release configuration rather than from the catalog itself. |
 
 A missing, unreadable, oversized (over 64 KiB) or mismatched catalog, or an
 arrival save that fails validation, stops startup with a
 `co-op production startup refused: ...` message. The catalog is read once at
-startup, so after promoting a game release that changes the catalog, update
-both values and recreate the server container.
+startup. The release workflow promotes it with `promote-server-catalog.sh`
+and `deploy-release.sh --catalog-path ... --catalog-sha256 ...` rewrites both
+values (and `COOP_IMAGE`) in `.env`, recreates the server and rolls back
+automatically when `/health/ready` does not answer; see
+[RELEASES.md](RELEASES.md).
 
 Before any runtime build, the workflow streams `probe-release-status.sh` over
 the pinned SSH connection. `ABSENT` means no association or generation exists
