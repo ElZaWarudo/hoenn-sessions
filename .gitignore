@@ -37,6 +37,7 @@ tools/agbcc
 *.dump
 *.sa*
 !tools/tests/fixtures/arrival-v2.sav
+!data/release_arrivals/*.sav
 Thumbs.db
 build/
 .DS_Store

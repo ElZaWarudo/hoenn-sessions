@@ -1,0 +1,34 @@
+{
+  "schema_version": 1,
+  "location_codec": 3,
+  "regional_save_schema": 1,
+  "object_catalog": {
+    "sha256": null,
+    "status": "undefined",
+    "note": "No tracked extractor derives the full shared-object fingerprint (items, species, moves, abilities, menus, bag/PC capacity, co-op serialization). object_scalar_manifest.json is a partial gate and is explicitly not this claim. Production assembly refuses to run until a reviewed digest source exists."
+  },
+  "worlds": {
+    "main": {
+      "save_namespace": "save_main",
+      "presence_regions": ["HOENN", "KANTO", "JOHTO", "SEVII"],
+      "owned_location_sections": [0, 249],
+      "arrivals": {
+        "from_cormoria": {"map_group": 13, "map_number": 10, "warp_id": 255, "map_layout_id": 88}
+      },
+      "portals": [
+        {"id": "to_cormoria", "destination_world": "cormoria", "arrival_portal_id": "from_main", "return_portal_id": "to_main"}
+      ]
+    },
+    "cormoria": {
+      "save_namespace": "save_cormoria",
+      "presence_regions": ["CORMORIA"],
+      "owned_location_sections": [250, 300],
+      "arrivals": {
+        "from_main": {"map_group": 82, "map_number": 21, "warp_id": 255, "map_layout_id": 1314}
+      },
+      "portals": [
+        {"id": "to_main", "destination_world": "main", "arrival_portal_id": "from_cormoria", "return_portal_id": "to_cormoria"}
+      ]
+    }
+  }
+}

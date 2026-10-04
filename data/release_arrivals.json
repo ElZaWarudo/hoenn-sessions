@@ -1,0 +1,37 @@
+{
+  "schema_version": 1,
+  "worlds": {
+    "main": {
+      "arrivals": {
+        "from_cormoria": {
+          "rom_sha256": "2bea9552e2fa53442b98828b1b63f40fa9f9fc6496b78d95b1cf857c52eb520f",
+          "sav_path": "data/release_arrivals/main.sav",
+          "sav_sha256": "85177b8535c6f56cae32d66fe79994c07d6574e31fe2dd8a018be5e01c8200fc",
+          "receipt": {
+            "family": "local-test-only-cormoria-20261004-v8b",
+            "method": "tools/coop/recert_arrival.py --do-save --downs 4 (cold Continue, START menu SAVE, overwrite; cold reload unchanged)",
+            "input_save_sha256": "ab0a27b06ee2e0df69deb04939b2ff70876d1516f999c25bb252639cb30c5988",
+            "mgba_executable_sha256": "743157a16a1cb478a2b45e6e20e9a482ea397c3820d7e8e27b1e048e85bd5546",
+            "evidence": "release-merge-20261004-v8b/receipt.json arrival_recert; live roundtrip receipt-04 passed with this save"
+          }
+        }
+      }
+    },
+    "cormoria": {
+      "arrivals": {
+        "from_main": {
+          "rom_sha256": "f0581c8ff690ea80a1824fe07f2907e637d262f20fd25e1dfc163ff63e3feb8d",
+          "sav_path": "data/release_arrivals/cormoria.sav",
+          "sav_sha256": "21cf67261fdfe142d30e3ab76cc5dc9edf86b20546b54a1277e3c9b42039b055",
+          "receipt": {
+            "family": "local-test-only-cormoria-20261004-v8b",
+            "method": "tools/coop/recert_arrival.py --do-save --downs 5 (cold Continue, START menu SAVE, overwrite; cold reload unchanged)",
+            "input_save_sha256": "1f4bb7b6d85ff0a63ff6650aa722692edc757a03149b0765d55fa5fa7b93b011",
+            "mgba_executable_sha256": "743157a16a1cb478a2b45e6e20e9a482ea397c3820d7e8e27b1e048e85bd5546",
+            "evidence": "release-merge-20261004-v8b/receipt.json arrival_recert; live roundtrip receipt-04 passed with this save"
+          }
+        }
+      }
+    }
+  }
+}

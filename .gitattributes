@@ -26,3 +26,6 @@
 # Review patches are immutable, digest-bound evidence; preserve their bytes
 # without treating whitespace inside the captured diff as current source.
 /docs/orchestration/**/*.patch -whitespace
+
+# Attested arrival saves are exact flash images bound to ROM hashes.
+/data/release_arrivals/*.sav binary
