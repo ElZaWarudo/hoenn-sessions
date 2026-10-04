@@ -1028,6 +1028,38 @@ if printf '%s\n' "$deploy_step" | grep -q 'stopped) ROLLBACK_FLAG="--rollback-to
 else
   report 1 "workflow detaches the rollout, maps rollback mode and exit codes, and validates every remote argument"
 fi
+if ! printf '%s\n' "$deploy_step" | tr -d '\r' | grep -Eq '^        if:' && \
+   printf '%s\n' "$deploy_step" | grep -q "wait --key '\$KEY' --timeout \$remaining\"" && \
+   printf '%s\n' "$deploy_step" | grep -q '\[ "\$remaining" -le 600 \] || remaining=600' && \
+   printf '%s\n' "$deploy_step" | grep -q 'remaining=\$((deadline - SECONDS))' && \
+   ! printf '%s\n' "$deploy_step" | grep -q -- '--timeout 600"' && \
+   printf '%s\n' "$deploy_step" | grep -q 'if \[ "\$start_rc" -eq 255 \]; then' && \
+   printf '%s\n' "$deploy_step" | grep -q '124|255) echo "::error title=PRODUCTION STATE UNKNOWN::' && \
+   printf '%s\n' "$deploy_step" | grep -q 'deploy-\$RELEASE_SHA-\*.status'; then
+  report 0 "roll step has no if:, bounds every wait by the remaining budget and polls after a lost start"
+else
+  report 1 "roll step has no if:, bounds every wait by the remaining budget and polls after a lost start"
+fi
+# Runbooks: after the fresh start the server stays stopped and the workflow
+# rerun (rollback mode `stopped`) performs the first start; no manual smoke
+# start, and no claim that the catalog must be pinned for fresh-start.
+fresh_doc="$(tr -d '\r' < ./FRESH_START.md)"
+releases_doc="$(tr -d '\r' < ./RELEASES.md)"
+fresh_tail="$(printf '%s\n' "$fresh_doc" | awk '/^7\. \*\*Run it\.\*\*/ { f = 1 } /^## Refusals/ { f = 0 } f')"
+releases_seq="$(printf '%s\n' "$releases_doc" | awk '/^### First multi-world rollout/ { f = 1 } /^\*\*If the rerun fails/ { f = 0 } f')"
+if [ -n "$fresh_tail" ] && [ -n "$releases_seq" ] && \
+   ! printf '%s\n' "$fresh_tail" | grep -Eq 'up -d|Smoke-start|smoke-start' && \
+   ! printf '%s\n' "$releases_seq" | grep -Eq 'up -d|Smoke-start|smoke-start|effectively a no-op' && \
+   printf '%s\n' "$fresh_tail" | grep -q 'HOENN_ROLLBACK_MODE=stopped' && \
+   printf '%s\n' "$fresh_tail" | grep -q 'Leave the server stopped' && \
+   printf '%s\n' "$releases_seq" | grep -q 'Keep `HOENN_ROLLBACK_MODE=stopped` and set `HOENN_ROLLOUT_HOLD=false`' && \
+   printf '%s\n' "$releases_seq" | grep -q 'workflow_dispatch' && \
+   ! printf '%s\n' "$fresh_doc" | grep -q 'COOP_PHASE2_RELEASE_CATALOG_PATH=/srv' && \
+   printf '%s\n' "$fresh_doc" | grep -q 'COOP_IMAGE=<NEW> docker compose run --rm --no-deps server fresh-start'; then
+  report 0 "runbooks keep the server stopped after fresh-start and let the rerun do the first start"
+else
+  report 1 "runbooks keep the server stopped after fresh-start and let the rerun do the first start"
+fi
 # No workflow in the repository may upload a ROM, save or release bundle.
 rom_uploads="$(for wf in ../../.github/workflows/*.yml; do
   awk -v wf="$wf" '/uses: actions\/upload-artifact/ { f = 1; next } f && /^ *- / { f = 0 } f { print wf ": " $0 }' "$wf"

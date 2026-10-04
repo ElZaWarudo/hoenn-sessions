@@ -304,7 +304,9 @@ maintenance window by hand, then a rerun deploys and activates.
 **Sequence:**
 
 1. Set the repository variables `HOENN_ROLLOUT_HOLD=true` and
-   `HOENN_ROLLBACK_MODE=stopped`.
+   `HOENN_ROLLBACK_MODE=stopped`. Use exactly lowercase `true`: the workflow
+   compares `vars.HOENN_ROLLOUT_HOLD == 'true'`, so `1`, `yes` or a typo
+   does not hold and the run would roll the server.
 2. Push or merge the release commit. The run builds, uploads and promotes the
    server catalog, game and runtime release with `--no-flip`, then fails at
    "Rollout hold (production untouched)". There is no downtime and nothing is
@@ -312,60 +314,82 @@ maintenance window by hand, then a rerun deploys and activates.
 3. Read `NEW` (`image_ref`) and `CAT` (`server_catalog_sha256`) from
    `/srv/hoenn/release-metadata/<sha>.json` and compare them with the
    annotation.
-4. Maintenance window, in `<deploy-dir>`:
+4. Maintenance window, in `<deploy-dir>`, exactly as FRESH_START.md
+   describes:
    1. `docker pull NEW`.
    2. Stop the server (`docker compose stop server`).
-   3. Take the backup and copy it off-host (FRESH_START.md).
-   4. Run the fresh start exactly as FRESH_START.md describes, with explicit
-      environment overrides so Compose uses the new image and catalog
-      (shell environment wins over `.env`, which still names the old image):
-      `COOP_IMAGE=NEW COOP_PHASE2_RELEASE_CATALOG_PATH=/srv/hoenn/server-catalog/CAT/server-build-catalog.json COOP_PHASE2_RELEASE_CATALOG_SHA256=CAT`.
-   5. Smoke-start the new server with the same three overrides (commands in
-      FRESH_START.md), require `/health/ready` 200 and a test login through
-      HTTPS.
-5. `unset COOP_IMAGE COOP_PHASE2_RELEASE_CATALOG_PATH
-   COOP_PHASE2_RELEASE_CATALOG_SHA256` and set `HOENN_ROLLOUT_HOLD=false`
-   (keep `HOENN_ROLLBACK_MODE=stopped`).
-6. "Re-run failed jobs" on the same run. The probe reports `RELEASED`, nothing
-   is rebuilt, promotion is a no-op, `deploy-release.sh` writes `NEW`/`CAT`
-   into `.env` and its `up -d` finds the running container already matching,
-   so it is effectively a no-op (a changed `compose.yaml` recreates it once on
-   the same image); health passes and `activate-release.sh` checks `.env`
-   against the association and flips the markers. Installers follow.
+   3. Take the backup and copy it off-host.
+   4. Run the fresh start with `COOP_IMAGE=NEW` on the `docker compose
+      config` and `docker compose run … fresh-start` commands (shell
+      environment wins over `.env`, which still names the old image). The
+      fresh start does not read the server catalog, so `CAT` is not needed
+      here.
+   5. **Leave the server stopped.** Do not start the new server by hand: the
+      `compose.yaml` on the VPS is still the previous release's, its
+      `server` service does not pass `COOP_PHASE2_RELEASE_CATALOG_*` into the
+      container, and the new server would fail its release-catalog check and
+      crash-loop. Do not start the old server either (FRESH_START.md step 9).
+5. Keep `HOENN_ROLLBACK_MODE=stopped` and set `HOENN_ROLLOUT_HOLD=false`.
+6. Re-run the workflow for the same commit. The probe reports `RELEASED`,
+   nothing is rebuilt and promotion is a no-op. "Roll the server" then does
+   the first start of the new server: `deploy-release.sh` installs this
+   release's `compose.yaml`, writes `NEW`/`CAT` into `.env`, recreates the
+   server container from the release compose and requires `/health/ready`.
+   `activate-release.sh` checks `.env` against the association and flips the
+   markers. Installers follow.
+   - First try "Re-run failed jobs" on the held run. It is not yet verified
+     whether a rerun re-reads repository variables: if the rerun stops at
+     "Rollout hold" again, the old value was reused. Then start a new
+     "Production release" run with "Run workflow" (`workflow_dispatch`) on
+     `main`, which is still frozen at the release commit; its probe also
+     reports `RELEASED` and it proceeds the same way.
 7. Verify `cat /srv/hoenn/current /srv/hoenn/game/current`, health, a client
-   login and download. Keep the backup, the deploy log
-   (`/var/log/hoenn/deploy-<sha>-<run>-<attempt>.log`), `.env.bak.*` and
-   `release-metadata/<sha>.json`. Set `HOENN_ROLLBACK_MODE` back to empty (or
-   `previous`) once the new release is confirmed, then unfreeze `main`.
+   login through HTTPS and a download. Keep the backup, the deploy log
+   (`/var/log/hoenn/deploy-<sha>-<run>-<attempt>.log`), `.env.bak.*`,
+   `compose.yaml.bak.*` and `release-metadata/<sha>.json`. Set
+   `HOENN_ROLLBACK_MODE` back to empty (or `previous`) once the new release
+   is confirmed, then unfreeze `main`.
 
 **If the rerun fails after the fresh start**, the old image must never serve
 the fresh-started database:
 
-- exit 5 (expected with `HOENN_ROLLBACK_MODE=stopped`): `.env` names the old
-  image again and the server is stopped. Do not `docker compose up` without
-  the overrides; fix the cause and re-run failed jobs, or smoke-start `NEW`
-  with the overrides again.
+- exit 5 (expected with `HOENN_ROLLBACK_MODE=stopped`): the new server did
+  not become healthy; `deploy-release.sh` restored `.env` and `compose.yaml`
+  (old image, old compose) and left the server stopped. Do not
+  `docker compose up` in that state. Read the deploy log, fix the cause and
+  re-run (step 6), or follow FRESH_START.md Rollback A or B.
 - exit 3 (rollback mode was not `stopped`): the old image is running against
   the fresh-started database. **Stop the server immediately**
   (`docker compose stop server`), then proceed as for exit 5.
-- exit 4 or "state unknown": **stop the server immediately**, read the deploy
-  log and `.status` file, restore `.env` from the newest `.env.bak.*` if
-  needed, then proceed as for exit 5.
-- exit 1: nothing changed; the smoke-started `NEW` keeps running. Fix the cause
-  (lock, pull credentials, compose config) and re-run failed jobs.
-- activation refused: the deployed `.env` is not `NEW`/`CAT`; fix `.env` (or
-  re-run so `deploy-release.sh` writes it) and re-run failed jobs.
+- exit 4 or "PRODUCTION STATE UNKNOWN": **stop the server immediately**, read
+  the deploy log and `.status` file, restore `.env` and `compose.yaml` from
+  the newest `.env.bak.*`/`compose.yaml.bak.*` if needed, then proceed as for
+  exit 5.
+- exit 1: `deploy-release.sh` refused before changing anything (lock held,
+  pull credentials, compose config), so the server is still stopped. Before
+  trusting "nothing changed", check `/var/log/hoenn` for other
+  `deploy-<sha>-*.status` files and for a deploy still holding the lock (an
+  earlier attempt may still be running detached, or may have finished with a
+  different status). Then fix the cause and re-run.
+- "Deploy start unconfirmed": the SSH connection dropped while starting the
+  detached deploy and polling then reported exit 1. If
+  `/var/log/hoenn/deploy-<sha>-<run>-<attempt>.log` does not exist the deploy
+  never started; check as for exit 1 and re-run.
+- activation refused: the deployed `.env` is not `NEW`/`CAT`; re-run so
+  `deploy-release.sh` writes it (do not edit `.env` by hand).
 
 **No-hold fallback** (the push ran without `HOENN_ROLLOUT_HOLD=true`): if
 "Roll the server" has not started yet, cancel the run, set both variables and
-re-run failed jobs; it stops at the hold. Once it has started, cancelling does
-not stop it (it runs detached); wait for the result. Exit 3 or 1: nothing
-visible changed, continue at step 3. Exit 5: the server is stopped on the old
-configuration, continue at step 4 (skip the stop). Exit 0: the new server is
-live on the un-fresh-started data and activation runs next: stop the server
-immediately, take the backup, run the fresh start and smoke-start with the
-overrides (steps 4.3 to 4.5), then verify (step 7); `.env` already names
-`NEW`/`CAT`, so no rerun is needed. Exit 4: stop the server and inspect first.
+start a new run (step 6); it stops at the hold. Once it has started,
+cancelling does not stop it (it runs detached); wait for the result. Exit 3
+or 1: nothing visible changed, continue at step 3. Exit 5: the server is
+stopped on the old configuration, continue at step 4 (skip the stop). Exit 0:
+the new server is live on the un-fresh-started data and activation runs
+next: stop the server immediately,
+take the backup and run the fresh start (steps 4.3 and 4.4). `.env` and
+`compose.yaml` already belong to the new release, so start it with
+`docker compose up -d server`, require `/health/ready` 200, then verify
+(step 7); no rerun is needed. Exit 4: stop the server and inspect first.
 
 ## Required protected configuration
 
@@ -384,7 +408,7 @@ overrides (steps 4.3 to 4.5), then verify (step 7); `.env` already names
 | `VPS_SSH_KEY`, `VPS_KNOWN_HOSTS` | SSH identity and exact known-hosts data |
 | `VPS_DEPLOY_DIR` | Absolute deployment directory on the VPS |
 | `VPS_GHCR_USER`, `VPS_GHCR_TOKEN` | Read-only GHCR credentials (`read:packages`), passed over SSH stdin. **Set both** for the private image package. If both are empty the run warns and the VPS must already be logged in to GHCR as the SSH user; otherwise the pull fails and `deploy-release.sh` exits 1 with nothing changed. Setting only one fails the run |
-| `HOENN_ROLLOUT_HOLD` (variable) | `true` stops the release job after `promote-release.sh --no-flip`, before the server is touched (first multi-world rollout) |
+| `HOENN_ROLLOUT_HOLD` (variable) | `true` (lowercase) stops the release job after `promote-release.sh --no-flip`, before the server is touched (first multi-world rollout); any other value rolls the server |
 | `HOENN_ROLLBACK_MODE` (variable) | empty or `previous`: a failed rollout restarts the previous image (exit 3); `stopped`: it restores the files and leaves the server stopped (exit 5); anything else fails the run |
 
 The workflow validates SSH grammars and uses `StrictHostKeyChecking yes`.

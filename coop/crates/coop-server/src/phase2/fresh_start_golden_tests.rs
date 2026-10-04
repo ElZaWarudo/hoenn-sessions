@@ -395,6 +395,66 @@ fn tombstones_put_in_flight_and_heads_first_within_the_headroom_bound() {
 }
 
 #[test]
+fn tombstone_overflow_drops_the_oldest_history_deterministically() {
+    // 600 committed records newer than anything in the golden checkpoint,
+    // inserted in a scrambled order. Indices 2k-1 and 2k share a `created_at`
+    // that grows with k; the odd index carries the higher revision.
+    const BASE: u64 = 4_000_000_000_000;
+    let record = |created_at: u64, revision: u64| {
+        cbor_map(vec![
+            ("created_at", Value::Integer(created_at.into())),
+            ("revision", Value::Integer(revision.into())),
+        ])
+    };
+    let build = |order: &dyn Fn(u128) -> u128| {
+        mutate_golden(|root| {
+            let Value::Map(snapshots) = slot(root, "snapshots") else {
+                panic!("snapshots")
+            };
+            for step in 0..600 {
+                let index = order(step);
+                let created_at = BASE + (u64::try_from(index).unwrap() + 1) / 2;
+                snapshots.push((
+                    snapshot_key(index),
+                    record(created_at, 1 + u64::try_from(index % 2).unwrap()),
+                ));
+            }
+        })
+    };
+    let scrambled = build(&|step| (step * 7) % 600);
+    let reversed = build(&|step| 599 - step);
+    let outcome = transform(&scrambled, false, false).expect("transform");
+    let state = decode_state(&outcome.payload).unwrap();
+    assert_eq!(
+        outcome.report.retired_snapshots_final,
+        TOMBSTONE_HEADROOM_BOUND
+    );
+    assert_eq!(outcome.report.retired_snapshots_in_flight_and_heads, 4);
+    // 4 in-flight/heads + 508 newest history fit: 93..600, then 91, which
+    // ties with 92 on `created_at` but has the higher revision. The 92 older
+    // new records and the golden history record (older than BASE) overflow.
+    assert_eq!(outcome.report.retired_snapshots_overflow, 600 + 1 - 508);
+    for index in 0..600 {
+        let id = snapshot_key(index).deserialized::<SnapshotId>().unwrap();
+        assert_eq!(
+            state.retired_snapshots.contains(&id),
+            index >= 93 || index == 91,
+            "snapshot {index}"
+        );
+    }
+    // Map entry order does not change which IDs are kept.
+    let other = transform(&reversed, false, false).expect("transform");
+    assert_eq!(
+        decode_state(&other.payload).unwrap().retired_snapshots,
+        state.retired_snapshots
+    );
+    assert_eq!(
+        other.report.retired_snapshots_overflow,
+        outcome.report.retired_snapshots_overflow
+    );
+}
+
+#[test]
 fn in_flight_tombstones_beyond_the_bound_need_an_explicit_flag() {
     let payload = mutate_golden(|root| {
         let Value::Map(prepared) = slot(root, "prepared") else {
@@ -466,7 +526,8 @@ fn runbook_sql_is_digest_pinned_and_lock_guarded() {
     assert!(runbook_sql(&document, "rollback-b").contains("decode('<CURRENT>', 'hex')"));
     for required in [
         "COOP_IMAGE=<NEW>",
-        "COOP_PHASE2_RELEASE_CATALOG_SHA256=<CAT>",
+        "COOP_IMAGE=<NEW> docker compose run --rm --no-deps server fresh-start",
+        "HOENN_ROLLBACK_MODE=stopped",
         "fresh-start --expect-sha256 <HEX> --dry-run",
         "backups/pre-fresh-start/",
         "pg_restore --list",
@@ -476,6 +537,11 @@ fn runbook_sql_is_digest_pinned_and_lock_guarded() {
         assert!(document.contains(required), "{required}");
     }
     assert!(!document.contains("Deploy the new image"));
+    // The new server is first started by the workflow rerun, never by hand
+    // between the fresh start and the rerun.
+    let start = document.find("7. **Run it.**").expect("step 7");
+    let end = document.find("## Refusals").expect("refusals");
+    assert!(!document[start..end].contains("up -d"));
 }
 
 fn create_disposable_database() -> (postgres::Client, String, String) {

@@ -1145,8 +1145,11 @@ jobs:
       # promoted and production untouched. The operator then performs the
       # maintenance window by hand (server `fresh-start` admin subcommand
       # after explicit confirmation; deploy/coop/RELEASES.md "First
-      # multi-world rollout" and deploy/coop/FRESH_START.md), sets the
-      # variable to false and re-runs the failed jobs. This workflow never
+      # multi-world rollout" and deploy/coop/FRESH_START.md), leaves the
+      # server STOPPED, sets HOENN_ROLLOUT_HOLD=false (with
+      # HOENN_ROLLBACK_MODE=stopped) and re-runs. The "Roll the server" step
+      # below then installs this release's compose.yaml and .env catalog keys
+      # and performs the first start of the new server. This workflow never
       # invokes the fresh-start itself.
       - name: Rollout hold (production untouched)
         if: vars.HOENN_ROLLOUT_HOLD == 'true'
@@ -1155,7 +1158,7 @@ jobs:
           IMAGE_REF: ${{ steps.rollout.outputs.image_ref }}
           SERVER_CATALOG: ${{ steps.rollout.outputs.server_catalog }}
         run: |
-          echo "::error title=Rollout hold::HOENN_ROLLOUT_HOLD=true. Release $RELEASE_SHA is promoted WITHOUT activation and the production server was NOT touched. Image: $IMAGE_REF Server catalog: $SERVER_CATALOG. Follow deploy/coop/RELEASES.md 'First multi-world rollout', then set HOENN_ROLLOUT_HOLD=false and re-run failed jobs."
+          echo "::error title=Rollout hold::HOENN_ROLLOUT_HOLD=true. Release $RELEASE_SHA is promoted WITHOUT activation and the production server was NOT touched. Image: $IMAGE_REF Server catalog: $SERVER_CATALOG. Follow deploy/coop/RELEASES.md 'First multi-world rollout': keep the server stopped after the fresh start, set HOENN_ROLLOUT_HOLD=false with HOENN_ROLLBACK_MODE=stopped and re-run (if the rerun holds again, start a new manual run for the same commit)."
           exit 1
 
       # deploy-release.sh runs detached on the VPS (deploy-detached.sh:
@@ -1211,6 +1214,7 @@ jobs:
           CATALOG_PATH="/srv/hoenn/server-catalog/$SERVER_CATALOG/server-build-catalog.json"
           KEY="$RELEASE_SHA-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
           START="HOENN_ROOT=/srv/hoenn bash /tmp/deploy-detached.sh start --key '$KEY' -- --image '$IMAGE_REF' --catalog-path '$CATALOG_PATH' --catalog-sha256 '$SERVER_CATALOG' --deploy-dir '$VPS_DEPLOY_DIR' --compose-file /tmp/hoenn-compose.yaml $ROLLBACK_FLAG"
+          set +e
           if [ -n "$GHCR_TOKEN" ]; then
             # The token travels over the encrypted channel on stdin and is
             # read by the remote shell into GHCR_TOKEN; it never appears in
@@ -1221,28 +1225,50 @@ jobs:
           else
             ssh hoenn-vps "$START"
           fi
-          # Poll with a bounded total budget; a dropped connection (ssh 255)
-          # is retried, the detached deploy keeps running either way.
+          start_rc=$?
+          set -e
+          # ssh 255 is a transport failure: the detached deploy may or may not
+          # have started, so inspect it by polling instead of ending here.
+          # Any other non-zero status is a refusal by deploy-detached.sh.
+          start_lost=""
+          if [ "$start_rc" -eq 255 ]; then
+            start_lost=1
+            echo "::warning::lost the SSH connection while starting the detached deploy; polling to find out whether it started"
+          elif [ "$start_rc" -ne 0 ]; then
+            echo "::error title=Deploy not started::deploy-detached.sh start exited $start_rc; nothing was started."
+            exit "$start_rc"
+          fi
+          # Poll with a bounded total budget: no single wait outlives it (or
+          # the step timeout). A dropped connection (ssh 255) is retried; the
+          # detached deploy keeps running either way.
           deadline=$((SECONDS + 1800))
+          rc=124
           while :; do
+            remaining=$((deadline - SECONDS))
+            [ "$remaining" -gt 0 ] || break
+            [ "$remaining" -le 600 ] || remaining=600
             set +e
-            ssh -o ServerAliveInterval=15 -o ServerAliveCountMax=4 hoenn-vps \
-              "bash /tmp/deploy-detached.sh wait --key '$KEY' --timeout 600"
+            ssh -o ConnectTimeout=30 -o ServerAliveInterval=15 -o ServerAliveCountMax=4 hoenn-vps \
+              "bash /tmp/deploy-detached.sh wait --key '$KEY' --timeout $remaining"
             rc=$?
             set -e
-            if [ "$rc" -eq 255 ] && [ "$SECONDS" -lt "$deadline" ]; then
+            if [ "$rc" -eq 255 ]; then
               echo "::warning::lost the SSH connection while waiting; the detached deploy continues, reconnecting"
               sleep 10
               continue
             fi
-            if [ "$rc" -eq 124 ] && [ "$SECONDS" -lt "$deadline" ]; then
-              continue
-            fi
+            [ "$rc" -eq 124 ] && continue
             break
           done
           case "$rc" in
             0) echo "server $IMAGE_REF is healthy" ;;
-            1) echo "::error title=Deploy refused::deploy-release.sh refused before any change (lock held, pull failed or invalid candidate configuration); production unchanged." ;;
+            1)
+              if [ -n "$start_lost" ]; then
+                echo "::error title=Deploy start unconfirmed::the start connection dropped and the deploy reports exit 1 (refused, or never started: no /var/log/hoenn/deploy-$KEY.log). Production should be unchanged; confirm with that log, any other /var/log/hoenn/deploy-$RELEASE_SHA-*.status file and the deploy lock before re-running (deploy/coop/RELEASES.md)."
+              else
+                echo "::error title=Deploy refused::deploy-release.sh refused before any change (lock held, pull failed or invalid candidate configuration); production unchanged. Before trusting that, check for other /var/log/hoenn/deploy-$RELEASE_SHA-*.status files and a still-held deploy lock (deploy/coop/RELEASES.md)."
+              fi
+              ;;
             3) echo "::error title=Deploy rolled back::the new server was not healthy; files restored and the PREVIOUS server is healthy again. If the fresh-start already ran, stop the server now (deploy/coop/RELEASES.md)." ;;
             4) echo "::error title=PRODUCTION POSSIBLY DOWN::deploy-release.sh exit 4: the rollback did not complete. Operator action required now: log /var/log/hoenn/deploy-$KEY.log, backups $VPS_DEPLOY_DIR/.env.bak.* (deploy/coop/RELEASES.md)." ;;
             5) echo "::error title=Server stopped::the new server was not healthy; files restored and the server was left STOPPED (HOENN_ROLLBACK_MODE=stopped). Players are offline until an operator acts (deploy/coop/RELEASES.md)." ;;

@@ -647,12 +647,78 @@ impl SnapshotIdCollector {
             }
         }
     }
+
+    /// Committed history (`snapshot_by_revision` values and `snapshots`
+    /// keys), newest first, so a bounded tombstone set drops the oldest.
+    ///
+    /// Rule: descending `created_at` of the `snapshots` record (the only
+    /// global commit clock origin/main persists), then descending revision
+    /// (from the record or the `snapshot_by_revision` key), then ascending
+    /// snapshot ID. An ID without a timestamp or revision sorts after every
+    /// ID that has one. The order never depends on CBOR map entry order.
+    fn history_newest_first(&mut self, root: &[(String, Value)]) {
+        let mut rank: BTreeMap<SnapshotId, (Option<u64>, Option<u64>)> = BTreeMap::new();
+        let mut note = |id: SnapshotId, created_at: Option<u64>, revision: Option<u64>| {
+            let entry = rank.entry(id).or_default();
+            entry.0 = entry.0.max(created_at);
+            entry.1 = entry.1.max(revision);
+        };
+        if let Some(Value::Map(entries)) = get(root, "snapshot_by_revision") {
+            for (key, id) in entries {
+                if matches!(id, Value::Null) {
+                    continue;
+                }
+                let revision = match key {
+                    Value::Array(parts) if parts.len() == 2 => unsigned(Some(&parts[1])),
+                    _ => None,
+                };
+                match id.deserialized::<SnapshotId>() {
+                    Ok(id) => note(id, None, revision),
+                    Err(_) => self.unparsable += 1,
+                }
+            }
+        }
+        if let Some(Value::Map(entries)) = get(root, "snapshots") {
+            for (id, record) in entries {
+                if matches!(id, Value::Null) {
+                    continue;
+                }
+                match id.deserialized::<SnapshotId>() {
+                    Ok(id) => note(
+                        id,
+                        unsigned(field(record, "created_at")),
+                        unsigned(field(record, "revision")),
+                    ),
+                    Err(_) => self.unparsable += 1,
+                }
+            }
+        }
+        let mut ranked: Vec<_> = rank.into_iter().collect();
+        ranked.sort_by(
+            |(left, (left_at, left_rev)), (right, (right_at, right_rev))| {
+                right_at
+                    .cmp(left_at)
+                    .then(right_rev.cmp(left_rev))
+                    .then(left.cmp(right))
+            },
+        );
+        for (id, _) in ranked {
+            if self.seen.insert(id) {
+                self.ordered.push(id);
+            }
+        }
+    }
+}
+
+fn unsigned(value: Option<&Value>) -> Option<u64> {
+    value?.deserialized::<u64>().ok()
 }
 
 struct CollectedSnapshotIds {
     /// In-flight work a client journal may retry, then active heads.
     priority: Vec<SnapshotId>,
-    /// Committed history, then tombstones already present in the checkpoint.
+    /// Committed history (newest first), then tombstones already present in
+    /// the checkpoint (in checkpoint order).
     rest: Vec<SnapshotId>,
     unparsable: usize,
 }
@@ -664,8 +730,7 @@ fn collect_snapshot_ids(root: &[(String, Value)]) -> CollectedSnapshotIds {
     collector.value_fields(root, "restore_staging", "snapshot_id");
     collector.value_fields(root, "characters", "active_snapshot");
     let priority_len = collector.ordered.len();
-    collector.values(root, "snapshot_by_revision");
-    collector.keys(root, "snapshots");
+    collector.history_newest_first(root);
     collector.items(root, "retired_snapshots");
     let rest = collector.ordered.split_off(priority_len);
     CollectedSnapshotIds {
@@ -770,9 +835,11 @@ struct RetiredMerge {
 }
 
 /// Rebuilds the tombstone set: in-flight and head IDs first (all of them, or
-/// a refusal), then committed history, then the checkpoint's own tombstones,
-/// up to [`TOMBSTONE_HEADROOM_BOUND`] so the non-evicting replay cache keeps
-/// room for the new build. The remainder is reported as overflow.
+/// a refusal), then committed history newest first (see
+/// [`SnapshotIdCollector::history_newest_first`]), then the checkpoint's own
+/// tombstones, up to [`TOMBSTONE_HEADROOM_BOUND`] so the non-evicting replay
+/// cache keeps room for the new build. The remainder (the oldest history and
+/// old tombstones) is reported as overflow.
 fn merge_retired(
     root: &[(String, Value)],
     collected: &CollectedSnapshotIds,

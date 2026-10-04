@@ -13,8 +13,13 @@ world heads. A new server started on such a checkpoint fails closed and logs:
 co-op persistent repository: checkpoint decode failed; if this checkpoint was written by a pre-multi-world build, run `coop-server fresh-start` (deploy/coop/FRESH_START.md); otherwise restore from backup
 ```
 
-Do **not** deploy the new image first and let it crash-loop. Every command below names the image and
-catalog explicitly, so nothing depends on what `.env` currently says.
+Do **not** deploy the new image first and let it crash-loop. This runbook never starts the new server.
+During the hold the VPS still has the previous release's `compose.yaml`, whose `server` service does not pass
+`COOP_PHASE2_RELEASE_CATALOG_*` into the container, so a server started from it fails its release-catalog
+check. `fresh-start` itself does not read the catalog: the only pin it needs is `COOP_IMAGE=<NEW>` on the
+`docker compose config` and `docker compose run … fresh-start` commands, which overrides the old image in
+`.env`. The first start of the new server is done by the workflow rerun (step 10): `deploy-release.sh`
+installs the release's `compose.yaml` and `.env` catalog keys, starts the server and checks its health.
 
 ## What a fresh start keeps
 
@@ -32,7 +37,9 @@ rebuilt set is capped at **512** to leave room for the new build:
 1. In-flight IDs (`prepared`, `prepare_ops`, `restore_staging`) and active character heads, always all of
    them. If they alone exceed 512 the command refuses; `--allow-tombstone-overflow` lets them use the full
    1,024 cache, and only after review.
-2. Committed history (`snapshot_by_revision`, `snapshots`).
+2. Committed history (`snapshot_by_revision`, `snapshots`), newest first: descending `created_at` of the
+   snapshot record, then descending revision, then snapshot ID. When the bound is reached the oldest
+   history is dropped.
 3. Tombstones already in the checkpoint (their objects were already cleaned up).
 
 The report gives `retired_snapshots_in_flight_and_heads`, `retired_snapshots_final`,
@@ -80,18 +87,19 @@ Run everything from the compose directory on the VPS, as the user that owns `bac
 
    ```sh
    docker pull <NEW>
-   COOP_IMAGE=<NEW> COOP_PHASE2_RELEASE_CATALOG_PATH=/srv/hoenn/server-catalog/<CAT>/server-build-catalog.json COOP_PHASE2_RELEASE_CATALOG_SHA256=<CAT> docker compose config --images
+   COOP_IMAGE=<NEW> docker compose config --images
    sha256sum /srv/hoenn/server-catalog/<CAT>/server-build-catalog.json
    ```
 
-   The server line must be exactly `<NEW>`, and the catalog digest must be `<CAT>`. If the server image is
-   anything else, stop: an old image given `fresh-start` ignores the argument and starts a server.
+   The server line must be exactly `<NEW>`, and the catalog digest must be `<CAT>` (the workflow rerun
+   installs that catalog; `fresh-start` does not use it). If the server image is anything else, stop: an old
+   image given `fresh-start` ignores the argument and starts a server.
 
 2. **Stop the server and wait for it to exit.**
 
    ```sh
-   COOP_IMAGE=<NEW> COOP_PHASE2_RELEASE_CATALOG_PATH=/srv/hoenn/server-catalog/<CAT>/server-build-catalog.json COOP_PHASE2_RELEASE_CATALOG_SHA256=<CAT> docker compose stop server
-   COOP_IMAGE=<NEW> COOP_PHASE2_RELEASE_CATALOG_PATH=/srv/hoenn/server-catalog/<CAT>/server-build-catalog.json COOP_PHASE2_RELEASE_CATALOG_SHA256=<CAT> docker compose ps --all server postgres
+   docker compose stop server
+   docker compose ps --all server postgres
    ```
 
    The server must show `exited`; postgres must be `healthy`. `stop` waits up to the 45 s grace period.
@@ -100,7 +108,7 @@ Run everything from the compose directory on the VPS, as the user that owns `bac
    `backups/`, so keep a separate copy under `backups/pre-fresh-start/` and one off-host.
 
    ```sh
-   COOP_IMAGE=<NEW> COOP_PHASE2_RELEASE_CATALOG_PATH=/srv/hoenn/server-catalog/<CAT>/server-build-catalog.json COOP_PHASE2_RELEASE_CATALOG_SHA256=<CAT> docker compose run --rm --no-deps backup --once
+   docker compose run --rm --no-deps backup --once
    DUMP=$(ls -t backups/coop-*.dump | head -n 1); echo "$DUMP"
    mkdir -p backups/pre-fresh-start
    cp -p "$DUMP" backups/pre-fresh-start/
@@ -122,14 +130,13 @@ Run everything from the compose directory on the VPS, as the user that owns `bac
      "SELECT to_regclass('coop_pilot_checkpoint_archive')"
    ```
 
-   (Prefix these with the same three variables if `compose.yaml` already requires them.) `format_version`
-   must be `1`. The 64-character digest is `<HEX>`. The archive table should not exist yet; if it does,
+   `format_version` must be `1`. The 64-character digest is `<HEX>`. The archive table should not exist yet; if it does,
    stop and find out why.
 
 5. **Dry run** (no writes; keep the report).
 
    ```sh
-   COOP_IMAGE=<NEW> COOP_PHASE2_RELEASE_CATALOG_PATH=/srv/hoenn/server-catalog/<CAT>/server-build-catalog.json COOP_PHASE2_RELEASE_CATALOG_SHA256=<CAT> docker compose run --rm --no-deps server fresh-start --expect-sha256 <HEX> --dry-run | tee backups/pre-fresh-start/dry-run-<HEX>.json
+   COOP_IMAGE=<NEW> docker compose run --rm --no-deps server fresh-start --expect-sha256 <HEX> --dry-run | tee backups/pre-fresh-start/dry-run-<HEX>.json
    ```
 
    Abort unless every one of these holds:
@@ -151,7 +158,7 @@ Run everything from the compose directory on the VPS, as the user that owns `bac
 7. **Run it.** Add `--drop-sessions` only if every player must log in again.
 
    ```sh
-   COOP_IMAGE=<NEW> COOP_PHASE2_RELEASE_CATALOG_PATH=/srv/hoenn/server-catalog/<CAT>/server-build-catalog.json COOP_PHASE2_RELEASE_CATALOG_SHA256=<CAT> docker compose run --rm --no-deps server fresh-start --expect-sha256 <HEX> | tee backups/pre-fresh-start/fresh-start-<HEX>.json
+   COOP_IMAGE=<NEW> docker compose run --rm --no-deps server fresh-start --expect-sha256 <HEX> | tee backups/pre-fresh-start/fresh-start-<HEX>.json
    ```
 
    Exit 0 means `fresh_started` (or `already_fresh` on a rerun); exit 1 is a refusal with nothing written.
@@ -169,25 +176,29 @@ Run everything from the compose directory on the VPS, as the user that owns `bac
    digest must equal the report's `new_payload_sha256`. Record it: it is `<CURRENT>` for a Rollback B as
    long as nothing has written since.
 
-9. **Smoke-start the new server with the same pins.**
+9. **Leave the server stopped.** Do not start any server from this directory now, neither the old image
+   (it would let players save in the old format on the fresh checkpoint) nor the new one (the installed
+   `compose.yaml` does not give it the release catalog, so it would crash-loop).
 
    ```sh
-   COOP_IMAGE=<NEW> COOP_PHASE2_RELEASE_CATALOG_PATH=/srv/hoenn/server-catalog/<CAT>/server-build-catalog.json COOP_PHASE2_RELEASE_CATALOG_SHA256=<CAT> docker compose up -d --no-deps server
-   COOP_IMAGE=<NEW> COOP_PHASE2_RELEASE_CATALOG_PATH=/srv/hoenn/server-catalog/<CAT>/server-build-catalog.json COOP_PHASE2_RELEASE_CATALOG_SHA256=<CAT> docker compose exec -T server curl -fsS -o /dev/null -w '%{http_code}\n' http://127.0.0.1:3000/health/ready
-   COOP_IMAGE=<NEW> COOP_PHASE2_RELEASE_CATALOG_PATH=/srv/hoenn/server-catalog/<CAT>/server-build-catalog.json COOP_PHASE2_RELEASE_CATALOG_SHA256=<CAT> docker compose logs --since=5m server
+   docker compose ps --all server
    ```
 
-   Health must print `200`. Log in once with a test account; do not start or save a campaign. The new image
-   is now running on the fresh checkpoint, but `.env` still names the old one.
+   The server must still show `exited`.
 
 10. **Hand back to the workflow.** Continue with [RELEASES.md](RELEASES.md) "First multi-world rollout":
-    rerun the workflow so `deploy-release.sh` records `<NEW>` and `<CAT>` in `.env` and the release is
-    activated. Do not edit `.env` or activate by hand from this runbook.
+    with `HOENN_ROLLBACK_MODE=stopped` still set, set `HOENN_ROLLOUT_HOLD=false` and rerun the workflow.
+    `deploy-release.sh` installs the release's `compose.yaml`, writes `<NEW>` and `<CAT>` into `.env`,
+    performs the first start of the new server and checks `/health/ready`; then the release is activated.
+    If the health check fails it restores both files and leaves the server stopped (exit 5): fix the cause
+    and rerun, or use Rollback A or B below. Do not edit `.env`, start the server or activate by hand from
+    this runbook.
 
 ### If `deploy-release.sh` exits 3 or 4 after the fresh start
 
-Exit 3 means it rolled back to the previous (old) server and that server is healthy; exit 4 means the
-rollback itself failed. Either way, **stop the server immediately**:
+These happen only if `HOENN_ROLLBACK_MODE` was not `stopped`. Exit 3 means it rolled back to the previous
+(old) server and that server is healthy; exit 4 means the rollback itself failed. Either way, **stop the
+server immediately**:
 
 ```sh
 docker compose stop server
