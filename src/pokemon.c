@@ -757,20 +757,15 @@ void ZeroBoxMonData(struct BoxPokemon *boxMon)
 
 void ZeroMonData(struct Pokemon *mon)
 {
-    u32 arg;
-    ZeroBoxMonData(&mon->box);
-    arg = 0;
-    SetMonData(mon, MON_DATA_STATUS, &arg);
-    SetMonData(mon, MON_DATA_LEVEL, &arg);
-    SetMonData(mon, MON_DATA_HP, &arg);
-    SetMonData(mon, MON_DATA_MAX_HP, &arg);
-    SetMonData(mon, MON_DATA_ATK, &arg);
-    SetMonData(mon, MON_DATA_DEF, &arg);
-    SetMonData(mon, MON_DATA_SPEED, &arg);
-    SetMonData(mon, MON_DATA_SPATK, &arg);
-    SetMonData(mon, MON_DATA_SPDEF, &arg);
-    arg = MAIL_NONE;
-    SetMonData(mon, MON_DATA_MAIL, &arg);
+    /* Setting MON_DATA_HP through SetMonData also stores the box's HP_LOST
+     * as maxHP - hp, and maxHP still held the previous occupant's value at
+     * that point. The "empty" slot then kept a trace of whatever lived there
+     * before, so two ROMs with different histories hashed different bytes
+     * for the same empty party slot (co-op battle digests hash whole party
+     * records). Clear every byte instead; the result equals the old one for
+     * a slot that was already empty. */
+    memset(mon, 0, sizeof(*mon));
+    mon->mail = MAIL_NONE;
 }
 
 void ZeroPartyMons(struct Pokemon *party)

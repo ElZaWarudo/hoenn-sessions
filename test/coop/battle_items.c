@@ -374,6 +374,50 @@ static void CheckItemEffect(const struct ItemCase *c, enum BattlerId battler)
     }
 }
 
+/* The legacy ZeroMonData field sequence, applied to a slot that is already
+ * all zero: the bytes every empty party slot must have. */
+static void ZeroMonDataFromEmpty(struct Pokemon *mon)
+{
+    u32 arg = 0;
+
+    memset(mon, 0, sizeof(*mon));
+    SetMonData(mon, MON_DATA_STATUS, &arg);
+    SetMonData(mon, MON_DATA_LEVEL, &arg);
+    SetMonData(mon, MON_DATA_HP, &arg);
+    SetMonData(mon, MON_DATA_MAX_HP, &arg);
+    SetMonData(mon, MON_DATA_ATK, &arg);
+    SetMonData(mon, MON_DATA_DEF, &arg);
+    SetMonData(mon, MON_DATA_SPEED, &arg);
+    SetMonData(mon, MON_DATA_SPATK, &arg);
+    SetMonData(mon, MON_DATA_SPDEF, &arg);
+    arg = MAIL_NONE;
+    SetMonData(mon, MON_DATA_MAIL, &arg);
+}
+
+TEST("Cloud Coop empty party slots hash the same bytes whatever lived there before")
+{
+    struct Pokemon empty, reused;
+    u16 hp = 7;
+
+    /* The battle digest hashes whole party records, the empty slots of an
+     * opponent's party included. A slot that held a Pokemon in an earlier
+     * battle on one ROM, and never on the other, must still zero to the
+     * same bytes: ZeroMonData used to keep that Pokemon's max HP as the
+     * box's HP_LOST. */
+    ZeroMonDataFromEmpty(&empty);
+    CreateMemberMon(&reused, SPECIES_ZIGZAGOON, 30, 77);
+    SetMonData(&reused, MON_DATA_HP, &hp);
+    ZeroMonData(&reused);
+    EXPECT_EQ(memcmp(&empty, &reused, sizeof(empty)), 0);
+    EXPECT_EQ(GetMonData(&reused, MON_DATA_SPECIES), SPECIES_NONE);
+    EXPECT_EQ(GetMonData(&reused, MON_DATA_HP), 0);
+    EXPECT_EQ(GetMonData(&reused, MON_DATA_MAX_HP), 0);
+    EXPECT_EQ(GetMonData(&reused, MON_DATA_MAIL), MAIL_NONE);
+
+    ZeroMonData(&empty);
+    EXPECT_EQ(memcmp(&empty, &reused, sizeof(empty)), 0);
+}
+
 TEST("Cloud Coop item actions run identically on both ROMs and hash one battle")
 {
     struct Pokemon base0[MEMBER_MONS], base1[MEMBER_MONS];
