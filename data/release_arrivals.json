@@ -4,15 +4,15 @@
     "main": {
       "arrivals": {
         "from_cormoria": {
-          "rom_sha256": "160b546ed52ff0c7e9a8f111f554fa99371f310aadfd69146b703ab909df3247",
+          "rom_sha256": "4be48101b829aeb55d185fa37275e6e8e6eab303095099e37f4b560cb274630e",
           "sav_path": "data/release_arrivals/main.sav",
-          "sav_sha256": "4919eea6b0063f617d5ccc7917bd8b1935f2f5d385e725170c9824ae89f49339",
+          "sav_sha256": "3fb9e4674464d2301d335968d541f2bea0fbde798a6270e2d91353511e3315ed",
           "receipt": {
-            "family": "local-test-only-cormoria-20261004-v8d",
+            "family": "local-test-only-cormoria-20261004-v8e",
             "method": "tools/coop/recert_arrival.py --downs 4 --verify-cold-reload (cold Continue, START menu SAVE, overwrite; cold reload unchanged) from tracked template tools/tests/fixtures/arrival-v3-main-lilycove.sav",
             "input_save_sha256": "ab0a27b06ee2e0df69deb04939b2ff70876d1516f999c25bb252639cb30c5988",
             "mgba_executable_sha256": "743157a16a1cb478a2b45e6e20e9a482ea397c3820d7e8e27b1e048e85bd5546",
-            "evidence": "release-merge-20261004-v8c/diagnosis-receipt.json: CI-style clean build (multiworld_build_ci, C.UTF-8) of the harbor portal-retry fix 615eea7683; screenshots inspected: SAVE selected (shot-2250), 'Lilycove City' saved the game (shot-3300), cold reload START menu (cold shot-2250); same tracked template and pinned mGBA as the 64db8d09/f3aeb950 recert"
+            "evidence": "release-merge-20261004-v8e/receipt.json: two independent CI-style clean builds (multiworld_build_ci, C.UTF-8, workflow env) of the save checkpoint retry and ZeroMonData fixes (9840305105), identical ROMs; screenshots inspected: SAVE selected (shot-2250), 'Lilycove City' saved the game (shot-3300), cold reload START menu (cold shot-2250); same tracked template and pinned mGBA as the 160b546e/2916a1d9 recert"
           }
         }
       }
@@ -20,15 +20,15 @@
     "cormoria": {
       "arrivals": {
         "from_main": {
-          "rom_sha256": "2916a1d96884d021b332ae1d5e08399674e75f523723bc1d04cee9a8776d1533",
+          "rom_sha256": "25cdf0914fb2d573ef9f029358290f345f252ebe4d4f1cca7f73195c1ce512ac",
           "sav_path": "data/release_arrivals/cormoria.sav",
-          "sav_sha256": "fe3ae424beebdb2b56466dc27e8bd888b37a8c54aede338b6a477fe1ba41124d",
+          "sav_sha256": "20e7a38d78694a2d81a621063ae8e3e4b4153f7485189349dcec35fe94b98ab5",
           "receipt": {
-            "family": "local-test-only-cormoria-20261004-v8d",
+            "family": "local-test-only-cormoria-20261004-v8e",
             "method": "tools/coop/recert_arrival.py --downs 5 --verify-cold-reload (cold Continue, START menu SAVE, overwrite; cold reload unchanged) from tracked template tools/tests/fixtures/arrival-v3-cormoria-rivetshore.sav",
             "input_save_sha256": "1f4bb7b6d85ff0a63ff6650aa722692edc757a03149b0765d55fa5fa7b93b011",
             "mgba_executable_sha256": "743157a16a1cb478a2b45e6e20e9a482ea397c3820d7e8e27b1e048e85bd5546",
-            "evidence": "release-merge-20261004-v8c/diagnosis-receipt.json: CI-style clean build (multiworld_build_ci, C.UTF-8) of the harbor portal-retry fix 615eea7683; screenshots inspected: SAVE selected (shot-2250), 'Rivetshore City' saved the game (shot-3300), cold reload START menu (cold shot-2250); same tracked template and pinned mGBA as the 64db8d09/f3aeb950 recert"
+            "evidence": "release-merge-20261004-v8e/receipt.json: two independent CI-style clean builds (multiworld_build_ci, C.UTF-8, workflow env) of the save checkpoint retry and ZeroMonData fixes (9840305105), identical ROMs; screenshots inspected: SAVE selected (shot-2250), 'Rivetshore City' saved the game (shot-3300), cold reload START menu (cold shot-2250); same tracked template and pinned mGBA as the 160b546e/2916a1d9 recert"
           }
         }
       }
