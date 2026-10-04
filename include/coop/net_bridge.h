@@ -99,6 +99,7 @@ enum CoopBridgeStatus
 #define COOP_NET_BRIDGE_PLAYER_STATE_INTERVAL 6
 #define COOP_NET_BRIDGE_SIDECAR_STALE_INTERVAL 180
 #define COOP_NET_BRIDGE_CHECKPOINT_TIMEOUT_FRAMES 180
+#define COOP_NET_BRIDGE_PORTAL_REQUEST_FRAMES 120
 
 /* Checkpoint coordination is deliberately kept outside the wire structure.
  * The structure above is an ABI shared with Lua and changing it would make
@@ -231,10 +232,14 @@ enum CoopCheckpointRequestResult CoopNetBridge_RequestCheckpoint(void);
  * authenticated and committed by the host. */
 enum CoopCheckpointRequestResult CoopNetBridge_RequestPortalTravel(const char *portal_id);
 /* Event-script entry points set VAR_RESULT to TRUE only after the portal
- * request has been queued; the host completes travel after a saved checkpoint. */
+ * request has been queued; the host completes travel after a saved checkpoint.
+ * A request refused only by transient bridge traffic is retried once per frame
+ * for up to COOP_NET_BRIDGE_PORTAL_REQUEST_FRAMES, holding the script, before
+ * VAR_RESULT is set to FALSE. */
+struct ScriptContext;
 void CoopNetBridge_ScriptPortalAvailable(void);
-void CoopNetBridge_ScriptTravelToCormoria(void);
-void CoopNetBridge_ScriptTravelToMain(void);
+void CoopNetBridge_ScriptTravelToCormoria(struct ScriptContext *ctx);
+void CoopNetBridge_ScriptTravelToMain(struct ScriptContext *ctx);
 bool8 CoopNetBridge_ConsumeCheckpointGrant(void);
 bool8 CoopNetBridge_IsCheckpointAuthorizedForSave(void);
 /* Called by the normal save path after TrySavingData has completed. A failed

@@ -13,6 +13,7 @@
 #include "coop/trade_offer.h"
 #include "coop/trade_runtime.h"
 #include "johto/bug_contest.h"
+#include "script.h"
 #include "constants/map_groups.h"
 #include "../data/map_group_count.h"
 
@@ -1048,14 +1049,64 @@ void CoopNetBridge_ScriptPortalAvailable(void)
     gSpecialVar_Result = IsPortalAvailable();
 }
 
-void CoopNetBridge_ScriptTravelToCormoria(void)
+/* The bridge Lua runs at VBlank, before the next frame's script step, and
+ * hands the ROM every frame it read from the sidecar; CoopNetBridge_Poll only
+ * consumes them after the callbacks. A harbor YES therefore regularly sees an
+ * ordinary in-flight frame (partner presence, companion, party chunk) or a
+ * not-yet-drained outbound one, and RequestCheckpoint must refuse that frame.
+ * Refusing the voyage on that alone told a ready player "try again once your
+ * session is ready". Retry once per frame, after each Poll/VBlank exchange,
+ * and give up with the same refusal only when the window expires or cloud
+ * mode is gone. */
+static const char *sScriptPortalId;
+static u16 sScriptPortalAttempts;
+
+static bool8 TryScriptPortalTravel(void)
 {
-    gSpecialVar_Result = CoopNetBridge_RequestPortalTravel("to_cormoria") == COOP_CHECKPOINT_REQUEST_STARTED;
+    if (sScriptPortalId != NULL
+     && CoopNetBridge_RequestPortalTravel(sScriptPortalId) == COOP_CHECKPOINT_REQUEST_STARTED)
+    {
+        gSpecialVar_Result = TRUE;
+    }
+    else if (sScriptPortalId != NULL && IsPortalAvailable()
+          && ++sScriptPortalAttempts < COOP_NET_BRIDGE_PORTAL_REQUEST_FRAMES)
+    {
+        return FALSE;
+    }
+    else
+    {
+        gSpecialVar_Result = FALSE;
+    }
+    sScriptPortalId = NULL;
+    sScriptPortalAttempts = 0;
+    return TRUE;
 }
 
-void CoopNetBridge_ScriptTravelToMain(void)
+static void BeginScriptPortalTravel(struct ScriptContext *ctx, const char *portal_id)
 {
-    gSpecialVar_Result = CoopNetBridge_RequestPortalTravel("to_main") == COOP_CHECKPOINT_REQUEST_STARTED;
+    sScriptPortalId = portal_id;
+    sScriptPortalAttempts = 0;
+    if (TryScriptPortalTravel())
+        return;
+    if (ctx == NULL)
+    {
+        sScriptPortalId = NULL;
+        sScriptPortalAttempts = 0;
+        gSpecialVar_Result = FALSE;
+        return;
+    }
+    SetupNativeScript(ctx, TryScriptPortalTravel);
+    ctx->waitAfterCallNative = TRUE;
+}
+
+void CoopNetBridge_ScriptTravelToCormoria(struct ScriptContext *ctx)
+{
+    BeginScriptPortalTravel(ctx, "to_cormoria");
+}
+
+void CoopNetBridge_ScriptTravelToMain(struct ScriptContext *ctx)
+{
+    BeginScriptPortalTravel(ctx, "to_main");
 }
 
 bool8 CoopNetBridge_ConsumeCheckpointGrant(void)

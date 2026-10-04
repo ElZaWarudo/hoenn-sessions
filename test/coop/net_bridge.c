@@ -2696,19 +2696,23 @@ TEST("Cloud Coop portal request validates stable ID and precedes checkpoint read
 TEST("Harbor script portals queue their fixed world routes only in cloud mode")
 {
     struct CoopBridgeMessage message;
+    struct ScriptContext ctx = {0};
 
     InitTestBridge();
     CoopNetBridge_ScriptPortalAvailable();
     EXPECT_EQ(gSpecialVar_Result, FALSE);
-    CoopNetBridge_ScriptTravelToCormoria();
+    CoopNetBridge_ScriptTravelToCormoria(&ctx);
     EXPECT_EQ(gSpecialVar_Result, FALSE);
+    /* Offline is final at once: the script is never held for a retry. */
+    EXPECT_EQ(ctx.nativePtr, NULL);
+    EXPECT(!ctx.waitAfterCallNative);
     /* Only the ROM_READY that bridge init always announces is queued. */
     PopInitialRomReady();
 
     EstablishTestCloudSession();
     CoopNetBridge_ScriptPortalAvailable();
     EXPECT_EQ(gSpecialVar_Result, TRUE);
-    CoopNetBridge_ScriptTravelToCormoria();
+    CoopNetBridge_ScriptTravelToCormoria(&ctx);
     EXPECT_EQ(gSpecialVar_Result, TRUE);
     EXPECT(CoopNetBridge_DequeueGameToNetwork(&message));
     EXPECT_EQ(message.type, COOP_BRIDGE_MESSAGE_PORTAL_TRAVEL_REQUEST);
@@ -2718,7 +2722,7 @@ TEST("Harbor script portals queue their fixed world routes only in cloud mode")
     EXPECT_EQ(message.type, COOP_BRIDGE_MESSAGE_CHECKPOINT_READY);
 
     EstablishTestCloudSession();
-    CoopNetBridge_ScriptTravelToMain();
+    CoopNetBridge_ScriptTravelToMain(&ctx);
     EXPECT_EQ(gSpecialVar_Result, TRUE);
     EXPECT(CoopNetBridge_DequeueGameToNetwork(&message));
     EXPECT_EQ(message.type, COOP_BRIDGE_MESSAGE_PORTAL_TRAVEL_REQUEST);
@@ -2726,6 +2730,131 @@ TEST("Harbor script portals queue their fixed world routes only in cloud mode")
     EXPECT(memcmp(message.payload, "to_main", 7) == 0);
     EXPECT(CoopNetBridge_DequeueGameToNetwork(&message));
     EXPECT_EQ(message.type, COOP_BRIDGE_MESSAGE_CHECKPOINT_READY);
+}
+
+
+/* Lua delivers inbound frames at VBlank and CoopNetBridge_Poll consumes them
+ * after the frame's callbacks, so the harbor YES runs while an ordinary frame
+ * is still in network_to_game. Player a's v8c ferry refusal: */
+static void HostDeliverInboundBeforeScript(u32 sequence)
+{
+    struct CoopBridgeMessage message;
+    u8 payload[COOP_ONLINE_STATUS_SIZE] = {0};
+
+    payload[0] = 99; /* nobody's request: consumed and ignored by Poll */
+    EXPECT(CoopBridgeMessage_Seal(&message, COOP_BRIDGE_MESSAGE_ONLINE_STATUS,
+                                 sequence, 17, payload, sizeof(payload)));
+    EXPECT(CoopNetBridge_EnqueueNetworkToGame(&message));
+}
+
+/* One emulated frame after the script step: Poll drains inbound. The test
+ * bridge has no overworld, so clear the world-not-ready mark the way a
+ * PlayerState from a ready field does. */
+static void RunTestBridgeFrame(void)
+{
+    CoopNetBridge_Poll();
+    gCoopNetBridge.status_flags &= ~COOP_BRIDGE_STATUS_WORLD_NOT_READY;
+}
+
+static void ExpectQueuedPortal(const char *portal_id, u16 length)
+{
+    struct CoopBridgeMessage message;
+
+    EXPECT(CoopNetBridge_DequeueGameToNetwork(&message));
+    EXPECT_EQ(message.type, COOP_BRIDGE_MESSAGE_PORTAL_TRAVEL_REQUEST);
+    EXPECT_EQ(message.length, length);
+    EXPECT(memcmp(message.payload, portal_id, length) == 0);
+    EXPECT(CoopNetBridge_DequeueGameToNetwork(&message));
+    EXPECT_EQ(message.type, COOP_BRIDGE_MESSAGE_CHECKPOINT_READY);
+    EXPECT(CoopBridgeQueue_IsEmpty(&gCoopNetBridge.game_to_network));
+    EXPECT_EQ(CoopNetBridge_GetCheckpointState(), COOP_CHECKPOINT_STATE_WAITING_FOR_GRANT);
+}
+
+TEST("Harbor YES with an in-flight inbound frame departs on the next frame")
+{
+    struct ScriptContext ctx = {0};
+
+    EstablishTestCloudSession();
+    HostDeliverInboundBeforeScript(2);
+    /* The single-frame gate itself still refuses this frame. */
+    EXPECT_EQ(CoopNetBridge_RequestPortalTravel("to_cormoria"), COOP_CHECKPOINT_REQUEST_REJECTED);
+
+    gSpecialVar_Result = 0xFFFF;
+    CoopNetBridge_ScriptTravelToCormoria(&ctx);
+    /* Held, not refused: VAR_RESULT is undecided and nothing is queued. */
+    EXPECT_EQ(gSpecialVar_Result, 0xFFFF);
+    EXPECT(ctx.nativePtr != NULL);
+    EXPECT(ctx.waitAfterCallNative);
+    EXPECT(CoopBridgeQueue_IsEmpty(&gCoopNetBridge.game_to_network));
+
+    RunTestBridgeFrame();
+    EXPECT(RunScriptCommand(&ctx));
+    EXPECT_EQ(gSpecialVar_Result, TRUE);
+    ExpectQueuedPortal("to_cormoria", 11);
+}
+
+TEST("Harbor YES with an undrained outbound frame departs once Lua drains it")
+{
+    struct ScriptContext ctx = {0};
+    struct CoopBridgeMessage message;
+
+    EstablishTestCloudSession();
+    EXPECT(CoopNetBridge_EnqueueGameToNetwork(COOP_BRIDGE_MESSAGE_PLAYER_STATE, NULL, 0));
+    gSpecialVar_Result = 0xFFFF;
+    CoopNetBridge_ScriptTravelToMain(&ctx);
+    EXPECT_EQ(gSpecialVar_Result, 0xFFFF);
+
+    /* A frame where Lua has not sent yet keeps the script waiting. */
+    EXPECT(RunScriptCommand(&ctx));
+    EXPECT_EQ(gSpecialVar_Result, 0xFFFF);
+
+    EXPECT(CoopNetBridge_DequeueGameToNetwork(&message));
+    EXPECT_EQ(message.type, COOP_BRIDGE_MESSAGE_PLAYER_STATE);
+    EXPECT(RunScriptCommand(&ctx));
+    EXPECT_EQ(gSpecialVar_Result, TRUE);
+    ExpectQueuedPortal("to_main", 7);
+}
+
+TEST("Harbor YES refuses after the bounded window and never queues late")
+{
+    struct ScriptContext ctx = {0};
+    u32 frames;
+
+    EstablishTestCloudSession();
+    HostDeliverInboundBeforeScript(2);
+    gSpecialVar_Result = 0xFFFF;
+    CoopNetBridge_ScriptTravelToCormoria(&ctx);
+    /* The inbound frame is never drained: the voyage is refused after the
+     * window with the existing "can't depart" path, never left hanging. */
+    for (frames = 1; gSpecialVar_Result == 0xFFFF && frames < 1000; frames++)
+        EXPECT(RunScriptCommand(&ctx));
+    EXPECT_EQ(frames, COOP_NET_BRIDGE_PORTAL_REQUEST_FRAMES);
+    EXPECT_EQ(gSpecialVar_Result, FALSE);
+    EXPECT(CoopBridgeQueue_IsEmpty(&gCoopNetBridge.game_to_network));
+    EXPECT_EQ(CoopNetBridge_GetCheckpointState(), COOP_CHECKPOINT_STATE_IDLE);
+
+    /* A later YES starts a fresh window and departs once traffic clears. */
+    gSpecialVar_Result = 0xFFFF;
+    CoopNetBridge_ScriptTravelToCormoria(&ctx);
+    EXPECT_EQ(gSpecialVar_Result, 0xFFFF);
+    RunTestBridgeFrame();
+    EXPECT(RunScriptCommand(&ctx));
+    EXPECT_EQ(gSpecialVar_Result, TRUE);
+    ExpectQueuedPortal("to_cormoria", 11);
+}
+
+TEST("Harbor YES stops retrying when cloud mode is lost")
+{
+    struct ScriptContext ctx = {0};
+
+    EstablishTestCloudSession();
+    HostDeliverInboundBeforeScript(2);
+    gSpecialVar_Result = 0xFFFF;
+    CoopNetBridge_ScriptTravelToCormoria(&ctx);
+    EXPECT_EQ(gSpecialVar_Result, 0xFFFF);
+    InitTestBridge();
+    EXPECT(RunScriptCommand(&ctx));
+    EXPECT_EQ(gSpecialVar_Result, FALSE);
 }
 
 /* The test bridge has no overworld. The first PlayerState publication after
