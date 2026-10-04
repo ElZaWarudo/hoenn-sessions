@@ -4,15 +4,15 @@
     "main": {
       "arrivals": {
         "from_cormoria": {
-          "rom_sha256": "2bea9552e2fa53442b98828b1b63f40fa9f9fc6496b78d95b1cf857c52eb520f",
+          "rom_sha256": "64db8d09fceaf58d8895587ae9e87ecbc51e13abf33ed2afceeaba4efcf99b85",
           "sav_path": "data/release_arrivals/main.sav",
-          "sav_sha256": "85177b8535c6f56cae32d66fe79994c07d6574e31fe2dd8a018be5e01c8200fc",
+          "sav_sha256": "9444f4d5c711554038d015127ec7a2c059d342f074b6d68054d426397ffafc63",
           "receipt": {
-            "family": "local-test-only-cormoria-20261004-v8b",
-            "method": "tools/coop/recert_arrival.py --do-save --downs 4 (cold Continue, START menu SAVE, overwrite; cold reload unchanged)",
+            "family": "local-test-only-cormoria-20261004-recert",
+            "method": "tools/coop/recert_arrival.py --downs 4 --verify-cold-reload (cold Continue, START menu SAVE, overwrite; cold reload unchanged) from tracked template tools/tests/fixtures/arrival-v3-main-lilycove.sav",
             "input_save_sha256": "ab0a27b06ee2e0df69deb04939b2ff70876d1516f999c25bb252639cb30c5988",
             "mgba_executable_sha256": "743157a16a1cb478a2b45e6e20e9a482ea397c3820d7e8e27b1e048e85bd5546",
-            "evidence": "release-merge-20261004-v8b/receipt.json arrival_recert; live roundtrip receipt-04 passed with this save"
+            "evidence": "recert-20261004/receipt.json: CI-reproducible ROM (clean clone of a96268363e, locale-independent link order); screenshots inspected: SAVE selected (shot-2250), 'Lilycove City' saved the game (shot-3300), cold reload START menu (cold shot-2250); plaintext save state equals the v8b save used by live roundtrip receipt-04 apart from the re-randomised encryption key and RTC-derived fields"
           }
         }
       }
@@ -20,15 +20,15 @@
     "cormoria": {
       "arrivals": {
         "from_main": {
-          "rom_sha256": "f0581c8ff690ea80a1824fe07f2907e637d262f20fd25e1dfc163ff63e3feb8d",
+          "rom_sha256": "f3aeb9507e743af285b7a105470749be57f3df622dc3f7a0138b436aa71185fb",
           "sav_path": "data/release_arrivals/cormoria.sav",
-          "sav_sha256": "21cf67261fdfe142d30e3ab76cc5dc9edf86b20546b54a1277e3c9b42039b055",
+          "sav_sha256": "35998331795ab225cc2fe5396aafe8f721f22615f20ff07c9069fd1c426c028a",
           "receipt": {
-            "family": "local-test-only-cormoria-20261004-v8b",
-            "method": "tools/coop/recert_arrival.py --do-save --downs 5 (cold Continue, START menu SAVE, overwrite; cold reload unchanged)",
+            "family": "local-test-only-cormoria-20261004-recert",
+            "method": "tools/coop/recert_arrival.py --downs 5 --verify-cold-reload (cold Continue, START menu SAVE, overwrite; cold reload unchanged) from tracked template tools/tests/fixtures/arrival-v3-cormoria-rivetshore.sav",
             "input_save_sha256": "1f4bb7b6d85ff0a63ff6650aa722692edc757a03149b0765d55fa5fa7b93b011",
             "mgba_executable_sha256": "743157a16a1cb478a2b45e6e20e9a482ea397c3820d7e8e27b1e048e85bd5546",
-            "evidence": "release-merge-20261004-v8b/receipt.json arrival_recert; live roundtrip receipt-04 passed with this save"
+            "evidence": "recert-20261004/receipt.json: CI-reproducible ROM (clean clone of a96268363e, locale-independent link order); screenshots inspected: SAVE selected (shot-2250), 'Rivetshore City' saved the game (shot-3300), cold reload START menu (cold shot-2250); plaintext save state equals the v8b save used by live roundtrip receipt-04 apart from the re-randomised encryption key and RTC-derived fields"
           }
         }
       }
