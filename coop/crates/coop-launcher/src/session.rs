@@ -2358,7 +2358,7 @@ impl SessionLifecycle {
         auth: AuthSession,
         config: SessionConfig,
     ) -> Result<Self, SessionError> {
-        Self::acquire_inner(api, auth, config, None, false, None).await
+        Self::acquire_inner(api, auth, config, None, false, None, false).await
     }
 
     /// Acquires a session with rotating-token support enabled.  Every
@@ -2375,7 +2375,7 @@ impl SessionLifecycle {
         config: SessionConfig,
         keychain: Arc<dyn RefreshTokenStore>,
     ) -> Result<Self, SessionError> {
-        Self::acquire_inner(api, auth, config, Some(keychain), false, None).await
+        Self::acquire_inner(api, auth, config, Some(keychain), false, None, false).await
     }
 
     /// Acquire the server-selected active world before choosing a local ROM.
@@ -2493,7 +2493,7 @@ impl SessionLifecycle {
         config: SessionConfig,
         keychain: Arc<dyn RefreshTokenStore>,
     ) -> Result<Self, SessionError> {
-        Self::acquire_inner(api, auth, config, Some(keychain), true, None).await
+        Self::acquire_inner(api, auth, config, Some(keychain), true, None, false).await
     }
 
     /// Materializes a lease acquired through the server's world-aware route.
@@ -2506,7 +2506,48 @@ impl SessionLifecycle {
         keychain: Arc<dyn RefreshTokenStore>,
         response: AcquireWorldLeaseResponse,
     ) -> Result<Self, SessionError> {
-        Self::acquire_inner(api, auth, config, Some(keychain), false, Some(response)).await
+        Self::acquire_inner(
+            api,
+            auth,
+            config,
+            Some(keychain),
+            false,
+            Some(response),
+            false,
+        )
+        .await
+    }
+
+    /// Materializes a world lease this launcher has just acquired from its
+    /// own durable acquire intent, before any runtime has used it.
+    ///
+    /// Unlike [`Self::from_world_lease_with_keychain`], a local epoch failure
+    /// that cannot mean another live owner (anything but a stale epoch or a
+    /// busy epoch lock) releases the lease best-effort while keeping the
+    /// saved sign-in. Without that release the server keeps the unused
+    /// lease until its TTL and reconnect grace expire, refusing every start
+    /// in between.
+    ///
+    /// # Errors
+    ///
+    /// Same as [`Self::from_world_lease_with_keychain`].
+    pub async fn from_started_world_lease_with_keychain<A: CloudApi>(
+        api: &A,
+        auth: AuthSession,
+        config: SessionConfig,
+        keychain: Arc<dyn RefreshTokenStore>,
+        response: AcquireWorldLeaseResponse,
+    ) -> Result<Self, SessionError> {
+        Self::acquire_inner(
+            api,
+            auth,
+            config,
+            Some(keychain),
+            false,
+            Some(response),
+            true,
+        )
+        .await
     }
 
     async fn acquire_inner<A: CloudApi>(
@@ -2516,6 +2557,7 @@ impl SessionLifecycle {
         keychain: Option<Arc<dyn RefreshTokenStore>>,
         replace_same_client: bool,
         preacquired: Option<AcquireWorldLeaseResponse>,
+        release_unowned_epoch_failure: bool,
     ) -> Result<Self, SessionError> {
         let keep_credentials_on_setup_failure = preacquired.is_some();
         let expected_head = preacquired
@@ -2579,7 +2621,12 @@ impl SessionLifecycle {
             // accepted epoch. Never release it on a stale-epoch result: doing
             // so would disconnect the rightful owner. The durable acquire
             // key remains available until the server reports it closed.
-            if !keep_credentials_on_setup_failure {
+            // Other epoch failures prove no local owner, so a lease the
+            // caller has just started may be released.
+            let may_have_live_owner = matches!(error, EpochError::Stale | EpochError::Busy);
+            if !keep_credentials_on_setup_failure
+                || (release_unowned_epoch_failure && !may_have_live_owner)
+            {
                 release_best_effort(api, &mut auth, &lease, keychain.as_ref()).await;
             }
             return Err(error.into());
@@ -8487,6 +8534,66 @@ mod lifecycle_tests {
             Err(SessionError::Epoch(_))
         ));
         assert_eq!(cloud.release_requests.lock().unwrap().len(), release_count);
+    }
+
+    #[tokio::test]
+    async fn started_world_lease_keeps_a_stale_epoch_owner_but_releases_unowned_failures() {
+        let (root, existing, cloud) = bootstrap(false).await;
+        let keychain: Arc<dyn RefreshTokenStore> = Arc::new(TestKeychain::default());
+        let login = || async {
+            AuthSession::login(
+                cloud.as_ref(),
+                keychain.as_ref(),
+                "ash",
+                Password::new("password").unwrap(),
+            )
+            .await
+            .unwrap()
+        };
+        let response = coop_cloud::AcquireWorldLeaseResponse {
+            lease: existing.lease,
+            active_world_id: existing.config.rom_world_id,
+            active_snapshot_id: None,
+        };
+        let release_count = cloud.release_requests.lock().unwrap().len();
+
+        // Stale: the accepted epoch may belong to a live local owner.
+        let mut config = existing.config.clone();
+        config.workspace_parent = root.path().join("stale-world-sessions");
+        assert!(matches!(
+            SessionLifecycle::from_started_world_lease_with_keychain(
+                cloud.as_ref(),
+                login().await,
+                config,
+                Arc::clone(&keychain),
+                response,
+            )
+            .await,
+            Err(SessionError::Epoch(crate::EpochError::Stale))
+        ));
+        assert_eq!(cloud.release_requests.lock().unwrap().len(), release_count);
+
+        // Corrupt local history cannot have an owner: release the lease.
+        let corrupt = root.path().join("corrupt-epoch.json");
+        std::fs::write(&corrupt, b"not an epoch record").unwrap();
+        let mut config = existing.config.clone();
+        config.epoch_store = EpochStore::new(corrupt);
+        config.workspace_parent = root.path().join("corrupt-world-sessions");
+        assert!(matches!(
+            SessionLifecycle::from_started_world_lease_with_keychain(
+                cloud.as_ref(),
+                login().await,
+                config,
+                Arc::clone(&keychain),
+                response,
+            )
+            .await,
+            Err(SessionError::Epoch(crate::EpochError::Corrupt))
+        ));
+        assert_eq!(
+            cloud.release_requests.lock().unwrap().len(),
+            release_count + 1
+        );
     }
 
     #[tokio::test]

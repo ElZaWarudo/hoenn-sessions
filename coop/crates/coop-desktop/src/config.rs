@@ -6,7 +6,7 @@ use std::{
 };
 
 use coop_cloud::{CharacterId, UserId};
-use coop_launcher::{TrustedManifestKey, TrustedReleaseKey};
+use coop_launcher::{EpochError, EpochStore, TrustedManifestKey, TrustedReleaseKey};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
@@ -53,7 +53,6 @@ pub struct UserPaths {
     workspace_parent: PathBuf,
     account_file: PathBuf,
     cleanup_file: PathBuf,
-    epoch_file: PathBuf,
 }
 
 impl UserPaths {
@@ -82,7 +81,6 @@ impl UserPaths {
             workspace_parent: state_root.join("sessions"),
             account_file: state_root.join("account.json"),
             cleanup_file: state_root.join("credential-cleanup.txt"),
-            epoch_file: state_root.join("epoch.json"),
             state_root,
             runtime_root,
         })
@@ -106,8 +104,14 @@ impl UserPaths {
     pub fn account_file(&self) -> &Path {
         &self.account_file
     }
-    pub fn epoch_file(&self) -> &Path {
-        &self.epoch_file
+    /// Selects the epoch store for the authenticated character. Play,
+    /// recovery and portal travel must all go through this one selection:
+    /// the legacy device-wide `epoch.json` stays in use while it belongs to
+    /// this character (keeping its epochs monotonic), and any other character
+    /// gets `characters/<id>/epoch.json` instead of failing closed on a
+    /// record it does not own.
+    pub fn epoch_store(&self, character_id: CharacterId) -> Result<EpochStore, EpochError> {
+        EpochStore::for_character(&self.state_root, character_id)
     }
 
     pub fn ensure_directories(&self) -> Result<(), ConfigError> {

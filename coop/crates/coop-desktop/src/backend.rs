@@ -309,7 +309,7 @@ struct NextRuntime {
     keychain: Arc<dyn RefreshTokenStore>,
     handoff: coop_launcher::GenerationHandoff,
     trusted_manifest_key: TrustedManifestKey,
-    epoch_file: PathBuf,
+    epoch_store: EpochStore,
     workspace_parent: PathBuf,
     sidecar_path: PathBuf,
     rom_path: PathBuf,
@@ -780,6 +780,16 @@ impl BackendActor {
             }
         };
 
+        // Epoch history is per character: another account's device-wide
+        // record must not block this character from starting.
+        let epoch_store = match self.config.paths.epoch_store(auth.character_id) {
+            Ok(store) => store,
+            Err(_) => {
+                self.auth = Some(auth);
+                let _ = events.send(BackendEvent::StartFailed(StartFailure::Unavailable));
+                return;
+            }
+        };
         let intent =
             match WorldAcquireIntentStore::new(self.config.paths.state_root(), auth.character_id) {
                 Ok(intent) => intent,
@@ -789,86 +799,15 @@ impl BackendActor {
                     return;
                 }
             };
-        let request = match intent.read() {
-            Ok(Some(existing)) => existing.request,
-            Ok(None) => match new_world_acquire_request(auth.character_id) {
-                Ok(request) => request,
+        let (request, response) =
+            match acquire_play_world(&self.api, &mut auth, &intent, &self.keychain).await {
+                Ok(acquired) => acquired,
                 Err(()) => {
                     self.auth = Some(auth);
                     let _ = events.send(BackendEvent::StartFailed(StartFailure::Unavailable));
                     return;
                 }
-            },
-            Err(_) => {
-                self.auth = Some(auth);
-                let _ = events.send(BackendEvent::StartFailed(StartFailure::Unavailable));
-                return;
-            }
-        };
-        let mut request = match intent.load_or_create(request) {
-            Ok(request) => request,
-            Err(_) => {
-                self.auth = Some(auth);
-                let _ = events.send(BackendEvent::StartFailed(StartFailure::Unavailable));
-                return;
-            }
-        };
-        let response = match SessionLifecycle::acquire_world_with_keychain(
-            &self.api,
-            &mut auth,
-            request,
-            &self.keychain,
-        )
-        .await
-        {
-            Ok(response) => response,
-            Err(coop_launcher::SessionError::AcquireClosed) => {
-                // The server has proved that the durable key can no longer
-                // acquire a lease. Clear only that exact request, then
-                // persist one replacement before retrying once.
-                if intent.clear_exact(request).is_err() {
-                    self.auth = Some(auth);
-                    let _ = events.send(BackendEvent::StartFailed(StartFailure::Unavailable));
-                    return;
-                }
-                request = match new_world_acquire_request(auth.character_id) {
-                    Ok(request) => request,
-                    Err(()) => {
-                        self.auth = Some(auth);
-                        let _ = events.send(BackendEvent::StartFailed(StartFailure::Unavailable));
-                        return;
-                    }
-                };
-                request = match intent.load_or_create(request) {
-                    Ok(request) => request,
-                    Err(_) => {
-                        self.auth = Some(auth);
-                        let _ = events.send(BackendEvent::StartFailed(StartFailure::Unavailable));
-                        return;
-                    }
-                };
-                match SessionLifecycle::acquire_world_with_keychain(
-                    &self.api,
-                    &mut auth,
-                    request,
-                    &self.keychain,
-                )
-                .await
-                {
-                    Ok(response) => response,
-                    Err(_) => {
-                        self.auth = Some(auth);
-                        let _ = events.send(BackendEvent::StartFailed(StartFailure::Unavailable));
-                        return;
-                    }
-                }
-            }
-            Err(_) => {
-                self.auth = Some(auth);
-                let _ = events.send(BackendEvent::StartFailed(StartFailure::Unavailable));
-                return;
-            }
-        };
+            };
         let journal = match RomTravelJournal::new(
             self.config.paths.state_root().join("travel"),
             auth.character_id,
@@ -1226,11 +1165,14 @@ impl BackendActor {
             rom_world_id: response.active_world_id,
             manifest: compatibility,
             trusted_manifest_key: self.config.runtime.manifest_key.clone(),
-            epoch_store: EpochStore::new(self.config.paths.epoch_file()),
+            epoch_store: epoch_store.clone(),
             workspace_parent: self.config.paths.workspace_parent().to_owned(),
             bridge_lua_dir: bridge_path.clone(),
         };
-        let mut session = match SessionLifecycle::from_world_lease_with_keychain(
+        // A local failure here releases the unused lease where no other owner
+        // can exist. The intent stays: the release is not confirmed to this
+        // caller, so the next start replays it (410 once released).
+        let mut session = match SessionLifecycle::from_started_world_lease_with_keychain(
             &self.api,
             auth,
             config,
@@ -1253,15 +1195,8 @@ impl BackendActor {
                 && record.source_revision == Some(session.revision)
         });
         if cold_source_resume && session.discard_resume_after_aborted_handoff().is_err() {
-            let released = session
-                .release_lease_keep_credentials(&self.api)
-                .await
-                .is_ok();
-            if released {
-                let _ = intent.clear_exact(request);
-            }
-            self.auth = Some(session.auth);
-            let _ = events.send(BackendEvent::StartFailed(StartFailure::Unavailable));
+            self.fail_started_session(session, &intent, request, events)
+                .await;
             return;
         }
         match journal.read() {
@@ -1278,8 +1213,8 @@ impl BackendActor {
                         recover_pending_handoff(&self.api, &session, &journal).await,
                         Ok(StageOutcome::Aborted)
                     ) {
-                        self.auth = Some(session.auth);
-                        let _ = events.send(BackendEvent::StartFailed(StartFailure::Unavailable));
+                        self.fail_started_session(session, &intent, request, events)
+                            .await;
                         return;
                     }
                 }
@@ -1288,8 +1223,8 @@ impl BackendActor {
                         .await
                         .is_err()
                     {
-                        self.auth = Some(session.auth);
-                        let _ = events.send(BackendEvent::StartFailed(StartFailure::Unavailable));
+                        self.fail_started_session(session, &intent, request, events)
+                            .await;
                         return;
                     }
                 }
@@ -1297,8 +1232,8 @@ impl BackendActor {
             },
             Ok(None) => {}
             Err(_) => {
-                self.auth = Some(session.auth);
-                let _ = events.send(BackendEvent::StartFailed(StartFailure::Unavailable));
+                self.fail_started_session(session, &intent, request, events)
+                    .await;
                 return;
             }
         }
@@ -1317,7 +1252,6 @@ impl BackendActor {
             stop: Arc::clone(&stop_signal),
         };
         let trusted_manifest_key = self.config.runtime.manifest_key.clone();
-        let epoch_file = self.config.paths.epoch_file().to_owned();
         let workspace_parent = self.config.paths.workspace_parent().to_owned();
         let keychain = Arc::clone(&self.keychain);
         let commands = self.commands.clone();
@@ -1329,7 +1263,7 @@ impl BackendActor {
                     keychain,
                     handoff,
                     trusted_manifest_key,
-                    epoch_file,
+                    epoch_store,
                     workspace_parent,
                     sidecar_path,
                     rom_path,
@@ -1404,7 +1338,7 @@ impl BackendActor {
         };
         // A generation without a trusted region catalog cannot bind a lease
         // to a ROM world, and the server rejects resume for an unbound lease.
-        let selection = match self.recovery_world_selection() {
+        let selection = match self.recovery_world_selection(auth.character_id) {
             Ok(selection) => selection,
             Err(_) => {
                 self.auth = Some(auth);
@@ -1587,9 +1521,33 @@ impl BackendActor {
         Ok(())
     }
 
+    /// Fails a start whose session materialized but cannot run. The unused
+    /// lease is released so the next start is not refused until it expires;
+    /// the intent is cleared only once the server confirms that release.
+    async fn fail_started_session(
+        &mut self,
+        mut session: SessionLifecycle,
+        intent: &WorldAcquireIntentStore,
+        request: AcquireLeaseRequest,
+        events: &mpsc::Sender<BackendEvent>,
+    ) {
+        if session
+            .release_lease_keep_credentials(&self.api)
+            .await
+            .is_ok()
+        {
+            let _ = intent.clear_exact(request);
+        }
+        self.auth = Some(session.auth);
+        let _ = events.send(BackendEvent::StartFailed(StartFailure::Unavailable));
+    }
+
     /// Loads the accepted generation's trusted region catalog for recovery.
     /// The world itself is chosen later from the server's acquire response.
-    fn recovery_world_selection(&self) -> Result<RecoveryWorldSelection, BackendError> {
+    fn recovery_world_selection(
+        &self,
+        character_id: coop_cloud::CharacterId,
+    ) -> Result<RecoveryWorldSelection, BackendError> {
         let now = now_seconds().map_err(|_| BackendError::Store)?;
         let generation = self
             .store
@@ -1610,7 +1568,11 @@ impl BackendActor {
             catalog,
             mgba_path: mgba.path().to_owned(),
             manifest_key: self.config.runtime.manifest_key.clone(),
-            epoch_file: self.config.paths.epoch_file().to_owned(),
+            epoch_store: self
+                .config
+                .paths
+                .epoch_store(character_id)
+                .map_err(|_| BackendError::Store)?,
             workspace_parent: self.config.paths.workspace_parent().to_owned(),
             bridge_lua_dir: generation.handoff().path().join("bridge"),
         })
@@ -1623,7 +1585,7 @@ struct RecoveryWorldSelection {
     catalog: TrustedRomCatalog,
     mgba_path: PathBuf,
     manifest_key: TrustedManifestKey,
-    epoch_file: PathBuf,
+    epoch_store: EpochStore,
     workspace_parent: PathBuf,
     bridge_lua_dir: PathBuf,
 }
@@ -1650,7 +1612,7 @@ impl RecoveryWorldSelection {
             rom_world_id: response.active_world_id,
             manifest: compatibility,
             trusted_manifest_key: self.manifest_key.clone(),
-            epoch_store: EpochStore::new(self.epoch_file.clone()),
+            epoch_store: self.epoch_store.clone(),
             workspace_parent: self.workspace_parent.clone(),
             bridge_lua_dir: self.bridge_lua_dir.clone(),
         })
@@ -2000,7 +1962,7 @@ async fn run_runtime_chain(
             keychain,
             handoff,
             trusted_manifest_key,
-            epoch_file,
+            epoch_store,
             workspace_parent,
             sidecar_path,
             rom_path,
@@ -2017,7 +1979,7 @@ async fn run_runtime_chain(
             keychain,
             handoff,
             trusted_manifest_key,
-            epoch_file,
+            epoch_store,
             workspace_parent,
             sidecar_path,
             rom_path,
@@ -2046,7 +2008,7 @@ async fn run_runtime_with_session(
     keychain: Arc<dyn RefreshTokenStore>,
     _handoff: coop_launcher::GenerationHandoff,
     trusted_manifest_key: TrustedManifestKey,
-    epoch_file: PathBuf,
+    epoch_store: EpochStore,
     workspace_parent: PathBuf,
     sidecar_path: PathBuf,
     rom_path: PathBuf,
@@ -2180,7 +2142,7 @@ async fn run_runtime_with_session(
         keychain,
         _handoff,
         trusted_manifest_key,
-        epoch_file,
+        epoch_store,
         workspace_parent,
         sidecar_path,
         mgba_path,
@@ -2219,7 +2181,7 @@ async fn run_portal_transition(
     keychain: Arc<dyn RefreshTokenStore>,
     handoff: coop_launcher::GenerationHandoff,
     trusted_manifest_key: TrustedManifestKey,
-    epoch_file: PathBuf,
+    epoch_store: EpochStore,
     workspace_parent: PathBuf,
     sidecar_path: PathBuf,
     mgba_path: PathBuf,
@@ -2253,7 +2215,7 @@ async fn run_portal_transition(
             keychain,
             handoff,
             trusted_manifest_key,
-            epoch_file,
+            epoch_store,
             workspace_parent,
             sidecar_path,
             mgba_path,
@@ -2536,7 +2498,7 @@ async fn run_portal_transition(
         rom_world_id: destination_world,
         manifest: compatibility,
         trusted_manifest_key: trusted_manifest_key.clone(),
-        epoch_store: EpochStore::new(epoch_file.clone()),
+        epoch_store: epoch_store.clone(),
         workspace_parent: workspace_parent.clone(),
         bridge_lua_dir: bridge_path.clone(),
     };
@@ -2574,7 +2536,7 @@ async fn run_portal_transition(
             keychain,
             handoff,
             trusted_manifest_key,
-            epoch_file,
+            epoch_store,
             workspace_parent,
             sidecar_path,
             rom_path: destination_rom_path,
@@ -2663,7 +2625,7 @@ async fn run_paired_portal_transition(
     keychain: Arc<dyn RefreshTokenStore>,
     handoff: coop_launcher::GenerationHandoff,
     trusted_manifest_key: TrustedManifestKey,
-    epoch_file: PathBuf,
+    epoch_store: EpochStore,
     workspace_parent: PathBuf,
     sidecar_path: PathBuf,
     mgba_path: PathBuf,
@@ -2975,7 +2937,7 @@ async fn run_paired_portal_transition(
         rom_world_id: destination_world,
         manifest: compatibility,
         trusted_manifest_key: trusted_manifest_key.clone(),
-        epoch_store: EpochStore::new(epoch_file.clone()),
+        epoch_store: epoch_store.clone(),
         workspace_parent: workspace_parent.clone(),
         bridge_lua_dir: bridge_path.clone(),
     };
@@ -3010,7 +2972,7 @@ async fn run_paired_portal_transition(
             keychain,
             handoff,
             trusted_manifest_key,
-            epoch_file,
+            epoch_store,
             workspace_parent,
             sidecar_path,
             rom_path: destination_rom_path,
@@ -3213,6 +3175,75 @@ fn now_seconds() -> Result<i64, ()> {
 
 fn hex_digest(digest: [u8; 32]) -> String {
     digest.iter().map(|byte| format!("{byte:02x}")).collect()
+}
+
+/// Acquires the play world lease from the character's durable intent.
+///
+/// An existing intent is replayed exactly, so a lost response or a local
+/// failure after acquire reuses the same lease instead of minting a new
+/// client instance the server would refuse while that lease is live. Only a
+/// key the server reports closed (410) is rotated, and the replacement keeps
+/// the same client instance.
+async fn acquire_play_world<A: CloudApi>(
+    api: &A,
+    auth: &mut AuthSession,
+    intent: &WorldAcquireIntentStore,
+    keychain: &Arc<dyn RefreshTokenStore>,
+) -> Result<(AcquireLeaseRequest, AcquireWorldLeaseResponse), ()> {
+    let request = match intent.read().map_err(|_| ())? {
+        Some(existing) => existing.request,
+        None => new_world_acquire_request(auth.character_id)?,
+    };
+    let request = intent.load_or_create(request).map_err(|_| ())?;
+    match acquire_intent_world(api, auth, request, keychain).await {
+        Ok(response) => Ok((request, response)),
+        Err(SessionError::AcquireClosed) => {
+            // The server has proved that the durable key can no longer
+            // acquire a lease. Clear only that exact request, then persist
+            // one replacement before retrying once.
+            intent.clear_exact(request).map_err(|_| ())?;
+            let replacement = intent
+                .load_or_create(replacement_world_acquire_request(request)?)
+                .map_err(|_| ())?;
+            let response = acquire_intent_world(api, auth, replacement, keychain)
+                .await
+                .map_err(|_| ())?;
+            Ok((replacement, response))
+        }
+        Err(_) => Err(()),
+    }
+}
+
+/// Sends a persisted play intent through the route that matches its
+/// replacement flag.
+async fn acquire_intent_world<A: CloudApi>(
+    api: &A,
+    auth: &mut AuthSession,
+    request: AcquireLeaseRequest,
+    keychain: &Arc<dyn RefreshTokenStore>,
+) -> Result<AcquireWorldLeaseResponse, SessionError> {
+    if request.replace_same_client {
+        SessionLifecycle::acquire_world_replacing_same_client_with_keychain(
+            api, auth, request, keychain,
+        )
+        .await
+    } else {
+        SessionLifecycle::acquire_world_with_keychain(api, auth, request, keychain).await
+    }
+}
+
+/// A new key for the same client instance after the server closed the
+/// previous one. It may replace only that instance's own lease.
+fn replacement_world_acquire_request(
+    closed: AcquireLeaseRequest,
+) -> Result<AcquireLeaseRequest, ()> {
+    let idempotency_key = IdempotencyKey::new(uuid::Uuid::new_v4()).map_err(|_| ())?;
+    Ok(AcquireLeaseRequest::new(
+        closed.character_id,
+        closed.client_instance_id,
+        idempotency_key,
+    )
+    .replacing_same_client())
 }
 
 fn new_world_acquire_request(
@@ -4197,6 +4228,519 @@ mod tests {
             drop(calls);
             assert_eq!(fixture.intent.read().unwrap(), None);
             fixture.assert_evidence_untouched();
+        }
+
+        /// Epoch history is selected per authenticated character, through
+        /// the same `UserPaths::epoch_store` used by play and recovery.
+        mod epoch_selection {
+            use super::*;
+            use crate::config::UserPaths;
+            use coop_launcher::{EpochError, SessionLifecycle};
+
+            fn other_character() -> CharacterId {
+                CharacterId::new(uuid::Uuid::from_u128(0x99)).unwrap()
+            }
+
+            fn seed_legacy(paths: &UserPaths, owner: CharacterId, epoch: u32) {
+                EpochStore::new(paths.state_root().join("epoch.json"))
+                    .accept(
+                        owner,
+                        SessionId::new(uuid::Uuid::from_u128(0x98)).unwrap(),
+                        SessionEpoch::new(epoch).unwrap(),
+                    )
+                    .unwrap();
+            }
+
+            /// The greatest epoch recorded at `path` (including its
+            /// versioned siblings) for `owner`'s session.
+            fn read_epoch(path: &std::path::Path, owner: CharacterId) -> Option<u32> {
+                let session = if owner == character() { 0x53 } else { 0x98 };
+                EpochStore::new(path)
+                    .read(
+                        owner,
+                        SessionId::new(uuid::Uuid::from_u128(session)).unwrap(),
+                    )
+                    .unwrap()
+                    .map(|record| record.greatest_epoch)
+            }
+
+            fn character_dir(paths: &UserPaths) -> std::path::PathBuf {
+                paths
+                    .state_root()
+                    .join("characters")
+                    .join(character().to_string())
+            }
+
+            fn character_epoch_path(paths: &UserPaths) -> std::path::PathBuf {
+                paths
+                    .state_root()
+                    .join("characters")
+                    .join(character().to_string())
+                    .join("epoch.json")
+            }
+
+            async fn start(
+                fixture: &Fixture,
+                epoch_store: EpochStore,
+            ) -> Result<SessionLifecycle, SessionError> {
+                let mut auth = fixture.auth().await;
+                let request = AcquireLeaseRequest::new(
+                    character(),
+                    ClientInstanceId::new(uuid::Uuid::new_v4()).unwrap(),
+                    IdempotencyKey::new(uuid::Uuid::new_v4()).unwrap(),
+                );
+                let response = SessionLifecycle::acquire_world_with_keychain(
+                    &fixture.cloud,
+                    &mut auth,
+                    request,
+                    &fixture.keychain,
+                )
+                .await
+                .unwrap();
+                let mut config = fixture.config(&response);
+                config.epoch_store = epoch_store;
+                SessionLifecycle::from_started_world_lease_with_keychain(
+                    &fixture.cloud,
+                    auth,
+                    config,
+                    Arc::clone(&fixture.keychain),
+                    response,
+                )
+                .await
+            }
+
+            #[tokio::test]
+            async fn another_characters_device_epoch_does_not_block_start() {
+                let fixture = Fixture::new();
+                let paths = UserPaths::from_local_app_data(fixture.root.path()).unwrap();
+                paths.ensure_directories().unwrap();
+                seed_legacy(&paths, other_character(), 7);
+                let legacy = paths.state_root().join("epoch.json");
+                // The device-wide store alone refuses this character.
+                assert!(matches!(
+                    EpochStore::new(&legacy).accept(
+                        character(),
+                        SessionId::new(uuid::Uuid::from_u128(0x53)).unwrap(),
+                        SessionEpoch::new(2).unwrap(),
+                    ),
+                    Err(EpochError::IdentityMismatch)
+                ));
+
+                let store = paths.epoch_store(character()).unwrap();
+                assert_eq!(store.path(), character_epoch_path(&paths));
+                let session = start(&fixture, store).await;
+                assert!(session.is_ok(), "{:?}", session.err());
+                assert_eq!(
+                    read_epoch(&character_epoch_path(&paths), character()),
+                    Some(2)
+                );
+                assert_eq!(read_epoch(&legacy, other_character()), Some(7));
+            }
+
+            #[tokio::test]
+            async fn same_character_keeps_its_device_epoch_history() {
+                let fixture = Fixture::new();
+                let paths = UserPaths::from_local_app_data(fixture.root.path()).unwrap();
+                paths.ensure_directories().unwrap();
+                seed_legacy(&paths, character(), 1);
+                let legacy = paths.state_root().join("epoch.json");
+                let store = paths.epoch_store(character()).unwrap();
+                assert_eq!(store.path(), legacy);
+                let session = start(&fixture, store).await;
+                assert!(session.is_ok(), "{:?}", session.err());
+                assert_eq!(read_epoch(&legacy, character()), Some(2));
+                assert!(!character_dir(&paths).exists());
+            }
+
+            #[tokio::test]
+            async fn same_character_epoch_is_not_reset_by_selection() {
+                let fixture = Fixture::new();
+                let paths = UserPaths::from_local_app_data(fixture.root.path()).unwrap();
+                paths.ensure_directories().unwrap();
+                seed_legacy(&paths, character(), 5);
+                let store = paths.epoch_store(character()).unwrap();
+                // The server's epoch 2 is stale against this character's
+                // history; a fresh per-character file would have hidden it.
+                assert!(matches!(
+                    start(&fixture, store).await,
+                    Err(SessionError::Epoch(EpochError::Stale))
+                ));
+                // Seeded under another session id; the record is unchanged.
+                let legacy = EpochStore::new(paths.state_root().join("epoch.json"));
+                let record = legacy
+                    .read(
+                        character(),
+                        SessionId::new(uuid::Uuid::from_u128(0x98)).unwrap(),
+                    )
+                    .unwrap()
+                    .unwrap();
+                assert_eq!(record.greatest_epoch, 5);
+                assert!(!character_dir(&paths).exists());
+            }
+
+            #[tokio::test]
+            async fn recovery_uses_the_play_epoch_selection() {
+                let fixture = Fixture::new();
+                let paths = UserPaths::from_local_app_data(fixture.root.path()).unwrap();
+                paths.ensure_directories().unwrap();
+                seed_legacy(&paths, other_character(), 7);
+                let auth = fixture.auth().await;
+                let (result, auth) = super::super::super::reconcile_recovery_with_world(
+                    &fixture.cloud,
+                    &fixture.keychain,
+                    auth,
+                    &fixture.intent,
+                    prior_client(),
+                    |response| {
+                        let mut config = fixture.config(response);
+                        config.epoch_store = paths.epoch_store(character()).map_err(|_| ())?;
+                        Ok(config)
+                    },
+                )
+                .await;
+                assert_eq!(result, RecoveryResult::StillUncertain);
+                assert!(auth.is_some());
+                assert_eq!(fixture.cloud.calls.lock().unwrap().resume_packages, 1);
+                assert_eq!(
+                    read_epoch(&character_epoch_path(&paths), character()),
+                    Some(2)
+                );
+                // Play selects the same, now-populated, store afterwards.
+                assert_eq!(
+                    paths.epoch_store(character()).unwrap().path(),
+                    character_epoch_path(&paths)
+                );
+                fixture.assert_evidence_untouched();
+            }
+        }
+
+        /// A server that models lease ownership: a replayed key returns its
+        /// live lease, a released or expired one is closed, and another
+        /// client instance is refused while a lease is live.
+        mod post_acquire_failure {
+            use super::*;
+            use crate::config::UserPaths;
+            use coop_launcher::SessionLifecycle;
+
+            #[derive(Default)]
+            struct Server {
+                minted: u32,
+                live: Option<(LeaseContract, bool)>,
+                history: Vec<(IdempotencyKey, SessionId)>,
+                requests: Vec<AcquireLeaseRequest>,
+                releases: usize,
+                fail_release: bool,
+                expired: bool,
+            }
+
+            #[derive(Default)]
+            struct LeaseServer(Mutex<Server>);
+
+            impl AuthApi for LeaseServer {
+                fn login(&self, _: LoginRequest) -> AuthFuture<'_, LoginResponse> {
+                    Box::pin(async {
+                        LoginResponse::new(
+                            UserId::new(uuid::Uuid::from_u128(0x54)).unwrap(),
+                            character(),
+                            AccessToken::new("start-access").unwrap(),
+                            RefreshToken::new("start-refresh").unwrap(),
+                            RefreshFamilyId::new(uuid::Uuid::from_u128(0x55)).unwrap(),
+                            UnixTimestampMillis::new(u64::MAX / 4),
+                            UnixTimestampMillis::new(u64::MAX / 4),
+                        )
+                        .map_err(|_| AuthError::InvalidResponse)
+                    })
+                }
+                fn refresh(&self, _: RefreshRequest) -> AuthFuture<'_, RefreshResponse> {
+                    Box::pin(async { Err(AuthError::Transport) })
+                }
+                fn logout(&self, _: LogoutRequest) -> AuthFuture<'_, LogoutResponse> {
+                    Box::pin(async { Ok(LogoutResponse::default()) })
+                }
+            }
+
+            impl CloudApi for LeaseServer {
+                fn acquire<'a>(
+                    &'a self,
+                    _: &'a AuthSession,
+                    _: AcquireLeaseRequest,
+                ) -> CloudFuture<'a, LeaseContract> {
+                    Box::pin(async { Err(SessionError::Unauthorized) })
+                }
+                fn acquire_world<'a>(
+                    &'a self,
+                    _: &'a AuthSession,
+                    request: AcquireLeaseRequest,
+                ) -> CloudFuture<'a, AcquireWorldLeaseResponse> {
+                    let mut server = self.0.lock().unwrap();
+                    server.requests.push(request);
+                    let respond = |lease: LeaseContract| AcquireWorldLeaseResponse {
+                        lease,
+                        active_world_id: server_world(),
+                        active_snapshot_id: None,
+                    };
+                    let replayed = server
+                        .history
+                        .iter()
+                        .find(|(key, _)| *key == request.idempotency_key)
+                        .map(|(_, session)| *session);
+                    let result = if let Some(session) = replayed {
+                        match server.live {
+                            Some((lease, false))
+                                if !server.expired && lease.session_id == session =>
+                            {
+                                Ok(respond(lease))
+                            }
+                            _ => Err(SessionError::AcquireClosed),
+                        }
+                    } else if server.live.is_some_and(|(lease, released)| {
+                        !released
+                            && !(request.replace_same_client
+                                && lease.client_instance_id == request.client_instance_id)
+                    }) {
+                        Err(SessionError::AcquireConflict)
+                    } else {
+                        server.minted += 1;
+                        let session = SessionId::new(uuid::Uuid::from_u128(
+                            0x100 + u128::from(server.minted),
+                        ))
+                        .unwrap();
+                        let lease = LeaseContract::new(
+                            LeaseFence::new(
+                                session,
+                                character(),
+                                Revision::initial(),
+                                SessionEpoch::new(server.minted + 1).unwrap(),
+                                request.client_instance_id,
+                            ),
+                            UnixTimestampMillis::new(4_000_000_000_000),
+                            1,
+                        )
+                        .unwrap();
+                        server.live = Some((lease, false));
+                        server.expired = false;
+                        server.history.push((request.idempotency_key, session));
+                        Ok(respond(lease))
+                    };
+                    Box::pin(async move { result })
+                }
+                fn heartbeat<'a>(
+                    &'a self,
+                    _: &'a AuthSession,
+                    _: HeartbeatLeaseRequest,
+                ) -> CloudFuture<'a, LeaseContract> {
+                    let lease = self.0.lock().unwrap().live.map(|(lease, _)| lease);
+                    Box::pin(async move { lease.ok_or(SessionError::Lease) })
+                }
+                fn reconnect<'a>(
+                    &'a self,
+                    _: &'a AuthSession,
+                    _: ReconnectLeaseRequest,
+                ) -> CloudFuture<'a, LeaseContract> {
+                    Box::pin(async { Err(SessionError::Cloud) })
+                }
+                fn release<'a>(
+                    &'a self,
+                    _: &'a AuthSession,
+                    request: ReleaseLeaseRequest,
+                ) -> CloudFuture<'a, LogoutResponse> {
+                    let mut server = self.0.lock().unwrap();
+                    if server.fail_release {
+                        return Box::pin(async { Err(SessionError::Cloud) });
+                    }
+                    let mut released_now = false;
+                    if let Some((lease, released)) = server.live.as_mut() {
+                        if lease.session_id == request.session_id {
+                            *released = true;
+                            released_now = true;
+                        }
+                    }
+                    if released_now {
+                        server.releases += 1;
+                    }
+                    Box::pin(async { Ok(LogoutResponse::default()) })
+                }
+                fn resume_package<'a>(
+                    &'a self,
+                    _: &'a AuthSession,
+                    _: CharacterId,
+                    _: Revision,
+                ) -> CloudFuture<'a, Option<SignedManifestEnvelope>> {
+                    Box::pin(async { Ok(None) })
+                }
+                fn artifact<'a>(
+                    &'a self,
+                    _: &'a AuthSession,
+                    _: CharacterId,
+                    _: ArtifactIdentity,
+                    _: Revision,
+                ) -> CloudFuture<'a, Vec<u8>> {
+                    Box::pin(async { Err(SessionError::ArtifactNotFound) })
+                }
+                fn list_snapshots<'a>(
+                    &'a self,
+                    _: &'a AuthSession,
+                    _: SnapshotListRequest,
+                ) -> CloudFuture<'a, SnapshotListResponse> {
+                    Box::pin(async { Err(SessionError::Cloud) })
+                }
+                fn restore<'a>(
+                    &'a self,
+                    _: &'a AuthSession,
+                    _: SnapshotRestoreRequest,
+                ) -> CloudFuture<'a, SnapshotRestoreResponse> {
+                    Box::pin(async { Err(SessionError::Cloud) })
+                }
+                fn prepare<'a>(
+                    &'a self,
+                    _: &'a AuthSession,
+                    _: PrepareSnapshotRequest,
+                ) -> CloudFuture<'a, SnapshotPrepareResponse> {
+                    Box::pin(async { Err(SessionError::Cloud) })
+                }
+                fn upload<'a>(&'a self, _: &'a UploadTarget, _: Vec<u8>) -> CloudFuture<'a, ()> {
+                    Box::pin(async { Err(SessionError::Cloud) })
+                }
+                fn finalize<'a>(
+                    &'a self,
+                    _: &'a AuthSession,
+                    _: SnapshotFinalizeRequest,
+                ) -> CloudFuture<'a, SnapshotRecord> {
+                    Box::pin(async { Err(SessionError::Cloud) })
+                }
+            }
+
+            struct Desktop {
+                fixture: Fixture,
+                server: LeaseServer,
+                paths: UserPaths,
+                intent: WorldAcquireIntentStore,
+            }
+
+            impl Desktop {
+                fn new() -> Self {
+                    let fixture = Fixture::new();
+                    let paths = UserPaths::from_local_app_data(fixture.root.path()).unwrap();
+                    paths.ensure_directories().unwrap();
+                    let intent =
+                        WorldAcquireIntentStore::new(paths.state_root(), character()).unwrap();
+                    Self {
+                        fixture,
+                        server: LeaseServer::default(),
+                        paths,
+                        intent,
+                    }
+                }
+
+                /// The play start sequence: a fresh sign-in (a failed start
+                /// does not hand its credentials back), the durable-intent
+                /// acquire, then materialization with `epoch_store`.
+                async fn start(
+                    &self,
+                    epoch_store: EpochStore,
+                ) -> Result<SessionLifecycle, Option<SessionError>> {
+                    let mut auth = AuthSession::login(
+                        &self.server,
+                        self.fixture.keychain.as_ref(),
+                        "player",
+                        AuthSession::password("test-password").unwrap(),
+                    )
+                    .await
+                    .unwrap();
+                    let (_, response) = super::super::super::acquire_play_world(
+                        &self.server,
+                        &mut auth,
+                        &self.intent,
+                        &self.fixture.keychain,
+                    )
+                    .await
+                    .map_err(|()| None)?;
+                    let mut config = self.fixture.config(&response);
+                    config.epoch_store = epoch_store;
+                    SessionLifecycle::from_started_world_lease_with_keychain(
+                        &self.server,
+                        auth,
+                        config,
+                        Arc::clone(&self.fixture.keychain),
+                        response,
+                    )
+                    .await
+                    .map_err(Some)
+                }
+
+                fn corrupt_store(&self) -> EpochStore {
+                    let path = self.paths.state_root().join("corrupt-epoch.json");
+                    std::fs::write(&path, b"not an epoch record").unwrap();
+                    EpochStore::new(path)
+                }
+
+                fn store(&self) -> EpochStore {
+                    self.paths.epoch_store(character()).unwrap()
+                }
+            }
+
+            #[tokio::test]
+            async fn local_failure_after_acquire_releases_and_retry_starts_immediately() {
+                let desktop = Desktop::new();
+                assert!(matches!(
+                    desktop.start(desktop.corrupt_store()).await,
+                    Err(Some(SessionError::Epoch(_)))
+                ));
+                assert_eq!(desktop.server.0.lock().unwrap().releases, 1);
+
+                let retried = desktop.start(desktop.store()).await;
+                assert!(retried.is_ok(), "{:?}", retried.err());
+                let server = desktop.server.0.lock().unwrap();
+                assert_eq!(server.requests.len(), 3, "replay, then one replacement");
+                assert_eq!(server.requests[1], server.requests[0]);
+                assert_eq!(
+                    server.requests[2].client_instance_id,
+                    server.requests[0].client_instance_id
+                );
+                assert_eq!(server.minted, 2);
+            }
+
+            #[tokio::test]
+            async fn failed_release_keeps_the_intent_and_retry_replays_it() {
+                let desktop = Desktop::new();
+                desktop.server.0.lock().unwrap().fail_release = true;
+                assert!(desktop.start(desktop.corrupt_store()).await.is_err());
+                let first = desktop.server.0.lock().unwrap().requests[0];
+                assert_eq!(desktop.intent.read().unwrap().unwrap().request, first);
+
+                desktop.server.0.lock().unwrap().fail_release = false;
+                let retried = desktop.start(desktop.store()).await;
+                assert!(retried.is_ok(), "{:?}", retried.err());
+                let server = desktop.server.0.lock().unwrap();
+                assert_eq!(server.requests.as_slice(), &[first, first]);
+                assert_eq!(server.minted, 1, "the live lease was reused");
+            }
+
+            #[tokio::test]
+            async fn closed_key_with_lease_in_grace_replaces_its_own_instance() {
+                let desktop = Desktop::new();
+                desktop.server.0.lock().unwrap().fail_release = true;
+                assert!(desktop.start(desktop.corrupt_store()).await.is_err());
+                {
+                    let mut server = desktop.server.0.lock().unwrap();
+                    server.fail_release = false;
+                    // TTL elapsed, reconnect grace not yet: the key is closed
+                    // but the lease still blocks any other instance.
+                    server.expired = true;
+                }
+                let retried = desktop.start(desktop.store()).await;
+                assert!(retried.is_ok(), "{:?}", retried.err());
+                let server = desktop.server.0.lock().unwrap();
+                assert_eq!(server.requests.len(), 3);
+                assert!(server.requests[2].replace_same_client);
+                assert_eq!(
+                    server.requests[2].client_instance_id,
+                    server.requests[0].client_instance_id
+                );
+                let replacement = server.requests[2];
+                drop(server);
+                assert_eq!(desktop.intent.read().unwrap().unwrap().request, replacement);
+            }
         }
     }
 
