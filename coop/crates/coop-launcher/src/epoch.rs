@@ -255,7 +255,15 @@ impl EpochStore {
         for entry in entries {
             let entry = entry.map_err(EpochError::Io)?;
             let name = entry.file_name();
-            if !name.to_string_lossy().starts_with(&prefix) {
+            // Only `<name>.epoch-<u32>` is written here (and pruned). A copy
+            // renamed aside, such as `epoch.json.epoch-9.bak`, is not live
+            // state: counting it would keep another character's record in
+            // force after the operator moved it away.
+            if !name
+                .to_string_lossy()
+                .strip_prefix(&prefix)
+                .is_some_and(|epoch| epoch.parse::<u32>().is_ok())
+            {
                 continue;
             }
             versioned_count += 1;
@@ -641,6 +649,87 @@ mod character_tests {
         );
         assert!(matches!(
             second_again.accept(second, session, SessionEpoch::new(1).unwrap()),
+            Err(EpochError::Stale)
+        ));
+    }
+
+    fn write_foreign_record(path: &Path, character_id: CharacterId, greatest_epoch: u32) {
+        let record = EpochRecord {
+            format_version: FORMAT_VERSION,
+            character_id,
+            session_id: SessionId::new(uuid::Uuid::new_v4()).unwrap(),
+            greatest_epoch,
+        };
+        fs::write(path, serde_json::to_vec(&record).unwrap()).unwrap();
+    }
+
+    /// Field state of the affected desktop: the previous character's
+    /// `epoch.json` and its Windows versioned record were renamed aside with a
+    /// `.bak` suffix before a new, never-saved character pressed Play.
+    #[test]
+    fn renamed_aside_history_does_not_bind_a_new_character() {
+        let root = tempfile::tempdir().unwrap();
+        let previous = CharacterId::new(uuid::Uuid::new_v4()).unwrap();
+        let current = CharacterId::new(uuid::Uuid::new_v4()).unwrap();
+        let session = SessionId::new(uuid::Uuid::new_v4()).unwrap();
+        write_foreign_record(
+            &root
+                .path()
+                .join("epoch.json.pre-account-switch-previous.bak"),
+            previous,
+            1,
+        );
+        write_foreign_record(
+            &root
+                .path()
+                .join("epoch.json.epoch-9.pre-account-switch-previous.bak"),
+            previous,
+            9,
+        );
+        let legacy = EpochStore::new(root.path().join("epoch.json"));
+        assert_eq!(legacy.read(current, session).unwrap(), None);
+        legacy
+            .accept(current, session, SessionEpoch::new(2).unwrap())
+            .unwrap();
+
+        let other_root = tempfile::tempdir().unwrap();
+        fs::write(
+            other_root.path().join("epoch.json.epoch-3.bak"),
+            b"not a record",
+        )
+        .unwrap();
+        let store = EpochStore::for_character(other_root.path(), current).unwrap();
+        store
+            .accept(current, session, SessionEpoch::new(2).unwrap())
+            .unwrap();
+    }
+
+    /// A live versioned record of another character still makes the
+    /// device-wide file unusable for a new character; the per-character
+    /// selection must route around it without losing the old history.
+    #[test]
+    fn foreign_versioned_history_routes_a_new_character_to_its_own_store() {
+        let root = tempfile::tempdir().unwrap();
+        let previous = CharacterId::new(uuid::Uuid::new_v4()).unwrap();
+        let current = CharacterId::new(uuid::Uuid::new_v4()).unwrap();
+        let session = SessionId::new(uuid::Uuid::new_v4()).unwrap();
+        write_foreign_record(&root.path().join("epoch.json.epoch-9"), previous, 9);
+
+        let device_wide = EpochStore::new(root.path().join("epoch.json"));
+        assert!(matches!(
+            device_wide.accept(current, session, SessionEpoch::new(2).unwrap()),
+            Err(EpochError::IdentityMismatch)
+        ));
+
+        let store = EpochStore::for_character(root.path(), current).unwrap();
+        assert_ne!(store.path(), device_wide.path());
+        store
+            .accept(current, session, SessionEpoch::new(2).unwrap())
+            .unwrap();
+        let previous_store = EpochStore::for_character(root.path(), previous).unwrap();
+        assert_eq!(previous_store.path(), device_wide.path());
+        assert!(matches!(
+            previous_store.accept(previous, session, SessionEpoch::new(9).unwrap()),
             Err(EpochError::Stale)
         ));
     }

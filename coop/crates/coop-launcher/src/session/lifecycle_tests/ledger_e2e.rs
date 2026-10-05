@@ -54,6 +54,9 @@ use crate::{
 /// Crash recovery under the same catalog-bound server harness.
 mod recovery_e2e;
 
+/// A never-saved character starting past another character's epoch history.
+mod fresh_start_e2e;
+
 const PASSWORD: &str = "ledger e2e password";
 
 /// Each test runs a real server whose password hashing is slow in debug
