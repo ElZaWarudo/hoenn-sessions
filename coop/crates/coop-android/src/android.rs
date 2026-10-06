@@ -591,8 +591,13 @@ async fn run(
             .write(true)
             .open(root.join("world-acquire-process.lock"))
             .map_err(|_| RunError::internal("No se pudo abrir bloqueo de región"))?;
-        lock.try_lock()
-            .map_err(|_| RunError::internal("Otra sesión local usa la región"))?;
+        // std::fs::File::try_lock always reports Unsupported on Android.
+        coop_launcher::world_acquire::try_lock_file(&lock).map_err(|error| match error {
+            std::fs::TryLockError::WouldBlock => {
+                RunError::internal("Otra sesión local usa la región")
+            }
+            std::fs::TryLockError::Error(_) => RunError::internal("No se pudo bloquear la región"),
+        })?;
         Some(lock)
     };
     let api = ReqwestCloudApi::new(SERVER).map_err(|_| RunError::internal("Endpoint inválido"))?;
