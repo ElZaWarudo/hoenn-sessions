@@ -507,8 +507,16 @@ impl FileLock {
     }
 }
 
+/// Takes a nonblocking exclusive advisory lock that the kernel releases when
+/// the descriptor closes. `std::fs::File::try_lock` is unsupported on Android
+/// (it always reports `Unsupported`), so Android uses `flock` directly.
+///
+/// # Errors
+///
+/// Returns `WouldBlock` when another descriptor holds the lock, or the
+/// underlying I/O error.
 #[cfg(not(windows))]
-fn try_lock_file(file: &File) -> Result<(), std::fs::TryLockError> {
+pub fn try_lock_file(file: &File) -> Result<(), std::fs::TryLockError> {
     #[cfg(target_os = "android")]
     {
         rustix::fs::flock(file, rustix::fs::FlockOperation::NonBlockingLockExclusive).map_err(
