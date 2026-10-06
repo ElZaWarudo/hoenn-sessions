@@ -596,9 +596,7 @@ async fn run(
             std::fs::TryLockError::WouldBlock => {
                 RunError::internal("Otra sesión local usa la región")
             }
-            std::fs::TryLockError::Error(_) => {
-                RunError::internal("No se pudo bloquear la región")
-            }
+            std::fs::TryLockError::Error(_) => RunError::internal("No se pudo bloquear la región"),
         })?;
         Some(lock)
     };
