@@ -355,7 +355,7 @@ impl PairedTravelJournal {
             .write(true)
             .create(true)
             .open(lock_path)?;
-        file.lock()?;
+        crate::file_lock::lock_file(&file)?;
         Ok(file)
     }
 

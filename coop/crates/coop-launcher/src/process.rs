@@ -1035,10 +1035,10 @@ fn open_read_nofollow(path: &Path) -> io::Result<fs::File> {
             .share_mode(0x0000_0007)
             .custom_flags(0x0020_0000);
     }
-    #[cfg(target_os = "linux")]
+    #[cfg(any(target_os = "linux", target_os = "android"))]
     {
         use std::os::unix::fs::OpenOptionsExt;
-        options.custom_flags(0x0002_0000);
+        options.custom_flags(libc::O_NOFOLLOW);
     }
     options.open(path)
 }

@@ -592,7 +592,7 @@ async fn run(
             .open(root.join("world-acquire-process.lock"))
             .map_err(|_| RunError::internal("No se pudo abrir bloqueo de región"))?;
         // std::fs::File::try_lock always reports Unsupported on Android.
-        coop_launcher::world_acquire::try_lock_file(&lock).map_err(|error| match error {
+        coop_launcher::file_lock::try_lock_file(&lock).map_err(|error| match error {
             std::fs::TryLockError::WouldBlock => {
                 RunError::internal("Otra sesión local usa la región")
             }

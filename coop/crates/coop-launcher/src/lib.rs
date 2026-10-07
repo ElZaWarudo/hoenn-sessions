@@ -8,6 +8,7 @@ pub mod battle;
 pub mod compat;
 pub mod desktop;
 pub mod epoch;
+pub mod file_lock;
 pub mod group_travel;
 pub mod keychain;
 pub mod ledger;

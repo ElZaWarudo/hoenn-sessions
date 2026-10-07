@@ -762,13 +762,13 @@ fn open_bounded_regular_file(path: &Path, max_bytes: u64) -> io::Result<File> {
         // then rejects that component unless it is an ordinary file.
         options.custom_flags(0x0020_0000);
     }
-    #[cfg(target_os = "linux")]
+    #[cfg(any(target_os = "linux", target_os = "android"))]
     {
         use std::os::unix::fs::OpenOptionsExt;
         // O_NOFOLLOW closes the final-component symlink race.  O_NONBLOCK
         // ensures a replacement FIFO cannot make open block before its type
         // is checked on the resulting handle.
-        options.custom_flags(0x0002_0000 | 0x0000_0800);
+        options.custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK);
     }
     #[cfg(any(
         target_os = "dragonfly",

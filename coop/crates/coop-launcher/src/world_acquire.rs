@@ -449,11 +449,11 @@ fn open_record_read(path: &Path) -> io::Result<File> {
     options.read(true);
     #[cfg(windows)]
     options.custom_flags(0x0020_0000);
-    #[cfg(target_os = "linux")]
+    #[cfg(any(target_os = "linux", target_os = "android"))]
     {
         use std::os::unix::fs::OpenOptionsExt;
         // Linux O_NOFOLLOW rejects a final symlink at the kernel boundary.
-        options.custom_flags(0x0002_0000);
+        options.custom_flags(libc::O_NOFOLLOW);
     }
     options.open(path)
 }
@@ -491,7 +491,7 @@ impl FileLock {
             options.read(true).write(true).create(true);
             for _ in 0..LOCK_ATTEMPTS {
                 let file = options.open(path).map_err(WorldAcquireIntentError::Io)?;
-                match try_lock_file(&file) {
+                match crate::file_lock::try_lock_file(&file) {
                     Ok(()) => return Ok(Self { file: Some(file) }),
                     Err(std::fs::TryLockError::WouldBlock) => {
                         drop(file);
@@ -505,32 +505,6 @@ impl FileLock {
             Err(WorldAcquireIntentError::Busy)
         }
     }
-}
-
-/// Takes a nonblocking exclusive advisory lock that the kernel releases when
-/// the descriptor closes. `std::fs::File::try_lock` is unsupported on Android
-/// (it always reports `Unsupported`), so Android uses `flock` directly.
-///
-/// # Errors
-///
-/// Returns `WouldBlock` when another descriptor holds the lock, or the
-/// underlying I/O error.
-#[cfg(not(windows))]
-pub fn try_lock_file(file: &File) -> Result<(), std::fs::TryLockError> {
-    #[cfg(target_os = "android")]
-    {
-        rustix::fs::flock(file, rustix::fs::FlockOperation::NonBlockingLockExclusive).map_err(
-            |error| {
-                if error == rustix::io::Errno::WOULDBLOCK {
-                    std::fs::TryLockError::WouldBlock
-                } else {
-                    std::fs::TryLockError::Error(error.into())
-                }
-            },
-        )
-    }
-    #[cfg(not(target_os = "android"))]
-    file.try_lock()
 }
 
 fn reject_symlink_ancestors(path: &Path) -> io::Result<()> {
@@ -590,6 +564,22 @@ mod tests {
     use super::*;
     use tempfile::TempDir;
     use uuid::Uuid;
+
+    // Android is its own target_os, and O_NOFOLLOW differs by architecture
+    // (0x20000 on x86_64, 0x8000 on aarch64): the kernel must refuse a final
+    // symlink even if it appears after the metadata checks.
+    #[cfg(any(target_os = "linux", target_os = "android"))]
+    #[test]
+    fn record_open_refuses_a_final_symlink_in_the_kernel() {
+        let directory = TempDir::new().unwrap();
+        let target = directory.path().join("target.json");
+        fs::write(&target, b"{}").unwrap();
+        let link = directory.path().join("link.json");
+        std::os::unix::fs::symlink(&target, &link).unwrap();
+        assert!(open_record_read(&target).is_ok());
+        let error = open_record_read(&link).unwrap_err();
+        assert_eq!(error.raw_os_error(), Some(libc::ELOOP));
+    }
 
     fn request(character: CharacterId, client: u128, key: u128) -> AcquireLeaseRequest {
         AcquireLeaseRequest::new(
