@@ -1800,11 +1800,11 @@ fn open_read_nofollow(path: &Path) -> std::io::Result<File> {
         // being followed between validation and opening the fixed file.
         options.custom_flags(0x0020_0000);
     }
-    #[cfg(target_os = "linux")]
+    #[cfg(any(target_os = "linux", target_os = "android"))]
     {
         use std::os::unix::fs::OpenOptionsExt;
         // Linux O_NOFOLLOW rejects a final symlink at the kernel boundary.
-        options.custom_flags(0x0002_0000);
+        options.custom_flags(libc::O_NOFOLLOW);
     }
     options.open(path)
 }

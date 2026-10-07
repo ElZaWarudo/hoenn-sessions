@@ -848,7 +848,7 @@ impl RomTravelJournal {
             .write(true)
             .create(true)
             .open(self.directory.join(".lock"))?;
-        file.lock()?;
+        crate::file_lock::lock_file(&file)?;
         Ok(file)
     }
 
