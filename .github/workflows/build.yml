@@ -490,7 +490,7 @@ jobs:
       # would hold every PR hostage to ROM-build outputs.
       - name: Python tool suites
         run: |
-          python3 -m unittest tools.tests.test_generate_bridge_manifest tools.tests.test_generate_regional_catalog tools.tests.test_generate_regional_identities tools.tests.test_link_order_locale
+          python3 -m unittest tools.tests.test_generate_bridge_manifest tools.tests.test_generate_regional_catalog tools.tests.test_generate_regional_identities tools.tests.test_link_order_locale tools.tests.test_android_bridge_constants
 
   # Gate job: satisfies the "build" branch protection rule.
   # Validate intentional skips as well as failures; a skipped gate is not a pass.
