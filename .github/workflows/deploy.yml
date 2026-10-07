@@ -678,6 +678,7 @@ jobs:
           fi
 
       - name: Install ARM/GBA toolchain
+        timeout-minutes: 10
         if: steps.status.outputs.state == 'ABSENT'
         run: |
           sudo apt-get update

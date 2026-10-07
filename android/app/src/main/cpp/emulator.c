@@ -11,6 +11,13 @@
 #include <string.h>
 #include <stdio.h>
 
+// Must match include/coop/net_bridge.h and BridgeFrame.java
+// (tools/tests/test_android_bridge_constants.py keeps them in sync).
+#define BRIDGE_MAGIC 0x504B434Fu
+#define BRIDGE_ABI_VERSION 1
+#define BRIDGE_GAME_PROTOCOL_VERSION 5
+#define BRIDGE_GAME_BUILD_ID 0x00010000u
+
 // All access is serialized by NativeCore's Java monitor, including frame boundaries.
 static struct mCore* core;
 static color_t pixels[240 * 160];
@@ -82,9 +89,10 @@ JNIEXPORT jint JNICALL Java_io_hoenn_sessions_NativeCore_frame(JNIEnv* env, jcla
 }
 #define BRIDGE_ADDRESS bridge_address
 static bool valid_bridge(void) {
-    return core && bridge_address && core->busRead32(core,BRIDGE_ADDRESS)==1347109711u
-        && core->busRead16(core,BRIDGE_ADDRESS+4)==1 && core->busRead16(core,BRIDGE_ADDRESS+6)==1
-        && core->busRead32(core,BRIDGE_ADDRESS+8)==65536;
+    return core && bridge_address && core->busRead32(core,BRIDGE_ADDRESS)==BRIDGE_MAGIC
+        && core->busRead16(core,BRIDGE_ADDRESS+4)==BRIDGE_ABI_VERSION
+        && core->busRead16(core,BRIDGE_ADDRESS+6)==BRIDGE_GAME_PROTOCOL_VERSION
+        && core->busRead32(core,BRIDGE_ADDRESS+8)==BRIDGE_GAME_BUILD_ID;
 }
 
 static jbyteArray read_bridge_bytes(JNIEnv* env,uint32_t address,jsize length) {
