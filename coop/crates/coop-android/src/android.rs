@@ -341,6 +341,25 @@ fn runtime_directory(root: &std::path::Path) -> Result<PathBuf, RunError> {
     Ok(canonical)
 }
 
+/// Creates `root/travel/<character>` durably. `RomTravelJournal` requires its
+/// directory to exist and deliberately never creates it, so a fresh install
+/// would otherwise fail its first read.
+fn travel_directory(root: &std::path::Path, character: CharacterId) -> std::io::Result<PathBuf> {
+    let travel = root.join("travel");
+    let directory = travel.join(character.to_string());
+    std::fs::create_dir_all(&directory)?;
+    for path in [&travel, &directory] {
+        let metadata = std::fs::symlink_metadata(path)?;
+        if !metadata.is_dir() || metadata.file_type().is_symlink() {
+            return Err(std::io::Error::other("travel path is not a directory"));
+        }
+    }
+    for parent in [root, travel.as_path()] {
+        std::fs::File::open(parent)?.sync_all()?;
+    }
+    Ok(directory)
+}
+
 fn pending_world_request(
     store: &WorldAcquireIntentStore,
     character_id: CharacterId,
@@ -786,16 +805,19 @@ async fn run(
     };
     let portal_journal_result: Result<Option<RomTravelJournal>, RunError> = async {
         if let Some(catalog) = portal_catalog.as_ref() {
-            let journal = RomTravelJournal::new(
-                root.join("travel")
-                    .join(session.auth.character_id.to_string()),
-                session.auth.character_id,
-                catalog.world_ids(),
-            )
-            .map_err(|_| RunError::internal("Historial de viaje no disponible"))?;
-            let record = journal
-                .read()
-                .map_err(|_| RunError::internal("Historial de viaje inválido"))?;
+            let directory =
+                travel_directory(&root, session.auth.character_id).map_err(|error| {
+                    RunError::internal(format!(
+                        "Historial de viaje no disponible: {:?}",
+                        error.kind()
+                    ))
+                })?;
+            let journal =
+                RomTravelJournal::new(directory, session.auth.character_id, catalog.world_ids())
+                    .map_err(|_| RunError::internal("Historial de viaje no disponible"))?;
+            let record = journal.read().map_err(|error| {
+                RunError::internal(format!("Historial de viaje inválido: {error:?}"))
+            })?;
             match record {
                 None => {
                     journal
@@ -1566,6 +1588,23 @@ mod tests {
         );
         assert!(pending_world_request(&store, character, other_client).is_err());
         assert_eq!(store.read().unwrap().unwrap().request, first);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn fresh_install_travel_journal_reads_empty_then_initializes() {
+        let root =
+            std::env::temp_dir().join(format!("android-travel-dir-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&root).unwrap();
+        let character = CharacterId::new(uuid::Uuid::new_v4()).unwrap();
+        let world = coop_launcher::session::RomWorldId::new(1).unwrap();
+        let directory = travel_directory(&root, character).unwrap();
+        assert_eq!(directory, root.join("travel").join(character.to_string()));
+        let journal = RomTravelJournal::new(&directory, character, [world]).unwrap();
+        assert!(journal.read().unwrap().is_none());
+        journal.initialize(world).unwrap();
+        assert_eq!(travel_directory(&root, character).unwrap(), directory);
+        assert_eq!(journal.read().unwrap().unwrap().active_world, world);
         std::fs::remove_dir_all(root).unwrap();
     }
 
