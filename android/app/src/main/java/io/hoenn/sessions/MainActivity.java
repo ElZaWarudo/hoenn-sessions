@@ -45,6 +45,8 @@ public final class MainActivity extends Activity implements GameRenderer.Host {
     private volatile boolean settingsOpen, inputFocused;
     private EditText user,password;
     private CheckBox remember;
+    private ImageButton reveal;
+    private boolean passwordShown;
     private Button continueSaved;
     private GameRenderer game;
     private TouchOverlay touchOverlay;
@@ -136,8 +138,7 @@ public final class MainActivity extends Activity implements GameRenderer.Host {
     private void setPlaying(boolean playing){
         loginScreen.setVisibility(playing?View.GONE:View.VISIBLE);
         playPanel.setVisibility(playing?View.VISIBLE:View.GONE);
-        if(playing)getWindow().clearFlags(WindowManager.LayoutParams.FLAG_SECURE);
-        else getWindow().addFlags(WindowManager.LayoutParams.FLAG_SECURE);
+        if(playing && reveal!=null && passwordShown)togglePasswordVisibility(reveal);
     }
     private void pollPing(){
         if(!showStats || !cooperative || session.isDestroyed())return;
@@ -188,7 +189,6 @@ public final class MainActivity extends Activity implements GameRenderer.Host {
         ControllerSettingsDialog.loadPreferences(this,controller);
         inputManager=getSystemService(InputManager.class);
         inputManager.registerInputDeviceListener(controllerDevices,hostHandler);
-        getWindow().setFlags(WindowManager.LayoutParams.FLAG_SECURE,WindowManager.LayoutParams.FLAG_SECURE);
         if(Build.VERSION.SDK_INT>=28){WindowManager.LayoutParams params=getWindow().getAttributes();params.layoutInDisplayCutoutMode=WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_NEVER;getWindow().setAttributes(params);}
         FrameLayout root=new FrameLayout(this);setContentView(root);
         buildLoginScreen(root);
@@ -212,18 +212,21 @@ public final class MainActivity extends Activity implements GameRenderer.Host {
     // The activity is sensorLandscape: a brand/status pane on the left and a
     // compact sign-in card on the right that fits a phone's landscape height.
     private void buildLoginScreen(FrameLayout root){
-        int foreground=getColor(R.color.app_foreground),muted=getColor(R.color.app_muted),accent=getColor(R.color.app_accent);
+        int foreground=getColor(R.color.app_foreground),panelText=getColor(R.color.app_panel_text),highlight=getColor(R.color.app_highlight);
         ScrollView scroll=new ScrollView(this);scroll.setFillViewport(true);loginScreen=scroll;root.addView(scroll,new FrameLayout.LayoutParams(-1,-1));
         LinearLayout panes=new LinearLayout(this);panes.setGravity(Gravity.CENTER_VERTICAL);panes.setPadding(dp(32),dp(20),dp(32),dp(20));
         scroll.addView(panes,new ScrollView.LayoutParams(-1,-1));
-        layout=new LinearLayout(this);layout.setOrientation(LinearLayout.VERTICAL);layout.setPadding(0,0,dp(28),0);
-        panes.addView(layout,new LinearLayout.LayoutParams(0,-2,1));
-        TextView title=new TextView(this);title.setText(R.string.app_name);title.setTextSize(30);title.setTextColor(foreground);title.setTypeface(Typeface.DEFAULT_BOLD);layout.addView(title);
-        TextView subtitle=new TextView(this);subtitle.setText(R.string.login_subtitle);subtitle.setTextColor(muted);subtitle.setTextSize(15);layout.addView(subtitle);
-        status=new TextView(this);status.setTag("session-status");status.setTextColor(foreground);status.setTextSize(15);showStatus(getString(R.string.login_prompt));status.setPadding(0,dp(16),0,dp(8));layout.addView(status);
-        downloadProgress=new ProgressBar(this,null,android.R.attr.progressBarStyleHorizontal);downloadProgress.setVisibility(View.GONE);layout.addView(downloadProgress,new LinearLayout.LayoutParams(-1,dp(6)));
-        downloadLabel=new TextView(this);downloadLabel.setTextColor(muted);downloadLabel.setVisibility(View.GONE);layout.addView(downloadLabel);
-        TextView menu=new TextView(this);menu.setText(R.string.menu);menu.setTextSize(15);menu.setTypeface(Typeface.DEFAULT_BOLD);menu.setTextColor(accent);
+        // Left: a sapphire "Hoenn sea" panel; right: the sign-in card.
+        layout=new LinearLayout(this);layout.setOrientation(LinearLayout.VERTICAL);layout.setPadding(dp(24),dp(20),dp(24),dp(16));
+        layout.setBackground(rounded(getColor(R.color.app_panel),0,16));
+        LinearLayout.LayoutParams panelPosition=new LinearLayout.LayoutParams(0,-2,1);panelPosition.rightMargin=dp(24);panes.addView(layout,panelPosition);
+        TextView title=new TextView(this);title.setText(R.string.app_name);title.setTextSize(30);title.setTextColor(Color.WHITE);title.setTypeface(Typeface.DEFAULT_BOLD);layout.addView(title);
+        TextView subtitle=new TextView(this);subtitle.setText(R.string.login_subtitle);subtitle.setTextColor(panelText);subtitle.setTextSize(15);layout.addView(subtitle);
+        status=new TextView(this);status.setTag("session-status");status.setTextColor(Color.WHITE);status.setTextSize(15);showStatus(getString(R.string.login_prompt));status.setPadding(0,dp(16),0,dp(8));layout.addView(status);
+        downloadProgress=new ProgressBar(this,null,android.R.attr.progressBarStyleHorizontal);downloadProgress.setVisibility(View.GONE);
+        downloadProgress.setProgressTintList(android.content.res.ColorStateList.valueOf(highlight));layout.addView(downloadProgress,new LinearLayout.LayoutParams(-1,dp(6)));
+        downloadLabel=new TextView(this);downloadLabel.setTextColor(panelText);downloadLabel.setVisibility(View.GONE);layout.addView(downloadLabel);
+        TextView menu=new TextView(this);menu.setText(R.string.menu);menu.setTextSize(15);menu.setTypeface(Typeface.DEFAULT_BOLD);menu.setTextColor(highlight);
         menu.setPadding(0,dp(12),dp(16),dp(12));menu.setOnClickListener(v->showMenu());
         android.util.TypedValue ripple=new android.util.TypedValue();getTheme().resolveAttribute(android.R.attr.selectableItemBackground,ripple,true);menu.setBackgroundResource(ripple.resourceId);
         LinearLayout.LayoutParams menuPosition=new LinearLayout.LayoutParams(-2,-2);menuPosition.topMargin=dp(4);layout.addView(menu,menuPosition);
@@ -235,7 +238,7 @@ public final class MainActivity extends Activity implements GameRenderer.Host {
         password.setOnEditorActionListener((view,action,event)->{if(action!=EditorInfo.IME_ACTION_DONE && !isEnter(event))return false;startWithPassword();return true;});
         user.setNextFocusForwardId(password.getId());user.setNextFocusDownId(password.getId());user.setNextFocusRightId(password.getId());
         user.setOnEditorActionListener((view,action,event)->{if(action!=EditorInfo.IME_ACTION_NEXT && !isEnter(event))return false;password.requestFocus();return true;});
-        ImageButton reveal=new ImageButton(this);reveal.setImageResource(R.drawable.ic_visibility);reveal.setBackground(null);reveal.setContentDescription(getString(R.string.show_password));
+        reveal=new ImageButton(this);reveal.setImageResource(R.drawable.ic_visibility);reveal.setBackground(null);reveal.setContentDescription(getString(R.string.show_password));
         reveal.setOnClickListener(v->togglePasswordVisibility(reveal));
         FrameLayout passwordBox=new FrameLayout(this);password.setPadding(dp(14),0,dp(48),0);passwordBox.addView(password,new FrameLayout.LayoutParams(-1,dp(48)));
         passwordBox.addView(reveal,new FrameLayout.LayoutParams(dp(44),dp(44),Gravity.END|Gravity.CENTER_VERTICAL));
@@ -245,7 +248,7 @@ public final class MainActivity extends Activity implements GameRenderer.Host {
         fields.addView(labelled(R.string.password,passwordBox,password,-2),passwordColumn);
         LinearLayout options=new LinearLayout(this);options.setGravity(Gravity.CENTER_VERTICAL);
         LinearLayout.LayoutParams optionsPosition=new LinearLayout.LayoutParams(-1,-2);optionsPosition.topMargin=dp(6);loginPanel.addView(options,optionsPosition);
-        remember=new CheckBox(this);remember.setText(R.string.remember_me);remember.setTextColor(foreground);remember.setChecked(true);remember.setButtonTintList(android.content.res.ColorStateList.valueOf(accent));
+        remember=new CheckBox(this);remember.setText(R.string.remember_me);remember.setTextColor(foreground);remember.setChecked(true);remember.setButtonTintList(android.content.res.ColorStateList.valueOf(getColor(R.color.app_check)));
         options.addView(remember,new LinearLayout.LayoutParams(0,-2,1));
         options.addView(textButton(getString(R.string.create_account_prompt),this::registerAccount));
         LinearLayout actions=new LinearLayout(this);
@@ -284,13 +287,16 @@ public final class MainActivity extends Activity implements GameRenderer.Host {
         continueSaved.setVisibility(savedAccount==null?View.GONE:View.VISIBLE);
         if(savedAccount!=null)continueSaved.setText(getString(R.string.continue_as,savedAccount.username));
     }
+    // Screenshots stay allowed except while the password is shown in clear text.
     private void togglePasswordVisibility(ImageButton reveal){
-        boolean show=(password.getInputType()&InputType.TYPE_TEXT_VARIATION_PASSWORD)!=0;
+        boolean show=!passwordShown;passwordShown=show;
         int selection=password.getSelectionEnd();
         password.setInputType(InputType.TYPE_CLASS_TEXT|(show?InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD:InputType.TYPE_TEXT_VARIATION_PASSWORD));
         password.setTypeface(Typeface.DEFAULT);password.setSelection(Math.max(0,Math.min(selection,password.length())));
         reveal.setImageResource(show?R.drawable.ic_visibility_off:R.drawable.ic_visibility);
         reveal.setContentDescription(getString(show?R.string.hide_password:R.string.show_password));
+        if(show)getWindow().addFlags(WindowManager.LayoutParams.FLAG_SECURE);
+        else getWindow().clearFlags(WindowManager.LayoutParams.FLAG_SECURE);
     }
     private android.graphics.drawable.GradientDrawable rounded(int fill,int stroke,int radius){
         android.graphics.drawable.GradientDrawable shape=new android.graphics.drawable.GradientDrawable();
@@ -305,19 +311,19 @@ public final class MainActivity extends Activity implements GameRenderer.Host {
         e.setTextColor(getColor(R.color.app_foreground));
         e.setInputType(secret?InputType.TYPE_CLASS_TEXT|InputType.TYPE_TEXT_VARIATION_PASSWORD:InputType.TYPE_CLASS_TEXT|InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
         if(secret)e.setTypeface(Typeface.DEFAULT);
-        e.setBackground(rounded(getColor(R.color.app_background),getColor(R.color.app_outline),10));e.setPadding(dp(14),0,dp(14),0);
+        e.setBackground(rounded(getColor(R.color.app_field),getColor(R.color.app_outline),10));e.setPadding(dp(14),0,dp(14),0);
         return e;
     }
     private Button filledButton(String text,Runnable action){
-        Button b=new Button(this);b.setText(text);b.setAllCaps(false);b.setTextSize(16);b.setTypeface(Typeface.DEFAULT_BOLD);b.setTextColor(Color.WHITE);
-        b.setBackground(rounded(getColor(R.color.app_accent),0,12));b.setStateListAnimator(null);b.setOnClickListener(v->action.run());return b;
+        Button b=new Button(this);b.setText(text);b.setAllCaps(false);b.setTextSize(16);b.setTypeface(Typeface.DEFAULT_BOLD);b.setTextColor(getColor(R.color.app_on_primary));
+        b.setBackground(rounded(getColor(R.color.app_primary),0,12));b.setStateListAnimator(null);b.setOnClickListener(v->action.run());return b;
     }
     private Button outlinedButton(String text,Runnable action){
-        Button b=new Button(this);b.setText(text);b.setAllCaps(false);b.setTextSize(16);b.setTextColor(getColor(R.color.app_accent));
-        b.setBackground(rounded(getColor(R.color.app_surface),getColor(R.color.app_accent),12));b.setStateListAnimator(null);b.setOnClickListener(v->action.run());return b;
+        Button b=new Button(this);b.setText(text);b.setAllCaps(false);b.setTextSize(16);b.setTextColor(getColor(R.color.app_link));
+        b.setBackground(rounded(getColor(R.color.app_surface),getColor(R.color.app_link),12));b.setStateListAnimator(null);b.setOnClickListener(v->action.run());return b;
     }
     private Button textButton(String text,Runnable action){
-        Button b=new Button(this,null,android.R.attr.borderlessButtonStyle);b.setText(text);b.setAllCaps(false);b.setTextColor(getColor(R.color.app_accent));b.setOnClickListener(v->action.run());return b;
+        Button b=new Button(this,null,android.R.attr.borderlessButtonStyle);b.setText(text);b.setAllCaps(false);b.setTextColor(getColor(R.color.app_link));b.setOnClickListener(v->action.run());return b;
     }
 
     private void startWithPassword(){
