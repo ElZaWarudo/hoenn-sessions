@@ -2,4 +2,7 @@
     <color name="app_background">#F4F6F8</color>
     <color name="app_foreground">#17212B</color>
     <color name="app_accent">#1976A3</color>
+    <color name="app_muted">#5F6B76</color>
+    <color name="app_surface">#FFFFFF</color>
+    <color name="app_outline">#C9D1D9</color>
 </resources>

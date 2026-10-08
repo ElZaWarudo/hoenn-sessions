@@ -128,4 +128,10 @@
     <string name="join_joined">Grupo formado. Cada uno sigue en su mapa.</string>
     <string name="join_refused">El código expiró, ya se usó o ya estás en un grupo.</string>
     <string name="join_unavailable">No se pudo unir ahora. Inténtalo de nuevo en un momento.</string>
+    <string name="show_password">Mostrar contraseña</string>
+    <string name="hide_password">Ocultar contraseña</string>
+    <string name="remember_me">Recordarme en este dispositivo</string>
+    <string name="continue_as">Continuar como %1$s</string>
+    <string name="login_subtitle">Partidas cooperativas en línea</string>
+    <string name="create_account_prompt">¿No tienes cuenta? Regístrate</string>
 </resources>

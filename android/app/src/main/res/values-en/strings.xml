@@ -128,4 +128,10 @@
     <string name="join_joined">Grouped with your partner. You both stay on your own maps.</string>
     <string name="join_refused">That code is expired, already used, or you are already in a group.</string>
     <string name="join_unavailable">Could not join right now. Try again in a moment.</string>
+    <string name="show_password">Show password</string>
+    <string name="hide_password">Hide password</string>
+    <string name="remember_me">Remember me on this device</string>
+    <string name="continue_as">Continue as %1$s</string>
+    <string name="login_subtitle">Online co-op sessions</string>
+    <string name="create_account_prompt">No account? Register</string>
 </resources>
