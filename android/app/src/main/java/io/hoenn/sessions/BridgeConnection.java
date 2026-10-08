@@ -11,7 +11,7 @@ final class BridgeConnection implements AutoCloseable {
     private final long epoch;
     private final boolean arrivalVerifier;
     private final ArrayBlockingQueue<byte[]> inbound=new ArrayBlockingQueue<>(32);
-    private final ArrayBlockingQueue<Send> outbound=new ArrayBlockingQueue<>(2);
+    private final ArrayBlockingQueue<byte[]> outbound=new ArrayBlockingQueue<>(32);
     private final ConcurrentLinkedQueue<Long> submittedSaveSerials=new ConcurrentLinkedQueue<>();
     private volatile Socket socket;
     private final Thread reader;
@@ -19,12 +19,10 @@ final class BridgeConnection implements AutoCloseable {
     private final Object networkLock=new Object();
     private volatile boolean authenticated,closed;
     private volatile String failure;
-    private Send pending;
     private int initializationFrames,frames;
     private boolean initialized;
     private long grantSerial=-1,grantGeneration,activeEpoch;
     Long pollSubmittedSaveSerial(){return submittedSaveSerials.poll();}
-    private static final class Send {final byte[] bytes;volatile boolean sent;Send(byte[] b){bytes=b;}}
     BridgeConnection(JSONObject descriptor,long epoch) throws Exception {this(descriptor,epoch,false);}
     static BridgeConnection arrivalVerifier(JSONObject descriptor) throws Exception {return new BridgeConnection(descriptor,0,true);}
     private BridgeConnection(JSONObject descriptor,long epoch,boolean arrivalVerifier) throws Exception {
@@ -45,11 +43,13 @@ final class BridgeConnection implements AutoCloseable {
             s.setSoTimeout(0);authenticated=true;
             synchronized(networkLock){if(closed)return;writer=new Thread(()->write(output),"bridge-write");writer.start();}
             DataInputStream data=new DataInputStream(input);
-            while(!closed){byte[] frame=new byte[144];data.readFully(frame);checkFrame(BridgeFrame.decode(frame,true),true);if(!inbound.offer(frame))throw new IOException("Cola inbound llena");}
+            // A full queue (game paused or unfocused) stops reading, so the
+            // socket applies backpressure like bridge/main.lua instead of failing.
+            while(!closed){byte[] frame=new byte[144];data.readFully(frame);checkFrame(BridgeFrame.decode(frame,true),true);inbound.put(frame);}
         }catch(Exception e){if(!closed)failure="Conexión local del bridge perdida";}
         finally{Socket s=socket;if(s!=null)try{s.close();}catch(IOException ignored){}}
     }
-    private void write(OutputStream out){try{while(!closed){Send send=outbound.poll(200,TimeUnit.MILLISECONDS);if(send!=null){out.write(send.bytes);send.sent=true;}}}catch(Exception e){if(!closed)failure="Escritura del bridge fallida";}}
+    private void write(OutputStream out){try{while(!closed){byte[] bytes=outbound.poll(200,TimeUnit.MILLISECONDS);if(bytes!=null)out.write(bytes);}}catch(Exception e){if(!closed)failure="Escritura del bridge fallida";}}
     void step() throws Exception {
         if(closed)return;if(failure!=null)throw new IOException(failure);
         if(!initialized){try{NativeBridge.validate(NativeCore.bridgeHeader());initialized=true;}catch(IllegalStateException | SecurityException e){if(++initializationFrames>600)throw e;return;}}
@@ -65,31 +65,27 @@ final class BridgeConnection implements AutoCloseable {
             }
             inbound.remove();
         }
-        if(pending!=null && pending.sent){
-            BridgeFrame message=BridgeFrame.decode(pending.bytes,false);
-            checkFrame(message,false);
-            if(!arrivalVerifier && message.type==13 && NativeCore.saveEvidence()[2]!=generation(message))throw new SecurityException("Guardado cambió durante envío");
-            if(!NativeBridge.commitOutbound(pending.bytes))throw new SecurityException("Consumer del bridge cambió");
-            if(!arrivalVerifier && message.type==13)grantSerial=-1;
-            pending=null;
-        }
-        if(pending==null){
-            byte[] next=NativeBridge.peekOutbound();
-            if(next!=null){BridgeFrame message=BridgeFrame.decode(next,false);checkFrame(message,false);
-                if(!arrivalVerifier && message.type==13){
-                    if(grantSerial<0 || message.epoch!=epoch)throw new SecurityException("Guardado sin grant");
-                    long target=generation(message);long[] proof=NativeCore.saveEvidence();
-                    if(target!=((grantGeneration+1)&0xffffffffL))throw new SecurityException("Generación no correlacionada");
-                    if(proof[0]<=grantSerial || proof[1]!=target || proof[2]!=target)return;
-                    if(!NativeCore.syncSave())throw new IOException("No se pudo sincronizar SAV canónico");
-                }
-                Long saveSerial=!arrivalVerifier && message.type==13?NativeCore.saveEvidence()[0]:null;
+        // Hand a frame to the writer and dequeue it in the same step, as
+        // bridge/main.lua does. step() runs between GBA frames under the
+        // NativeCore lock, so the ROM cannot reset its queue (SESSION_READY,
+        // stale heartbeat) while a sent frame is still queued.
+        byte[] next=NativeBridge.peekOutbound();
+        if(next!=null){BridgeFrame message=BridgeFrame.decode(next,false);checkFrame(message,false);
+            boolean save=!arrivalVerifier && message.type==13;
+            if(save){
+                if(grantSerial<0 || message.epoch!=epoch)throw new SecurityException("Guardado sin grant");
+                long target=generation(message);long[] proof=NativeCore.saveEvidence();
+                if(target!=((grantGeneration+1)&0xffffffffL))throw new SecurityException("Generación no correlacionada");
+                if(proof[0]<=grantSerial || proof[1]!=target || proof[2]!=target)return;
+                if(!NativeCore.syncSave())throw new IOException("No se pudo sincronizar SAV canónico");
+            }
+            // A full writer queue leaves the frame in the ROM queue for a later step.
+            if(outbound.remainingCapacity()>0){
+                Long saveSerial=save?NativeCore.saveEvidence()[0]:null;
+                if(!NativeBridge.commitOutbound(next))throw new SecurityException("Consumer del bridge cambió");
                 if(saveSerial!=null)submittedSaveSerials.offer(saveSerial);
-                pending=new Send(next);
-                if(!outbound.offer(pending)){
-                    if(saveSerial!=null)submittedSaveSerials.remove(saveSerial);
-                    throw new IOException("Cola outbound llena");
-                }
+                outbound.add(next);
+                if(save)grantSerial=-1;
             }
         }
         if(++frames%60==0)NativeCore.bridgeHeartbeat();
