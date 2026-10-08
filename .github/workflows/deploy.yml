@@ -642,6 +642,51 @@ jobs:
               ;;
           esac
 
+      # A release whose changes since the live release are app-only (android/,
+      # docs, Markdown: no ROM, Rust or installer selection by the CI
+      # classifier) keeps the running server image. Its association then
+      # names the live image, so "Roll the server" leaves compose unchanged and
+      # does not restart players' sessions. Anything else, or any doubt,
+      # builds and rolls a fresh image as before.
+      - name: Decide whether the live server image can be kept
+        id: server-reuse
+        if: steps.status.outputs.state == 'ABSENT' && github.event_name != 'workflow_dispatch'
+        env:
+          IMAGE_BASE: ${{ steps.image.outputs.base }}
+        run: |
+          fresh() { echo "keep=false" >> "$GITHUB_OUTPUT"; echo "$1"; exit 0; }
+          live="$(ssh hoenn-vps 'cat /srv/hoenn/current 2>/dev/null || true')"
+          [[ "$live" =~ ^[0-9a-f]{40}$ ]] || fresh "no live release marker; rolling a fresh image"
+          metadata="$(ssh hoenn-vps "cat /srv/hoenn/release-metadata/$live.json 2>/dev/null || true")"
+          read -r image digest catalog < <(printf '%s' "$metadata" | python3 -c '
+          import json, sys
+          try:
+              d = json.load(sys.stdin)
+          except ValueError:
+              d = {}
+          if d.get("schema") == 2:
+              print(d.get("image_ref", ""), d.get("image_digest", ""), d.get("server_catalog_sha256", ""))
+          else:
+              print("", "", "")
+          ') || fresh "live release metadata is unreadable; rolling a fresh image"
+          [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]] || fresh "live release has no image digest; rolling a fresh image"
+          [ "$image" = "$IMAGE_BASE@$digest" ] || fresh "live image is from another repository; rolling a fresh image"
+          [[ "$catalog" =~ ^[0-9a-f]{64}$ ]] || fresh "live release has no server catalog; rolling a fresh image"
+          git fetch --no-tags --depth=1 origin "$live" || fresh "live release commit is unavailable; rolling a fresh image"
+          selection="$(python3 .github/ci/classify_changes.py --base "$live" --head "$GITHUB_SHA")" \
+            || fresh "change classification failed; rolling a fresh image"
+          echo "$selection"
+          for group in rom rust installer; do
+            grep -qx "$group=false" <<<"$selection" || fresh "$group inputs changed since $live; rolling a fresh image"
+          done
+          {
+            echo "keep=true"
+            echo "image_ref=$image"
+            echo "digest=$digest"
+            echo "server_catalog=$catalog"
+          } >> "$GITHUB_OUTPUT"
+          echo "app-only changes since $live; keeping the running server image $image"
+
       - name: Decide whether Android app code needs an APK
         id: android-change
         if: steps.status.outputs.state == 'ABSENT'
@@ -1081,6 +1126,10 @@ jobs:
           RELEASED_IMAGE: ${{ steps.status.outputs.released_image }}
           FRESH_SERVER_CATALOG: ${{ steps.assembly.outputs.server_catalog_sha256 }}
           RELEASED_SERVER_CATALOG: ${{ steps.status.outputs.released_server_catalog }}
+          KEEP_LIVE_IMAGE: ${{ steps.server-reuse.outputs.keep }}
+          LIVE_IMAGE_REF: ${{ steps.server-reuse.outputs.image_ref }}
+          LIVE_DIGEST: ${{ steps.server-reuse.outputs.digest }}
+          LIVE_SERVER_CATALOG: ${{ steps.server-reuse.outputs.server_catalog }}
         run: |
           case "$RELEASE_STATE" in
             PENDING|RELEASED)
@@ -1095,6 +1144,17 @@ jobs:
               DIGEST="$FRESH_DIGEST"
               IMAGE_REF="$IMAGE_BASE@$DIGEST"
               SERVER_CATALOG="$FRESH_SERVER_CATALOG"
+              # App-only release: deploy the image already running so the
+              # roll is a no-op. The worlds must not have changed either.
+              if [ "$KEEP_LIVE_IMAGE" = true ]; then
+                if [ "$FRESH_SERVER_CATALOG" = "$LIVE_SERVER_CATALOG" ]; then
+                  DIGEST="$LIVE_DIGEST"
+                  IMAGE_REF="$LIVE_IMAGE_REF"
+                  echo "keeping the running server image $IMAGE_REF (no restart)"
+                else
+                  echo "server catalog changed ($LIVE_SERVER_CATALOG -> $FRESH_SERVER_CATALOG); rolling the fresh image"
+                fi
+              fi
               ;;
             *) echo "error: unexpected release state: $RELEASE_STATE" >&2; exit 1 ;;
           esac
