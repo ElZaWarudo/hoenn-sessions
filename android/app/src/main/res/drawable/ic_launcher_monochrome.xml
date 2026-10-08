@@ -1,0 +1,10 @@
+<!-- Themed-icon silhouette of the emerald (Android 13+). -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path android:fillColor="#FFFFFF" android:pathData="M34,44 L44,32 L64,32 L74,44 L54,78 Z" />
+    <path android:fillColor="#FFFFFF"
+        android:pathData="M76,26 L77.6,30.4 L82,32 L77.6,33.6 L76,38 L74.4,33.6 L70,32 L74.4,30.4 Z" />
+</vector>

@@ -1,8 +1,24 @@
 <resources>
-    <color name="app_background">#F4F6F8</color>
-    <color name="app_foreground">#17212B</color>
-    <color name="app_accent">#1976A3</color>
-    <color name="app_muted">#5F6B76</color>
+    <!-- Hoenn palette: emerald (actions), sapphire (sea panel, links), ruby (errors),
+         gold highlights. Text pairs meet WCAG AA (4.5:1) in both modes. -->
+    <color name="hoenn_emerald">#0E7A52</color>
+    <color name="hoenn_sapphire">#1F4F99</color>
+    <color name="hoenn_ruby">#B0263A</color>
+    <color name="hoenn_gold">#FFD866</color>
+
+    <color name="app_background">#F4F7F1</color>
+    <color name="app_foreground">#1E2A33</color>
+    <color name="app_muted">#4A5A66</color>
     <color name="app_surface">#FFFFFF</color>
-    <color name="app_outline">#C9D1D9</color>
+    <color name="app_field">#F7FAF6</color>
+    <color name="app_outline">#9DB4C4</color>
+    <color name="app_primary">@color/hoenn_emerald</color>
+    <color name="app_on_primary">#FFFFFF</color>
+    <color name="app_link">@color/hoenn_sapphire</color>
+    <color name="app_error">@color/hoenn_ruby</color>
+    <color name="app_panel">@color/hoenn_sapphire</color>
+    <color name="app_panel_text">#DCEBFA</color>
+    <color name="app_highlight">@color/hoenn_gold</color>
+    <color name="app_check">@color/hoenn_emerald</color>
+    <color name="app_accent">@color/hoenn_emerald</color>
 </resources>

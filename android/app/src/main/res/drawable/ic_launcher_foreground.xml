@@ -1,0 +1,25 @@
+<!-- Faceted emerald with two sparkles, inside the 66dp safe zone. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- crown -->
+    <path android:fillColor="#3FD69A" android:pathData="M44,32 L64,32 L60,44 L48,44 Z" />
+    <path android:fillColor="#22B378" android:pathData="M34,44 L44,32 L48,44 Z" />
+    <path android:fillColor="#179A64" android:pathData="M64,32 L74,44 L60,44 Z" />
+    <!-- pavilion -->
+    <path android:fillColor="#13885A" android:pathData="M34,44 L48,44 L54,78 Z" />
+    <path android:fillColor="#0E7A52" android:pathData="M48,44 L60,44 L54,78 Z" />
+    <path android:fillColor="#0A5C3D" android:pathData="M60,44 L74,44 L54,78 Z" />
+    <!-- outline -->
+    <path android:strokeColor="#06402B" android:strokeWidth="1.5" android:strokeLineJoin="round"
+        android:fillColor="#00000000" android:pathData="M34,44 L44,32 L64,32 L74,44 L54,78 Z" />
+    <!-- table glint -->
+    <path android:fillColor="#B9F5DA" android:pathData="M47,34 L53,34 L50,40 Z" />
+    <!-- sparkles -->
+    <path android:fillColor="#FFD866"
+        android:pathData="M76,26 L77.6,30.4 L82,32 L77.6,33.6 L76,38 L74.4,33.6 L70,32 L74.4,30.4 Z" />
+    <path android:fillColor="#FFFFFF"
+        android:pathData="M32,58 L33,60.8 L35.8,61.8 L33,62.8 L32,65.6 L31,62.8 L28.2,61.8 L31,60.8 Z" />
+</vector>

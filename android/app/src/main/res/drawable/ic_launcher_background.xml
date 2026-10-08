@@ -1,0 +1,14 @@
+<!-- Hoenn sea: sapphire water with lighter wave bands. 108dp adaptive canvas. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path android:fillColor="#1F4F99" android:pathData="M0,0h108v108h-108z" />
+    <path android:fillColor="#245CAD"
+        android:pathData="M0,70 C12,64 24,64 36,70 C48,76 60,76 72,70 C84,64 96,64 108,70 L108,108 L0,108 Z" />
+    <path android:fillColor="#2F6FB8"
+        android:pathData="M0,82 C12,76 24,76 36,82 C48,88 60,88 72,82 C84,76 96,76 108,82 L108,108 L0,108 Z" />
+    <path android:fillColor="#3A80C6"
+        android:pathData="M0,94 C12,88 24,88 36,94 C48,100 60,100 72,94 C84,88 96,88 108,94 L108,108 L0,108 Z" />
+</vector>
