@@ -10,7 +10,7 @@ from pathlib import Path
 
 
 def classify_paths(paths: Iterable[str]) -> dict[str, bool]:
-    checks = {"rom": False, "rust": False, "installer": False}
+    checks = {"rom": False, "rust": False, "installer": False, "android": False}
     for path in paths:
         if path.startswith("docs/") or path == "README.md":
             continue
@@ -19,7 +19,11 @@ def classify_paths(paths: Iterable[str]) -> dict[str, bool]:
         if path.startswith("installer/"):
             checks["installer"] = True
             checks["rust"] = True
-        elif path.startswith(("coop/", "android/", "deploy/")) or path in (
+        elif path.startswith("android/"):
+            # The Android app's Java, resources and Gradle files. Its Rust
+            # crate (coop/crates/coop-android) is selected as Rust below.
+            checks["android"] = True
+        elif path.startswith(("coop/", "deploy/")) or path in (
             "Cargo.toml",
             "Cargo.lock",
         ):
@@ -50,7 +54,7 @@ def main() -> int:
     args = parser.parse_args()
 
     if args.all:
-        checks = dict.fromkeys(("rom", "rust", "installer"), True)
+        checks = dict.fromkeys(("rom", "rust", "installer", "android"), True)
     else:
         if not args.base or not re.fullmatch(r"(?:[0-9a-fA-F]{40}|[0-9a-fA-F]{64})", args.base):
             parser.error("--base must be a full commit SHA unless --all is used")

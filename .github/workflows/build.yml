@@ -36,6 +36,7 @@ jobs:
       rom: ${{ steps.select.outputs.rom }}
       rust: ${{ steps.select.outputs.rust }}
       installer: ${{ steps.select.outputs.installer }}
+      android: ${{ steps.select.outputs.android }}
     steps:
       - uses: actions/checkout@v4
       - name: Test CI change selection
@@ -430,6 +431,27 @@ jobs:
       - name: Release script tests
         run: bash deploy/coop/test-release-scripts.sh
 
+  # Java, resources and lint for the Android app. The native Rust/mGBA
+  # libraries and the bundled ROM are built only by the production release.
+  android:
+    needs: changes
+    if: needs.changes.outputs.android == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Android Java
+        uses: actions/setup-java@c5195efecf7bdfc987ee8bae7a71cb8b11521c00 # v4.7.1
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@be39fa834029ff78f1a44aa3bb0819b8fc2bd8fd # v4
+        with:
+          log-accepted-android-sdk-licenses: 'false'
+      - name: Compile, unit-test and lint the app
+        run: bash android/gradlew -p android compileDebugJavaWithJavac testDebugUnitTest lintRelease -x compileCoopRust -x prepareBundledRom
+
   installer-package-smoke:
     needs: changes
     if: needs.changes.outputs.installer == 'true'
@@ -504,7 +526,7 @@ jobs:
   build:
     if: always() && github.actor != 'allcontributors[bot]'
     runs-on: ubuntu-24.04
-    needs: [changes, build-emerald, build-firered, build-leafgreen, release, build-test-rom, test, rust, installer-package-smoke, bridge-lua, tools-tests]
+    needs: [changes, build-emerald, build-firered, build-leafgreen, release, build-test-rom, test, rust, android, installer-package-smoke, bridge-lua, tools-tests]
     steps:
       - name: Check every required job
         env:
@@ -518,6 +540,7 @@ jobs:
               'rom': ['build-emerald', 'build-firered', 'build-leafgreen', 'release', 'build-test-rom', 'test'],
               'rust': ['rust'],
               'installer': ['installer-package-smoke'],
+              'android': ['android'],
           }
           for group, names in groups.items():
               selected = jobs['changes']['outputs'][group]
