@@ -17,24 +17,29 @@ class ClassifyPathsTests(unittest.TestCase):
     def test_documentation_only(self):
         self.assertEqual(
             classify_paths(["docs/tutorials/example.md", "README.md", "LICENSE", "LICENSE.md"]),
-            {"rom": False, "rust": False, "installer": False},
+            {"rom": False, "rust": False, "installer": False, "android": False},
         )
 
     def test_rust_inputs(self):
-        for path in ("coop/crates/app/src/lib.rs", "Cargo.toml", "Cargo.lock", "android/app/build.gradle", "deploy/coop/Dockerfile"):
+        for path in ("coop/crates/app/src/lib.rs", "Cargo.toml", "Cargo.lock", "coop/crates/coop-android/src/android.rs", "deploy/coop/Dockerfile"):
             with self.subTest(path=path):
-                self.assertEqual(classify_paths([path]), {"rom": False, "rust": True, "installer": False})
+                self.assertEqual(classify_paths([path]), {"rom": False, "rust": True, "installer": False, "android": False})
+
+    def test_android_app_only(self):
+        for path in ("android/app/build.gradle", "android/app/src/main/java/io/hoenn/sessions/MainActivity.java", "android/app/src/main/res/values/strings.xml"):
+            with self.subTest(path=path):
+                self.assertEqual(classify_paths([path]), {"rom": False, "rust": False, "installer": False, "android": True})
 
     def test_mixed_installer_and_rust_changes(self):
         self.assertEqual(
             classify_paths(["docs/guide.md", "coop/crates/app/src/lib.rs", "installer/windows/Package.wxs"]),
-            {"rom": False, "rust": True, "installer": True},
+            {"rom": False, "rust": True, "installer": True, "android": False},
         )
 
     def test_unknown_or_build_inputs_require_every_check(self):
         for path in ("AGENTS.md", "CONTRIBUTING.md", "src/battle.c", "Makefile", ".github/workflows/build.yml", "tools/tool.py", "new-area/file.txt"):
             with self.subTest(path=path):
-                self.assertEqual(classify_paths(["docs/guide.md", path]), {"rom": True, "rust": True, "installer": True})
+                self.assertEqual(classify_paths(["docs/guide.md", path]), {"rom": True, "rust": True, "installer": True, "android": True})
 
 
 class GitDiffTests(unittest.TestCase):
@@ -69,10 +74,10 @@ class GitDiffTests(unittest.TestCase):
         self.git("commit", "--quiet", "-m", "fixture changes")
         paths = changed_paths(self.base, cwd=self.repo)
         self.assertCountEqual(paths, ["docs/renamed file.txt", "src/renamed file.txt", "src/deleted.c"])
-        self.assertEqual(classify_paths(paths), {"rom": True, "rust": True, "installer": True})
+        self.assertEqual(classify_paths(paths), {"rom": True, "rust": True, "installer": True, "android": True})
         result = self.cli("--base", self.base)
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(result.stdout, "rom=true\nrust=true\ninstaller=true\n")
+        self.assertEqual(result.stdout, "rom=true\nrust=true\ninstaller=true\nandroid=true\n")
 
     def test_explicit_head_and_documentation_only_diff(self):
         (self.repo / "docs" / "guide.md").write_text("new guide\n", encoding="utf-8")
@@ -80,7 +85,7 @@ class GitDiffTests(unittest.TestCase):
         self.git("commit", "--quiet", "-m", "fixture documentation")
         result = self.cli("--base", self.base, "--head", self.git("rev-parse", "HEAD"))
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(result.stdout, "rom=false\nrust=false\ninstaller=false\n")
+        self.assertEqual(result.stdout, "rom=false\nrust=false\ninstaller=false\nandroid=false\n")
 
     def test_unavailable_base_fails_without_selection_outputs(self):
         result = self.cli("--base", "0" * 40)
@@ -96,7 +101,7 @@ class GitDiffTests(unittest.TestCase):
     def test_all_does_not_need_base(self):
         result = self.cli("--all")
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(result.stdout, "rom=true\nrust=true\ninstaller=true\n")
+        self.assertEqual(result.stdout, "rom=true\nrust=true\ninstaller=true\nandroid=true\n")
 
 
 if __name__ == "__main__":

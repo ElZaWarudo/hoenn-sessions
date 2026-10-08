@@ -10,6 +10,11 @@ on:
   pull_request:
     branches:
       - main
+    # App-only and documentation changes cannot affect the world builds.
+    paths-ignore:
+      - 'android/**'
+      - 'docs/**'
+      - '**/*.md'
   workflow_dispatch:
 
 permissions:
