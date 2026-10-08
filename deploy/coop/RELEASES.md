@@ -486,6 +486,22 @@ pinned SSH connection. It classifies the requested commit as:
 and nothing refers to the upload, so it is safe to discard; the concurrency
 group guarantees no other upload of the same commit is in flight.
 
+### App-only releases keep the running server
+
+An `ABSENT` push release still builds a fresh server image, but deploys the
+live one instead when nothing the server depends on changed. The step "Decide
+whether the live server image can be kept" reads `current` and its
+`release-metadata/<id>.json`, then runs `.github/ci/classify_changes.py`
+between that release and the new commit. When the classifier selects no ROM,
+Rust or installer work (only `android/`, `docs/` or Markdown changed) and the
+freshly assembled server catalog digest equals the live one, the new
+association names the live image. `deploy-release.sh` then renders an
+identical `.env` and compose file, `docker compose up -d` leaves the container
+running, and players' sessions are not interrupted; activation still flips
+the markers, including `android/current`. Any other change, unreadable live
+metadata, or a manual `workflow_dispatch` run rolls the fresh image as
+before.
+
 Missing counterparts, malformed metadata, conflicting release/staging bytes,
 and an image reference from another repository fail closed. For `ABSENT`, the
 workflow builds the runtime and Linux `coop-release-tool`, writes the trust
