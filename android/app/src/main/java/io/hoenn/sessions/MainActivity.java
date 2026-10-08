@@ -209,46 +209,75 @@ public final class MainActivity extends Activity implements GameRenderer.Host {
         if(savedAccount!=null)showStatus(getString(R.string.restoring_account,savedAccount.username));
     }
 
+    // The activity is sensorLandscape: a brand/status pane on the left and a
+    // compact sign-in card on the right that fits a phone's landscape height.
     private void buildLoginScreen(FrameLayout root){
         int foreground=getColor(R.color.app_foreground),muted=getColor(R.color.app_muted),accent=getColor(R.color.app_accent);
         ScrollView scroll=new ScrollView(this);scroll.setFillViewport(true);loginScreen=scroll;root.addView(scroll,new FrameLayout.LayoutParams(-1,-1));
-        FrameLayout center=new FrameLayout(this);scroll.addView(center,new ScrollView.LayoutParams(-1,-1));
-        layout=new LinearLayout(this);layout.setOrientation(LinearLayout.VERTICAL);layout.setPadding(dp(24),dp(32),dp(24),dp(32));
-        int width=Math.min(getResources().getDisplayMetrics().widthPixels,dp(460));
-        center.addView(layout,new FrameLayout.LayoutParams(width,-2,Gravity.CENTER));
-        LinearLayout header=new LinearLayout(this);header.setGravity(Gravity.CENTER_VERTICAL);layout.addView(header);
-        TextView title=new TextView(this);title.setText(R.string.app_name);title.setTextSize(28);title.setTextColor(foreground);title.setTypeface(Typeface.DEFAULT_BOLD);
-        header.addView(title,new LinearLayout.LayoutParams(0,-2,1));
-        Button menu=textButton(getString(R.string.menu),this::showMenu);header.addView(menu);
+        LinearLayout panes=new LinearLayout(this);panes.setGravity(Gravity.CENTER_VERTICAL);panes.setPadding(dp(32),dp(20),dp(32),dp(20));
+        scroll.addView(panes,new ScrollView.LayoutParams(-1,-1));
+        layout=new LinearLayout(this);layout.setOrientation(LinearLayout.VERTICAL);layout.setPadding(0,0,dp(28),0);
+        panes.addView(layout,new LinearLayout.LayoutParams(0,-2,1));
+        TextView title=new TextView(this);title.setText(R.string.app_name);title.setTextSize(30);title.setTextColor(foreground);title.setTypeface(Typeface.DEFAULT_BOLD);layout.addView(title);
         TextView subtitle=new TextView(this);subtitle.setText(R.string.login_subtitle);subtitle.setTextColor(muted);subtitle.setTextSize(15);layout.addView(subtitle);
-        status=new TextView(this);status.setTag("session-status");status.setTextColor(foreground);status.setTextSize(15);showStatus(getString(R.string.login_prompt));status.setPadding(0,dp(16),0,dp(12));layout.addView(status);
+        status=new TextView(this);status.setTag("session-status");status.setTextColor(foreground);status.setTextSize(15);showStatus(getString(R.string.login_prompt));status.setPadding(0,dp(16),0,dp(8));layout.addView(status);
         downloadProgress=new ProgressBar(this,null,android.R.attr.progressBarStyleHorizontal);downloadProgress.setVisibility(View.GONE);layout.addView(downloadProgress,new LinearLayout.LayoutParams(-1,dp(6)));
         downloadLabel=new TextView(this);downloadLabel.setTextColor(muted);downloadLabel.setVisibility(View.GONE);layout.addView(downloadLabel);
-        loginPanel=new LinearLayout(this);loginPanel.setOrientation(LinearLayout.VERTICAL);loginPanel.setPadding(dp(20),dp(20),dp(20),dp(16));
+        TextView menu=new TextView(this);menu.setText(R.string.menu);menu.setTextSize(15);menu.setTypeface(Typeface.DEFAULT_BOLD);menu.setTextColor(accent);
+        menu.setPadding(0,dp(12),dp(16),dp(12));menu.setOnClickListener(v->showMenu());
+        android.util.TypedValue ripple=new android.util.TypedValue();getTheme().resolveAttribute(android.R.attr.selectableItemBackground,ripple,true);menu.setBackgroundResource(ripple.resourceId);
+        LinearLayout.LayoutParams menuPosition=new LinearLayout.LayoutParams(-2,-2);menuPosition.topMargin=dp(4);layout.addView(menu,menuPosition);
+        loginPanel=new LinearLayout(this);loginPanel.setOrientation(LinearLayout.VERTICAL);loginPanel.setPadding(dp(20),dp(14),dp(20),dp(16));
         loginPanel.setBackground(rounded(getColor(R.color.app_surface),getColor(R.color.app_outline),16));loginPanel.setElevation(dp(2));
-        LinearLayout.LayoutParams panelPosition=new LinearLayout.LayoutParams(-1,-2);panelPosition.topMargin=dp(8);layout.addView(loginPanel,panelPosition);
-        user=inputField(R.string.username,false);user.setAutofillHints(View.AUTOFILL_HINT_USERNAME);user.setImeOptions(EditorInfo.IME_ACTION_NEXT);
-        loginPanel.addView(label(R.string.username));loginPanel.addView(user,new LinearLayout.LayoutParams(-1,dp(52)));
-        password=inputField(R.string.password,true);password.setAutofillHints(View.AUTOFILL_HINT_PASSWORD);password.setImeOptions(EditorInfo.IME_ACTION_DONE);
-        password.setOnEditorActionListener((view,action,event)->{if(action!=EditorInfo.IME_ACTION_DONE)return false;startWithPassword();return true;});
+        panes.addView(loginPanel,new LinearLayout.LayoutParams(Math.min(dp(480),getResources().getDisplayMetrics().widthPixels*11/20),-2));
+        user=inputField(false);user.setAutofillHints(View.AUTOFILL_HINT_USERNAME);user.setImeOptions(EditorInfo.IME_ACTION_NEXT|EditorInfo.IME_FLAG_NO_EXTRACT_UI);
+        password=inputField(true);password.setAutofillHints(View.AUTOFILL_HINT_PASSWORD);password.setImeOptions(EditorInfo.IME_ACTION_DONE|EditorInfo.IME_FLAG_NO_EXTRACT_UI);
+        password.setOnEditorActionListener((view,action,event)->{if(action!=EditorInfo.IME_ACTION_DONE && !isEnter(event))return false;startWithPassword();return true;});
+        user.setNextFocusForwardId(password.getId());user.setNextFocusDownId(password.getId());user.setNextFocusRightId(password.getId());
+        user.setOnEditorActionListener((view,action,event)->{if(action!=EditorInfo.IME_ACTION_NEXT && !isEnter(event))return false;password.requestFocus();return true;});
         ImageButton reveal=new ImageButton(this);reveal.setImageResource(R.drawable.ic_visibility);reveal.setBackground(null);reveal.setContentDescription(getString(R.string.show_password));
         reveal.setOnClickListener(v->togglePasswordVisibility(reveal));
-        FrameLayout passwordRow=new FrameLayout(this);password.setPadding(dp(14),0,dp(52),0);passwordRow.addView(password,new FrameLayout.LayoutParams(-1,dp(52)));
-        passwordRow.addView(reveal,new FrameLayout.LayoutParams(dp(48),dp(48),Gravity.END|Gravity.CENTER_VERTICAL));
-        LinearLayout.LayoutParams passwordPosition=new LinearLayout.LayoutParams(-1,-2);
-        loginPanel.addView(label(R.string.password));loginPanel.addView(passwordRow,passwordPosition);
+        FrameLayout passwordBox=new FrameLayout(this);password.setPadding(dp(14),0,dp(48),0);passwordBox.addView(password,new FrameLayout.LayoutParams(-1,dp(48)));
+        passwordBox.addView(reveal,new FrameLayout.LayoutParams(dp(44),dp(44),Gravity.END|Gravity.CENTER_VERTICAL));
+        LinearLayout fields=new LinearLayout(this);loginPanel.addView(fields);
+        fields.addView(labelled(R.string.username,user,user,dp(48)),new LinearLayout.LayoutParams(0,-2,1));
+        LinearLayout.LayoutParams passwordColumn=new LinearLayout.LayoutParams(0,-2,1);passwordColumn.leftMargin=dp(12);
+        fields.addView(labelled(R.string.password,passwordBox,password,-2),passwordColumn);
+        LinearLayout options=new LinearLayout(this);options.setGravity(Gravity.CENTER_VERTICAL);
+        LinearLayout.LayoutParams optionsPosition=new LinearLayout.LayoutParams(-1,-2);optionsPosition.topMargin=dp(6);loginPanel.addView(options,optionsPosition);
         remember=new CheckBox(this);remember.setText(R.string.remember_me);remember.setTextColor(foreground);remember.setChecked(true);remember.setButtonTintList(android.content.res.ColorStateList.valueOf(accent));
-        LinearLayout.LayoutParams rememberPosition=new LinearLayout.LayoutParams(-2,-2);rememberPosition.topMargin=dp(8);loginPanel.addView(remember,rememberPosition);
-        Button signIn=filledButton(getString(R.string.login_play),this::startWithPassword);
-        LinearLayout.LayoutParams primaryPosition=new LinearLayout.LayoutParams(-1,dp(52));primaryPosition.topMargin=dp(12);loginPanel.addView(signIn,primaryPosition);
+        options.addView(remember,new LinearLayout.LayoutParams(0,-2,1));
+        options.addView(textButton(getString(R.string.create_account_prompt),this::registerAccount));
+        LinearLayout actions=new LinearLayout(this);
+        LinearLayout.LayoutParams actionsPosition=new LinearLayout.LayoutParams(-1,dp(48));actionsPosition.topMargin=dp(8);loginPanel.addView(actions,actionsPosition);
+        actions.addView(filledButton(getString(R.string.login_play),this::startWithPassword),new LinearLayout.LayoutParams(0,-1,1));
         continueSaved=outlinedButton("",()->{if(SecureCredentialStore.loadAccount()==null)showStatus(getString(R.string.no_saved_session));else{session.resetRetries();startSavedSession();}});
-        LinearLayout.LayoutParams secondaryPosition=new LinearLayout.LayoutParams(-1,dp(52));secondaryPosition.topMargin=dp(10);loginPanel.addView(continueSaved,secondaryPosition);
-        Button register=textButton(getString(R.string.create_account_prompt),this::registerAccount);
-        LinearLayout.LayoutParams registerPosition=new LinearLayout.LayoutParams(-2,-2);registerPosition.gravity=Gravity.CENTER_HORIZONTAL;registerPosition.topMargin=dp(6);loginPanel.addView(register,registerPosition);
+        continueSaved.setSingleLine();continueSaved.setEllipsize(android.text.TextUtils.TruncateAt.END);
+        LinearLayout.LayoutParams secondaryPosition=new LinearLayout.LayoutParams(0,-1,1);secondaryPosition.leftMargin=dp(12);actions.addView(continueSaved,secondaryPosition);
+        // Edge-to-edge windows no longer resize for the keyboard, and in
+        // landscape it covers most of the screen: pad by its height and keep
+        // the focused field visible above it.
+        scroll.setOnApplyWindowInsetsListener((view,insets)->{
+            int keyboard=Build.VERSION.SDK_INT>=30?insets.getInsets(WindowInsets.Type.ime()).bottom:insets.getSystemWindowInsetBottom();
+            view.setPadding(0,0,0,keyboard);
+            View focused=getCurrentFocus();
+            if(keyboard>0 && focused!=null)view.post(()->{
+                android.graphics.Rect area=new android.graphics.Rect(0,-dp(32),focused.getWidth(),focused.getHeight()+dp(12));
+                focused.requestRectangleOnScreen(area,false);
+            });
+            return insets;
+        });
         SecureCredentialStore.Login login=SecureCredentialStore.loadLogin();
         if(login!=null){user.setText(login.username);password.setText(login.password);remember.setChecked(!login.password.isEmpty() || savedAccount!=null);}
         else if(savedAccount!=null)user.setText(savedAccount.username);
         refreshLoginState();
+    }
+    private static boolean isEnter(KeyEvent event){
+        return event!=null && event.getKeyCode()==KeyEvent.KEYCODE_ENTER && event.getAction()==KeyEvent.ACTION_DOWN;
+    }
+    private LinearLayout labelled(int text,View input,EditText field,int height){
+        LinearLayout column=new LinearLayout(this);column.setOrientation(LinearLayout.VERTICAL);
+        TextView label=label(text);label.setLabelFor(field.getId());column.addView(label);column.addView(input,new LinearLayout.LayoutParams(-1,height));return column;
     }
     private void refreshLoginState(){
         if(continueSaved==null)return;
@@ -270,9 +299,10 @@ public final class MainActivity extends Activity implements GameRenderer.Host {
     private TextView label(int text){
         TextView label=new TextView(this);label.setText(text);label.setTextColor(getColor(R.color.app_muted));label.setTextSize(13);label.setPadding(dp(2),dp(10),0,dp(4));return label;
     }
-    private EditText inputField(int hint,boolean secret){
-        EditText e=new EditText(this);e.setHint(hint);e.setSingleLine();e.setSaveEnabled(false);e.setTextSize(16);
-        e.setTextColor(getColor(R.color.app_foreground));e.setHintTextColor(getColor(R.color.app_outline));
+    private EditText inputField(boolean secret){
+        // The label above names the field; a matching hint would repeat it.
+        EditText e=new EditText(this);e.setId(View.generateViewId());e.setSingleLine();e.setSaveEnabled(false);e.setTextSize(16);
+        e.setTextColor(getColor(R.color.app_foreground));
         e.setInputType(secret?InputType.TYPE_CLASS_TEXT|InputType.TYPE_TEXT_VARIATION_PASSWORD:InputType.TYPE_CLASS_TEXT|InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
         if(secret)e.setTypeface(Typeface.DEFAULT);
         e.setBackground(rounded(getColor(R.color.app_background),getColor(R.color.app_outline),10));e.setPadding(dp(14),0,dp(14),0);
