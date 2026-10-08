@@ -27,9 +27,20 @@ final class SecureCredentialStore {
         }
     }
 
+    /** Sign-in form values remembered on this device; password is empty when not remembered. */
+    static final class Login {
+        final String username;
+        final String password;
+        Login(String username, String password) {
+            this.username = username;
+            this.password = password;
+        }
+    }
+
     private static final String KEY_ALIAS = "hoenn-sessions-refresh-v1";
     private static final String PREFS = "secure_session_v1";
     private static final String ACCOUNT = "account";
+    private static final String LOGIN = "remembered_login";
     static final String TOKEN_SERVICE = "pokecrossroads-coop-launcher";
     private static Context app;
 
@@ -131,6 +142,35 @@ final class SecureCredentialStore {
             preferences().edit().remove(ACCOUNT).apply();
             return null;
         }
+    }
+
+    /** Keystore-encrypted; app updates keep it, uninstalling or clearing data removes it. */
+    static synchronized boolean storeLogin(String username, String password) {
+        try {
+            JSONObject value = new JSONObject().put("username", username).put("password", password);
+            return preferences().edit().putString(LOGIN, encrypt(value.toString())).commit();
+        } catch (Exception ignored) {
+            return false;
+        }
+    }
+
+    static synchronized Login loadLogin() {
+        try {
+            String value = preferences().getString(LOGIN, null);
+            if (value == null) return null;
+            JSONObject login = new JSONObject(decrypt(value));
+            return new Login(login.getString("username"), login.optString("password", ""));
+        } catch (Exception ignored) {
+            preferences().edit().remove(LOGIN).apply();
+            return null;
+        }
+    }
+
+    /** Keeps the username for the form but drops the remembered password. */
+    static synchronized void forgetPassword() {
+        Login login = loadLogin();
+        if (login == null || login.password.isEmpty()) return;
+        if (!storeLogin(login.username, "")) preferences().edit().remove(LOGIN).apply();
     }
 
     static synchronized void clearLocalAccount() {

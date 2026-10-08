@@ -15,6 +15,7 @@ import android.os.*;
 import android.text.InputType;
 import android.util.Log;
 import android.view.*;
+import android.view.inputmethod.EditorInfo;
 import android.widget.*;
 import android.window.OnBackInvokedCallback;
 import android.window.OnBackInvokedDispatcher;
@@ -43,6 +44,8 @@ public final class MainActivity extends Activity implements GameRenderer.Host {
     private View loginScreen;
     private volatile boolean settingsOpen, inputFocused;
     private EditText user,password;
+    private CheckBox remember;
+    private Button continueSaved;
     private GameRenderer game;
     private TouchOverlay touchOverlay;
     private OnBackInvokedCallback backCallback;
@@ -170,8 +173,6 @@ public final class MainActivity extends Activity implements GameRenderer.Host {
     private void work(Work work) {
         worker.execute(()->{try{String result=work.run(); runOnUiThread(()->showStatus(result));}catch(Exception e){runOnUiThread(()->showStatus(describeError(e)));}});
     }
-    private void button(String label,Runnable action){Button b=new Button(this);b.setText(label);b.setOnClickListener(v->action.run());layout.addView(b);}
-    private EditText field(String label,boolean secret){EditText e=new EditText(this);e.setHint(label);e.setSingleLine();e.setSaveEnabled(false);e.setInputType(secret?129:InputType.TYPE_CLASS_TEXT);layout.addView(e);return e;}
     @Override public void onCreate(Bundle saved){
         super.onCreate(saved);
         ApkUpdate.cleanupInstalled(this);
@@ -190,19 +191,7 @@ public final class MainActivity extends Activity implements GameRenderer.Host {
         getWindow().setFlags(WindowManager.LayoutParams.FLAG_SECURE,WindowManager.LayoutParams.FLAG_SECURE);
         if(Build.VERSION.SDK_INT>=28){WindowManager.LayoutParams params=getWindow().getAttributes();params.layoutInDisplayCutoutMode=WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_NEVER;getWindow().setAttributes(params);}
         FrameLayout root=new FrameLayout(this);setContentView(root);
-        ScrollView scroll=new ScrollView(this);loginScreen=scroll;layout=new LinearLayout(this);layout.setOrientation(LinearLayout.VERTICAL);layout.setPadding(dp(24),dp(48),dp(24),dp(32));scroll.addView(layout);root.addView(scroll,new FrameLayout.LayoutParams(-1,-1));
-        TextView title=new TextView(this);title.setText("HOENN SESSIONS");title.setTextSize(23);layout.addView(title);
-        button(getString(R.string.menu),this::showMenu);
-        status=new TextView(this);status.setTag("session-status");showStatus(getString(R.string.login_prompt));status.setPadding(0,dp(20),0,dp(20));layout.addView(status);
-        downloadProgress=new ProgressBar(this,null,android.R.attr.progressBarStyleHorizontal);downloadProgress.setVisibility(View.GONE);layout.addView(downloadProgress,new LinearLayout.LayoutParams(-1,dp(6)));
-        downloadLabel=new TextView(this);downloadLabel.setVisibility(View.GONE);layout.addView(downloadLabel);
-        LinearLayout loginRoot=layout;
-        loginPanel=new LinearLayout(this);loginPanel.setOrientation(LinearLayout.VERTICAL);loginRoot.addView(loginPanel);layout=loginPanel;
-        user=field(getString(R.string.username),false);password=field(getString(R.string.password),true);
-        button(getString(R.string.login_play),this::startWithPassword);
-        button(getString(R.string.register_account),this::registerAccount);
-        button(getString(R.string.resume_saved_session),()->{if(SecureCredentialStore.loadAccount()==null)showStatus(getString(R.string.no_saved_session));else{session.resetRetries();startSavedSession();}});
-        layout=loginRoot;
+        buildLoginScreen(root);
         playPanel=new FrameLayout(this);root.addView(playPanel,new FrameLayout.LayoutParams(-1,-1));
         touchOverlay=new TouchOverlay(this);touchOverlay.setTag("touch-overlay");playPanel.addView(touchOverlay,new FrameLayout.LayoutParams(-1,-1));
         game=new GameRenderer(this,this,touchOverlay,controller,smoothPixels);game.setTag("gba-frame");playPanel.addView(game,0,new FrameLayout.LayoutParams(-1,-1));
@@ -220,11 +209,94 @@ public final class MainActivity extends Activity implements GameRenderer.Host {
         if(savedAccount!=null)showStatus(getString(R.string.restoring_account,savedAccount.username));
     }
 
+    private void buildLoginScreen(FrameLayout root){
+        int foreground=getColor(R.color.app_foreground),muted=getColor(R.color.app_muted),accent=getColor(R.color.app_accent);
+        ScrollView scroll=new ScrollView(this);scroll.setFillViewport(true);loginScreen=scroll;root.addView(scroll,new FrameLayout.LayoutParams(-1,-1));
+        FrameLayout center=new FrameLayout(this);scroll.addView(center,new ScrollView.LayoutParams(-1,-1));
+        layout=new LinearLayout(this);layout.setOrientation(LinearLayout.VERTICAL);layout.setPadding(dp(24),dp(32),dp(24),dp(32));
+        int width=Math.min(getResources().getDisplayMetrics().widthPixels,dp(460));
+        center.addView(layout,new FrameLayout.LayoutParams(width,-2,Gravity.CENTER));
+        LinearLayout header=new LinearLayout(this);header.setGravity(Gravity.CENTER_VERTICAL);layout.addView(header);
+        TextView title=new TextView(this);title.setText(R.string.app_name);title.setTextSize(28);title.setTextColor(foreground);title.setTypeface(Typeface.DEFAULT_BOLD);
+        header.addView(title,new LinearLayout.LayoutParams(0,-2,1));
+        Button menu=textButton(getString(R.string.menu),this::showMenu);header.addView(menu);
+        TextView subtitle=new TextView(this);subtitle.setText(R.string.login_subtitle);subtitle.setTextColor(muted);subtitle.setTextSize(15);layout.addView(subtitle);
+        status=new TextView(this);status.setTag("session-status");status.setTextColor(foreground);status.setTextSize(15);showStatus(getString(R.string.login_prompt));status.setPadding(0,dp(16),0,dp(12));layout.addView(status);
+        downloadProgress=new ProgressBar(this,null,android.R.attr.progressBarStyleHorizontal);downloadProgress.setVisibility(View.GONE);layout.addView(downloadProgress,new LinearLayout.LayoutParams(-1,dp(6)));
+        downloadLabel=new TextView(this);downloadLabel.setTextColor(muted);downloadLabel.setVisibility(View.GONE);layout.addView(downloadLabel);
+        loginPanel=new LinearLayout(this);loginPanel.setOrientation(LinearLayout.VERTICAL);loginPanel.setPadding(dp(20),dp(20),dp(20),dp(16));
+        loginPanel.setBackground(rounded(getColor(R.color.app_surface),getColor(R.color.app_outline),16));loginPanel.setElevation(dp(2));
+        LinearLayout.LayoutParams panelPosition=new LinearLayout.LayoutParams(-1,-2);panelPosition.topMargin=dp(8);layout.addView(loginPanel,panelPosition);
+        user=inputField(R.string.username,false);user.setAutofillHints(View.AUTOFILL_HINT_USERNAME);user.setImeOptions(EditorInfo.IME_ACTION_NEXT);
+        loginPanel.addView(label(R.string.username));loginPanel.addView(user,new LinearLayout.LayoutParams(-1,dp(52)));
+        password=inputField(R.string.password,true);password.setAutofillHints(View.AUTOFILL_HINT_PASSWORD);password.setImeOptions(EditorInfo.IME_ACTION_DONE);
+        password.setOnEditorActionListener((view,action,event)->{if(action!=EditorInfo.IME_ACTION_DONE)return false;startWithPassword();return true;});
+        ImageButton reveal=new ImageButton(this);reveal.setImageResource(R.drawable.ic_visibility);reveal.setBackground(null);reveal.setContentDescription(getString(R.string.show_password));
+        reveal.setOnClickListener(v->togglePasswordVisibility(reveal));
+        FrameLayout passwordRow=new FrameLayout(this);password.setPadding(dp(14),0,dp(52),0);passwordRow.addView(password,new FrameLayout.LayoutParams(-1,dp(52)));
+        passwordRow.addView(reveal,new FrameLayout.LayoutParams(dp(48),dp(48),Gravity.END|Gravity.CENTER_VERTICAL));
+        LinearLayout.LayoutParams passwordPosition=new LinearLayout.LayoutParams(-1,-2);
+        loginPanel.addView(label(R.string.password));loginPanel.addView(passwordRow,passwordPosition);
+        remember=new CheckBox(this);remember.setText(R.string.remember_me);remember.setTextColor(foreground);remember.setChecked(true);remember.setButtonTintList(android.content.res.ColorStateList.valueOf(accent));
+        LinearLayout.LayoutParams rememberPosition=new LinearLayout.LayoutParams(-2,-2);rememberPosition.topMargin=dp(8);loginPanel.addView(remember,rememberPosition);
+        Button signIn=filledButton(getString(R.string.login_play),this::startWithPassword);
+        LinearLayout.LayoutParams primaryPosition=new LinearLayout.LayoutParams(-1,dp(52));primaryPosition.topMargin=dp(12);loginPanel.addView(signIn,primaryPosition);
+        continueSaved=outlinedButton("",()->{if(SecureCredentialStore.loadAccount()==null)showStatus(getString(R.string.no_saved_session));else{session.resetRetries();startSavedSession();}});
+        LinearLayout.LayoutParams secondaryPosition=new LinearLayout.LayoutParams(-1,dp(52));secondaryPosition.topMargin=dp(10);loginPanel.addView(continueSaved,secondaryPosition);
+        Button register=textButton(getString(R.string.create_account_prompt),this::registerAccount);
+        LinearLayout.LayoutParams registerPosition=new LinearLayout.LayoutParams(-2,-2);registerPosition.gravity=Gravity.CENTER_HORIZONTAL;registerPosition.topMargin=dp(6);loginPanel.addView(register,registerPosition);
+        SecureCredentialStore.Login login=SecureCredentialStore.loadLogin();
+        if(login!=null){user.setText(login.username);password.setText(login.password);remember.setChecked(!login.password.isEmpty() || savedAccount!=null);}
+        else if(savedAccount!=null)user.setText(savedAccount.username);
+        refreshLoginState();
+    }
+    private void refreshLoginState(){
+        if(continueSaved==null)return;
+        continueSaved.setVisibility(savedAccount==null?View.GONE:View.VISIBLE);
+        if(savedAccount!=null)continueSaved.setText(getString(R.string.continue_as,savedAccount.username));
+    }
+    private void togglePasswordVisibility(ImageButton reveal){
+        boolean show=(password.getInputType()&InputType.TYPE_TEXT_VARIATION_PASSWORD)!=0;
+        int selection=password.getSelectionEnd();
+        password.setInputType(InputType.TYPE_CLASS_TEXT|(show?InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD:InputType.TYPE_TEXT_VARIATION_PASSWORD));
+        password.setTypeface(Typeface.DEFAULT);password.setSelection(Math.max(0,Math.min(selection,password.length())));
+        reveal.setImageResource(show?R.drawable.ic_visibility_off:R.drawable.ic_visibility);
+        reveal.setContentDescription(getString(show?R.string.hide_password:R.string.show_password));
+    }
+    private android.graphics.drawable.GradientDrawable rounded(int fill,int stroke,int radius){
+        android.graphics.drawable.GradientDrawable shape=new android.graphics.drawable.GradientDrawable();
+        shape.setColor(fill);shape.setCornerRadius(dp(radius));if(stroke!=0)shape.setStroke(dp(1),stroke);return shape;
+    }
+    private TextView label(int text){
+        TextView label=new TextView(this);label.setText(text);label.setTextColor(getColor(R.color.app_muted));label.setTextSize(13);label.setPadding(dp(2),dp(10),0,dp(4));return label;
+    }
+    private EditText inputField(int hint,boolean secret){
+        EditText e=new EditText(this);e.setHint(hint);e.setSingleLine();e.setSaveEnabled(false);e.setTextSize(16);
+        e.setTextColor(getColor(R.color.app_foreground));e.setHintTextColor(getColor(R.color.app_outline));
+        e.setInputType(secret?InputType.TYPE_CLASS_TEXT|InputType.TYPE_TEXT_VARIATION_PASSWORD:InputType.TYPE_CLASS_TEXT|InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
+        if(secret)e.setTypeface(Typeface.DEFAULT);
+        e.setBackground(rounded(getColor(R.color.app_background),getColor(R.color.app_outline),10));e.setPadding(dp(14),0,dp(14),0);
+        return e;
+    }
+    private Button filledButton(String text,Runnable action){
+        Button b=new Button(this);b.setText(text);b.setAllCaps(false);b.setTextSize(16);b.setTypeface(Typeface.DEFAULT_BOLD);b.setTextColor(Color.WHITE);
+        b.setBackground(rounded(getColor(R.color.app_accent),0,12));b.setStateListAnimator(null);b.setOnClickListener(v->action.run());return b;
+    }
+    private Button outlinedButton(String text,Runnable action){
+        Button b=new Button(this);b.setText(text);b.setAllCaps(false);b.setTextSize(16);b.setTextColor(getColor(R.color.app_accent));
+        b.setBackground(rounded(getColor(R.color.app_surface),getColor(R.color.app_accent),12));b.setStateListAnimator(null);b.setOnClickListener(v->action.run());return b;
+    }
+    private Button textButton(String text,Runnable action){
+        Button b=new Button(this,null,android.R.attr.borderlessButtonStyle);b.setText(text);b.setAllCaps(false);b.setTextColor(getColor(R.color.app_accent));b.setOnClickListener(v->action.run());return b;
+    }
+
     private void startWithPassword(){
         session.resetRetries();hostHandler.removeCallbacks(resumeRetry);
-        String username=user.getText().toString().trim(),secret=password.getText().toString();password.setText("");
+        String username=user.getText().toString().trim(),secret=password.getText().toString();
         if(username.isEmpty() || secret.isEmpty()){showStatus(getString(R.string.enter_credentials));return;}
-        startSession(username,secret,"","",false);
+        boolean keep=remember.isChecked();
+        if(!keep){password.setText("");SecureCredentialStore.storeLogin(username,"");}
+        startSession(username,secret,"","",false,keep);
     }
 
     private void startSavedSession(){
@@ -234,16 +306,34 @@ public final class MainActivity extends Activity implements GameRenderer.Host {
     }
 
     private void startSession(String username,String secret,String userId,String characterId,boolean resumeSession){
+        startSession(username,secret,userId,characterId,resumeSession,false);
+    }
+    // rememberLogin stores the typed credentials once the server accepts them.
+    private void startSession(String username,String secret,String userId,String characterId,boolean savedSession,boolean rememberLogin){
         if(NativeSession.isActive() || !session.beginStart()){showStatus(getString(R.string.session_active));return;}
-        work(()->{try{
+        work(()->{boolean resumeSession=savedSession;try{
             if(session.isDestroyed() || !session.isResumed())return getString(R.string.start_cancelled);
             verifyCore();
             new RuntimeStore(getFilesDir()).prepareBundled(getAssets());
-            api.authenticate(username,secret);
+            try{api.authenticate(username,secret);}
+            catch(Exception rejected){
+                // A rejected or missing refresh token falls back to the remembered
+                // password; a network failure keeps the normal retry path.
+                SecureCredentialStore.Login login=resumeSession?SecureCredentialStore.loadLogin():null;
+                boolean network=rejected instanceof IOException && !(rejected instanceof CloudApi.HttpError)
+                    && SecureCredentialStore.load(SecureCredentialStore.TOKEN_SERVICE,username)!=null;
+                if(login==null || login.password.isEmpty() || !login.username.equals(username) || network)throw rejected;
+                try{api.authenticate(username,login.password);}
+                catch(CloudApi.HttpError wrong){if(wrong.status==401||wrong.status==403)SecureCredentialStore.forgetPassword();throw wrong;}
+                resumeSession=false;
+            }
+            if(rememberLogin)SecureCredentialStore.storeLogin(username,secret);
+            else if(!resumeSession && SecureCredentialStore.loadLogin()==null)SecureCredentialStore.storeLogin(username,"");
+            boolean resumed=resumeSession;
             ApkUpdate.Available update=ApkUpdate.check(api);
             if(update!=null) {
                 session.updatePromptShown();
-                runOnUiThread(()->promptApkUpdate(update,username,userId,characterId,resumeSession));
+                runOnUiThread(()->promptApkUpdate(update,username,userId,characterId,resumed));
                 return getString(R.string.update_available_status);
             }
             return beginGame(username,userId,characterId,resumeSession);
@@ -367,11 +457,12 @@ public final class MainActivity extends Activity implements GameRenderer.Host {
                 savePending=false;
                 boolean signedOut=event.optBoolean("signed_out",false);
                 session.markReady();
-                if(signedOut){SecureCredentialStore.clearLocalAccount();savedAccount=null;showStatus(getString(R.string.signed_out));}
+                if(signedOut){SecureCredentialStore.clearLocalAccount();SecureCredentialStore.forgetPassword();savedAccount=null;password.setText("");showStatus(getString(R.string.signed_out));}
                 else {savedAccount=SecureCredentialStore.loadAccount();showStatus(getString(R.string.game_closed_revision,event.getLong("revision")));}
+                refreshLoginState();
                 if(session.wantsResumeAfterPause() && session.isResumed() && !signedOut)resumeAfterClose();
             }else if(type.equals("error")){
-                closeCore();session.markReady();savedAccount=SecureCredentialStore.loadAccount();exitFullscreen();
+                closeCore();session.markReady();savedAccount=SecureCredentialStore.loadAccount();refreshLoginState();exitFullscreen();
                 setPlaying(false);loginPanel.setVisibility(View.VISIBLE);setConnection(getString(R.string.connection_offline),0xFFFF8A80);
                 String message=event.getString("message");
                 String code=event.optString("code","");
